@@ -454,91 +454,172 @@ def fetch_flows(base):
 def fetch_omip():
     """Fetch OMIP settlement prices by scraping omip.pt."""
     print('Fetching OMIP forward curves...')
-    try:
-        html = http_get('https://www.omip.pt/en', timeout=30)
-        if not html:
-            print('  Could not reach omip.pt')
-            return None
 
-        contracts = []
-        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    # OMIP does SSR but may filter non-browser User-Agents
+    headers = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'Cache-Control': 'no-cache',
+    }
 
-        # Pattern 1: "€XX.XX · Eur/MWh · Settlement Price for [description] Contract"
-        import re
+    # Try multiple pages
+    urls = [
+        'https://www.omip.pt/en',
+        'https://www.omip.pt/en/plazo-hoy',
+        'https://www.omip.pt/en/dados-mercado',
+    ]
+
+    html = None
+    for url in urls:
+        print(f'  Trying: {url}')
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                html = r.read().decode('utf-8')
+            if html and 'Settlement Price' in html:
+                print(f'  Got HTML with settlement data ({len(html)} bytes)')
+                break
+            elif html:
+                print(f'  Got HTML but no settlement data ({len(html)} bytes)')
+                html = None
+        except Exception as e:
+            print(f'  Failed: {e}')
+
+    # Also try without SSL verification
+    if not html:
+        for url in urls[:1]:
+            print(f'  Retry without SSL: {url}')
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+                    html = r.read().decode('utf-8')
+                if html and 'Settlement Price' in html:
+                    print(f'  Got HTML with settlement data')
+                    break
+            except Exception as e:
+                print(f'  Failed: {e}')
+
+    if not html:
+        print('  Could not reach omip.pt or no settlement data found')
+        return None
+
+    contracts = []
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+    import re
+
+    # Pattern: "€XX.XX · Eur/MWh · Settlement Price for [desc] Contract"
+    matches = re.findall(
+        r'€([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+        html, re.IGNORECASE
+    )
+
+    # Also try: "Settlement Price for [desc] Contract, for date [date]" preceded by "€XX.XX"
+    if not matches:
         matches = re.findall(
-            r'€([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+            r'€([\d.,]+).*?Settlement\s+Price\s+for\s+(.*?)\s+Contract',
             html, re.IGNORECASE
         )
 
-        for price_str, desc in matches:
-            price = float(price_str.replace(',', '.'))
-            if price == 0:
-                continue
+    # Also try broader pattern: look for price blocks near "FTB" or "Settlement"
+    if not matches:
+        # Pattern: FTB · Label · €Price
+        ftb_matches = re.findall(r'FTB\s*·\s*([\w\s/\-]+)\s*·\s*€([\d.,]+)', html)
+        for label, price_str in ftb_matches:
+            matches.append((price_str, f'Spain Power Base Futures {label.strip()}'))
 
-            # Parse zone
-            zone = 'SPEL'
-            if re.search(r'Portugal|PTEL', desc, re.I): zone = 'PTEL'
-            elif re.search(r'Germany|DEEL', desc, re.I): zone = 'DEEL'
-            elif re.search(r'France|FREL', desc, re.I): zone = 'FREL'
-            elif re.search(r'Gas|PVB', desc, re.I): zone = 'PVB'
+    print(f'  Found {len(matches)} raw matches')
 
-            # Parse profile
-            profile = 'base'
-            if 'Peak' in desc: profile = 'peak'
-            elif 'Solar' in desc: profile = 'solar'
+    for price_str, desc in matches:
+        price = float(price_str.replace(',', '.'))
+        if price == 0:
+            continue
 
-            # Parse product type
-            product = 'unknown'
-            if re.search(r'PPA\s*10', desc): product = 'PPA10Y'
-            elif re.search(r'PPA\s*5', desc): product = 'PPA5Y'
-            elif re.search(r'PPA\s*3', desc): product = 'PPA3Y'
-            elif re.search(r'Year|YR-\d{2}', desc): product = 'year'
-            elif re.search(r'Quarter|Q\d-\d{2}', desc): product = 'quarter'
-            elif re.search(r'Month|M\s+\w+-\d{2}', desc): product = 'month'
-            elif re.search(r'(?<!Weekend\s)Week|Wk\d+', desc): product = 'week'
-            elif 'Weekend' in desc: product = 'weekend'
-            elif 'Day' in desc: product = 'day'
+        # Parse zone
+        zone = 'SPEL'
+        if re.search(r'Portugal|PTEL', desc, re.I): zone = 'PTEL'
+        elif re.search(r'Germany|DEEL', desc, re.I): zone = 'DEEL'
+        elif re.search(r'France|FREL', desc, re.I): zone = 'FREL'
+        elif re.search(r'Gas|PVB', desc, re.I): zone = 'PVB'
 
-            # Extract label
-            label = ''
-            lm = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2})', desc)
+        # Parse profile
+        profile = 'base'
+        if 'Peak' in desc: profile = 'peak'
+        elif 'Solar' in desc: profile = 'solar'
+
+        # Parse product type
+        product = 'unknown'
+        if re.search(r'PPA\s*10', desc): product = 'PPA10Y'
+        elif re.search(r'PPA\s*5', desc): product = 'PPA5Y'
+        elif re.search(r'PPA\s*3', desc): product = 'PPA3Y'
+        elif re.search(r'Year|YR-\d{2}', desc): product = 'year'
+        elif re.search(r'Quarter|Q\d-\d{2}', desc): product = 'quarter'
+        elif re.search(r'Month|M\s+\w+-\d{2}', desc): product = 'month'
+        elif re.search(r'(?<!Weekend\s)Week|Wk\d+', desc): product = 'week'
+        elif 'Weekend' in desc: product = 'weekend'
+        elif 'Day' in desc: product = 'day'
+
+        # Extract label
+        label = ''
+        lm = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2})', desc)
+        if lm: label = lm.group(1)
+        else:
+            lm = re.search(r'(Q[1-4]-\d{2})', desc)
             if lm: label = lm.group(1)
             else:
-                lm = re.search(r'(Q[1-4]-\d{2})', desc)
+                lm = re.search(r'(YR-\d{2})', desc)
                 if lm: label = lm.group(1)
                 else:
-                    lm = re.search(r'(YR-\d{2})', desc)
+                    lm = re.search(r'(PPA\s*[\d/]+)', desc)
                     if lm: label = lm.group(1)
                     else:
-                        lm = re.search(r'(PPA\s*[\d/]+)', desc)
+                        lm = re.search(r'(Wk\d+-\d{2})', desc)
                         if lm: label = lm.group(1)
 
-            contracts.append({
-                'zone': zone,
-                'profile': profile,
-                'product': product,
-                'label': label,
-                'price': round(price, 2),
-                'desc': desc.strip(),
-            })
+        # Avoid duplicates
+        dup = False
+        for c in contracts:
+            if c['zone'] == zone and c['product'] == product and c['label'] == label and c['profile'] == profile:
+                dup = True
+                break
+        if dup:
+            continue
 
-        if not contracts:
-            print('  No contracts parsed from OMIP HTML')
-            return None
+        contracts.append({
+            'zone': zone,
+            'profile': profile,
+            'product': product,
+            'label': label,
+            'price': round(price, 2),
+            'desc': desc.strip(),
+        })
 
-        print(f'  → {len(contracts)} contracts parsed')
-        return {
-            'updated': datetime.now(timezone.utc).isoformat(),
-            'source': 'OMIP',
-            'latest': {
-                'date': today,
-                'contracts': contracts,
-            },
-        }
-
-    except Exception as e:
-        print(f'  OMIP error: {e}')
+    if not contracts:
+        print('  No contracts parsed from OMIP HTML')
+        # Save debug info
+        with open('data/omip-debug.txt', 'w') as f:
+            f.write(f'HTML length: {len(html)}\n')
+            f.write(f'Contains "Settlement": {"Settlement" in html}\n')
+            f.write(f'Contains "FTB": {"FTB" in html}\n')
+            f.write(f'Contains "€": {"€" in html}\n')
+            f.write(f'First 2000 chars:\n{html[:2000]}\n')
         return None
+
+    print(f'  → {len(contracts)} contracts parsed')
+
+    # Extract date from page if available
+    date_match = re.search(r'for date (\d{4}-\d{2}-\d{2})', html)
+    data_date = date_match.group(1) if date_match else today
+
+    return {
+        'updated': datetime.now(timezone.utc).isoformat(),
+        'source': 'OMIP',
+        'latest': {
+            'date': data_date,
+            'contracts': contracts,
+        },
+    }
 
 
 def main():
