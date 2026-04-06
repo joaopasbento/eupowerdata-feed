@@ -509,25 +509,30 @@ def fetch_omip():
 
     import re
 
+    # Strip HTML tags but keep text content (OMIP uses Drupal with inline markup)
+    clean = re.sub(r'<[^>]+>', ' ', html)
+    # Normalize whitespace
+    clean = re.sub(r'\s+', ' ', clean)
+
     # Pattern: "€XX.XX · Eur/MWh · Settlement Price for [desc] Contract"
     matches = re.findall(
-        r'€([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
-        html, re.IGNORECASE
+        r'€\s*([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+        clean, re.IGNORECASE
     )
 
-    # Also try: "Settlement Price for [desc] Contract, for date [date]" preceded by "€XX.XX"
+    # Also try: "FTB · Label · €Price · Eur/MWh · Settlement Price for [desc] Contract"
     if not matches:
         matches = re.findall(
-            r'€([\d.,]+).*?Settlement\s+Price\s+for\s+(.*?)\s+Contract',
-            html, re.IGNORECASE
+            r'FTB\s*·\s*[\w\s/\-]+\s*·\s*€\s*([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+            clean, re.IGNORECASE
         )
 
-    # Also try broader pattern: look for price blocks near "FTB" or "Settlement"
+    # Broadest: find any "€XX.XX" followed eventually by "Settlement Price for ... Contract"
     if not matches:
-        # Pattern: FTB · Label · €Price
-        ftb_matches = re.findall(r'FTB\s*·\s*([\w\s/\-]+)\s*·\s*€([\d.,]+)', html)
-        for label, price_str in ftb_matches:
-            matches.append((price_str, f'Spain Power Base Futures {label.strip()}'))
+        matches = re.findall(
+            r'€\s*([\d.,]+).*?Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+            clean, re.IGNORECASE
+        )
 
     print(f'  Found {len(matches)} raw matches')
 
