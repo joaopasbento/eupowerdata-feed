@@ -1,0 +1,35 @@
+name: Fetch ENTSO-E Data
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch ENTSO-E data
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_entsoe.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Update ENTSO-E data $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
