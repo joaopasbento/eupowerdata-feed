@@ -49,6 +49,16 @@ ZONES = {
 
 TIER1 = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE']
 
+# Zones to consolidate: bidding zones → country average
+CONSOLIDATE = {
+    'NO': ['NO1', 'NO2'],
+    'SE': ['SE1', 'SE3'],
+    'DK': ['DK1', 'DK2'],
+}
+
+# All countries that should have generation data
+GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'GB']
+
 CORRIDORS = [
     ('PT', 'ES'), ('ES', 'PT'), ('ES', 'FR'), ('FR', 'ES'),
     ('FR', 'DE'), ('DE', 'FR'), ('FR', 'GB'), ('GB', 'FR'),
@@ -266,6 +276,38 @@ def fetch_prices(base):
 
         import time; time.sleep(0.2)
 
+    # Consolidate multi-zone countries (NO1+NO2→NO, SE1+SE3→SE, DK1+DK2→DK)
+    for country, zone_codes in CONSOLIDATE.items():
+        zone_data = [prices['zones'].get(zc) for zc in zone_codes if zc in prices['zones']]
+        if not zone_data:
+            continue
+        # Average the prices across zones
+        all_avgs = [z['avg'] for z in zone_data if z.get('avg') is not None]
+        all_mins = [z['min'] for z in zone_data if z.get('min') is not None]
+        all_maxs = [z['max'] for z in zone_data if z.get('max') is not None]
+        # Merge hourly prices (average across zones per hour)
+        merged_prices = []
+        max_hours = max(len(z.get('prices', [])) for z in zone_data)
+        for h in range(max_hours):
+            hour_prices = [z['prices'][h]['price'] for z in zone_data if h < len(z.get('prices', []))]
+            if hour_prices:
+                avg_p = round(sum(hour_prices) / len(hour_prices), 2)
+                ref = zone_data[0]['prices'][h] if h < len(zone_data[0].get('prices', [])) else {'time': f'{h:02d}:00', 'hour': h}
+                merged_prices.append({'time': ref['time'], 'hour': ref['hour'], 'price': avg_p})
+
+        prices['zones'][country] = {
+            'eic': ', '.join(z.get('eic', '') for z in zone_data),
+            'prices': merged_prices,
+            'latest': merged_prices[-1] if merged_prices else None,
+            'avg': round(sum(all_avgs) / len(all_avgs), 2) if all_avgs else 0,
+            'min': round(min(all_mins), 2) if all_mins else 0,
+            'max': round(max(all_maxs), 2) if all_maxs else 0,
+        }
+        # Remove individual zones
+        for zc in zone_codes:
+            prices['zones'].pop(zc, None)
+        print(f'  Consolidated {"+".join(zone_codes)} → {country}')
+
     return prices
 
 
@@ -281,7 +323,7 @@ def fetch_generation(base):
         'zones': {},
     }
 
-    for code in TIER1:
+    for code in GEN_COUNTRIES + ['NO1', 'NO2', 'SE1', 'SE3', 'DK1', 'DK2']:
         eic = ZONES.get(code, '')
         if not eic:
             continue
@@ -314,6 +356,26 @@ def fetch_generation(base):
             print('no data')
 
         import time; time.sleep(0.3)
+
+    # Consolidate Nordic zones
+    for country, zone_codes in CONSOLIDATE.items():
+        zone_data = [gen['zones'].get(zc) for zc in zone_codes if zc in gen['zones']]
+        if not zone_data:
+            continue
+        merged_mix = {}
+        for z in zone_data:
+            for k, v in z.get('mix', {}).items():
+                merged_mix[k] = merged_mix.get(k, 0) + v
+        total = sum(merged_mix.values())
+        renewable = sum(merged_mix.get(rt, 0) for rt in RENEWABLE_TYPES)
+        gen['zones'][country] = {
+            'mix': merged_mix,
+            'total_mw': total,
+            'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
+        }
+        for zc in zone_codes:
+            gen['zones'].pop(zc, None)
+        print(f'  Consolidated generation {"+".join(zone_codes)} → {country}')
 
     return gen
 
@@ -389,6 +451,96 @@ def fetch_flows(base):
 
 # --- Main ---
 
+def fetch_omip():
+    """Fetch OMIP settlement prices by scraping omip.pt."""
+    print('Fetching OMIP forward curves...')
+    try:
+        html = http_get('https://www.omip.pt/en', timeout=30)
+        if not html:
+            print('  Could not reach omip.pt')
+            return None
+
+        contracts = []
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+        # Pattern 1: "€XX.XX · Eur/MWh · Settlement Price for [description] Contract"
+        import re
+        matches = re.findall(
+            r'€([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+            html, re.IGNORECASE
+        )
+
+        for price_str, desc in matches:
+            price = float(price_str.replace(',', '.'))
+            if price == 0:
+                continue
+
+            # Parse zone
+            zone = 'SPEL'
+            if re.search(r'Portugal|PTEL', desc, re.I): zone = 'PTEL'
+            elif re.search(r'Germany|DEEL', desc, re.I): zone = 'DEEL'
+            elif re.search(r'France|FREL', desc, re.I): zone = 'FREL'
+            elif re.search(r'Gas|PVB', desc, re.I): zone = 'PVB'
+
+            # Parse profile
+            profile = 'base'
+            if 'Peak' in desc: profile = 'peak'
+            elif 'Solar' in desc: profile = 'solar'
+
+            # Parse product type
+            product = 'unknown'
+            if re.search(r'PPA\s*10', desc): product = 'PPA10Y'
+            elif re.search(r'PPA\s*5', desc): product = 'PPA5Y'
+            elif re.search(r'PPA\s*3', desc): product = 'PPA3Y'
+            elif re.search(r'Year|YR-\d{2}', desc): product = 'year'
+            elif re.search(r'Quarter|Q\d-\d{2}', desc): product = 'quarter'
+            elif re.search(r'Month|M\s+\w+-\d{2}', desc): product = 'month'
+            elif re.search(r'(?<!Weekend\s)Week|Wk\d+', desc): product = 'week'
+            elif 'Weekend' in desc: product = 'weekend'
+            elif 'Day' in desc: product = 'day'
+
+            # Extract label
+            label = ''
+            lm = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2})', desc)
+            if lm: label = lm.group(1)
+            else:
+                lm = re.search(r'(Q[1-4]-\d{2})', desc)
+                if lm: label = lm.group(1)
+                else:
+                    lm = re.search(r'(YR-\d{2})', desc)
+                    if lm: label = lm.group(1)
+                    else:
+                        lm = re.search(r'(PPA\s*[\d/]+)', desc)
+                        if lm: label = lm.group(1)
+
+            contracts.append({
+                'zone': zone,
+                'profile': profile,
+                'product': product,
+                'label': label,
+                'price': round(price, 2),
+                'desc': desc.strip(),
+            })
+
+        if not contracts:
+            print('  No contracts parsed from OMIP HTML')
+            return None
+
+        print(f'  → {len(contracts)} contracts parsed')
+        return {
+            'updated': datetime.now(timezone.utc).isoformat(),
+            'source': 'OMIP',
+            'latest': {
+                'date': today,
+                'contracts': contracts,
+            },
+        }
+
+    except Exception as e:
+        print(f'  OMIP error: {e}')
+        return None
+
+
 def main():
     if not API_KEY:
         print('ERROR: ENTSOE_API_KEY not set')
@@ -437,6 +589,14 @@ def main():
         with open('data/cross-border-flows.json', 'w') as f:
             json.dump(flows, f, separators=(',', ':'))
         print(f'Saved cross-border-flows.json ({flow_count} corridors)')
+
+    # OMIP forward curves (independent of ENTSO-E)
+    omip = fetch_omip()
+    omip_count = len(omip['latest']['contracts']) if omip and omip.get('latest') else 0
+    if omip_count > 0:
+        with open('data/forward-curves.json', 'w') as f:
+            json.dump(omip, f, separators=(',', ':'))
+        print(f'Saved forward-curves.json ({omip_count} contracts)')
 
     # Status file
     with open('data/status.json', 'w') as f:
