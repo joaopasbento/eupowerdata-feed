@@ -1,0 +1,12 @@
+{"updated":"2026-04-06T12:00:00Z","source":"OMIP","latest":{"date":"2026-04-02","contracts":[
+{"zone":"SPEL","profile":"base","product":"PPA5Y","label":"PPA 27/31","price":54.42,"desc":"Spain Power Base Futures PPA5Y"},
+{"zone":"SPEL","profile":"base","product":"PPA10Y","label":"PPA 27/36","price":53.04,"desc":"Spain Power Base Futures PPA10Y"},
+{"zone":"SPEL","profile":"base","product":"day","label":"Fr03Apr-26","price":14.44,"desc":"Spain Power Base Futures Day"},
+{"zone":"SPEL","profile":"base","product":"weekend","label":"WE 04Apr-26","price":17.25,"desc":"Spain Power Base Futures Weekend"},
+{"zone":"SPEL","profile":"base","product":"week","label":"Wk15-26","price":18.00,"desc":"Spain Power Base Futures Week"},
+{"zone":"SPEL","profile":"base","product":"month","label":"May-26","price":25.35,"desc":"Spain Power Base Futures Month"},
+{"zone":"PTEL","profile":"base","product":"PPA5Y","label":"PPA 27/31","price":54.42,"desc":"Portugal Power Base Futures PPA5Y"},
+{"zone":"PTEL","profile":"base","product":"PPA10Y","label":"PPA 27/36","price":53.04,"desc":"Portugal Power Base Futures PPA10Y"},
+{"zone":"FREL","profile":"base","product":"day","label":"Fr03Apr-26","price":75.41,"desc":"France Power Base Futures Day"},
+{"zone":"DEEL","profile":"base","product":"day","label":"Fr03Apr-26","price":84.64,"desc":"Germany Power Base Futures Day"}
+]}}
