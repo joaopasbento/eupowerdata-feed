@@ -511,28 +511,41 @@ def fetch_omip():
 
     # Strip HTML tags but keep text content (OMIP uses Drupal with inline markup)
     clean = re.sub(r'<[^>]+>', ' ', html)
-    # Normalize whitespace
+    # Normalize whitespace and common separators
     clean = re.sub(r'\s+', ' ', clean)
+    # Normalize various bullet/middot characters to standard middot
+    clean = clean.replace('&middot;', '·').replace('&#183;', '·').replace('•', '·').replace('‧', '·')
 
-    # Pattern: "€XX.XX · Eur/MWh · Settlement Price for [desc] Contract"
+    # Pattern 1: "€XX.XX" + separator + "Eur/MWh" + separator + "Settlement Price for [desc] Contract"
+    SEP = r'[\s·\-–—|/,;]+'  # flexible separator
     matches = re.findall(
-        r'€\s*([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+        rf'€\s*([\d.,]+){SEP}Eur/MWh{SEP}Settlement\s+Price\s+for\s+(.*?)\s+Contract',
         clean, re.IGNORECASE
     )
 
-    # Also try: "FTB · Label · €Price · Eur/MWh · Settlement Price for [desc] Contract"
+    # Pattern 2: "Settlement Price for [desc] Contract" + separator + "€XX.XX"  (reversed order)
     if not matches:
-        matches = re.findall(
-            r'FTB\s*·\s*[\w\s/\-]+\s*·\s*€\s*([\d.,]+)\s*·?\s*Eur/MWh\s*·?\s*Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+        rev_matches = re.findall(
+            rf'Settlement\s+Price\s+for\s+(.*?)\s+Contract.*?€\s*([\d.,]+)',
             clean, re.IGNORECASE
         )
+        # Swap order: (desc, price) -> (price, desc)
+        matches = [(price, desc) for desc, price in rev_matches]
 
-    # Broadest: find any "€XX.XX" followed eventually by "Settlement Price for ... Contract"
+    # Pattern 3: "€XX.XX" near "Settlement Price for" within 200 chars
     if not matches:
-        matches = re.findall(
-            r'€\s*([\d.,]+).*?Settlement\s+Price\s+for\s+(.*?)\s+Contract',
-            clean, re.IGNORECASE
-        )
+        for m in re.finditer(r'€\s*([\d.,]+)', clean):
+            price_str = m.group(1)
+            context = clean[m.start():min(len(clean), m.start() + 300)]
+            sm = re.search(r'Settlement\s+Price\s+for\s+(.*?)\s+Contract', context, re.IGNORECASE)
+            if sm:
+                matches.append((price_str, sm.group(1)))
+
+    # Pattern 4: "FTB" blocks: "FTB · Label · €Price"
+    if not matches:
+        ftb_matches = re.findall(rf'FTB{SEP}([\w\s/\-]+?){SEP}€\s*([\d.,]+)', clean)
+        for label, price_str in ftb_matches:
+            matches.append((price_str, f'Spain Power Base Futures {label.strip()}'))
 
     print(f'  Found {len(matches)} raw matches')
 
@@ -602,13 +615,33 @@ def fetch_omip():
 
     if not contracts:
         print('  No contracts parsed from OMIP HTML')
-        # Save debug info
+        # Save extensive debug info
         with open('data/omip-debug.txt', 'w') as f:
             f.write(f'HTML length: {len(html)}\n')
-            f.write(f'Contains "Settlement": {"Settlement" in html}\n')
-            f.write(f'Contains "FTB": {"FTB" in html}\n')
-            f.write(f'Contains "€": {"€" in html}\n')
-            f.write(f'First 2000 chars:\n{html[:2000]}\n')
+            f.write(f'Clean length: {len(clean)}\n')
+            f.write(f'Contains "Settlement": {"Settlement" in clean}\n')
+            f.write(f'Contains "FTB": {"FTB" in clean}\n')
+            f.write(f'Contains "€": {"€" in clean}\n')
+            f.write(f'Contains "Eur/MWh": {"Eur/MWh" in clean}\n\n')
+            
+            # Find and save all text around € signs
+            import re as re2
+            euro_positions = [m.start() for m in re2.finditer('€', clean)]
+            f.write(f'Euro sign positions: {len(euro_positions)}\n\n')
+            for i, pos in enumerate(euro_positions[:15]):
+                start = max(0, pos - 20)
+                end = min(len(clean), pos + 200)
+                snippet = clean[start:end].replace('\n', ' ')
+                f.write(f'--- Euro #{i+1} at pos {pos} ---\n{snippet}\n\n')
+            
+            # Find all "Settlement Price" contexts
+            settle_positions = [m.start() for m in re2.finditer('Settlement Price', clean)]
+            f.write(f'\nSettlement Price positions: {len(settle_positions)}\n\n')
+            for i, pos in enumerate(settle_positions[:10]):
+                start = max(0, pos - 100)
+                end = min(len(clean), pos + 100)
+                snippet = clean[start:end].replace('\n', ' ')
+                f.write(f'--- Settlement #{i+1} at pos {pos} ---\n{snippet}\n\n')
         return None
 
     print(f'  → {len(contracts)} contracts parsed')
@@ -679,10 +712,38 @@ def main():
     # OMIP forward curves (independent of ENTSO-E)
     omip = fetch_omip()
     omip_count = len(omip['latest']['contracts']) if omip and omip.get('latest') else 0
+
+    # Load existing forward-curves.json to preserve history
+    existing_fc = {}
+    if os.path.exists('data/forward-curves.json'):
+        try:
+            with open('data/forward-curves.json') as f:
+                existing_fc = json.load(f)
+        except Exception:
+            pass
+
     if omip_count > 0:
+        # Preserve existing history
+        omip['history'] = existing_fc.get('history', [])
+
+        # Accumulate year-ahead prices for historical chart
+        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        if not any(h.get('date') == today_str for h in omip['history']):
+            year_prices = {}
+            for c in omip['latest']['contracts']:
+                if c.get('product') == 'year' and c.get('profile') == 'base':
+                    year_prices[c['zone']] = c['price']
+            if year_prices:
+                omip['history'].append({'date': today_str, **year_prices})
+                # Keep last 365 entries
+                omip['history'] = omip['history'][-365:]
+
         with open('data/forward-curves.json', 'w') as f:
             json.dump(omip, f, separators=(',', ':'))
-        print(f'Saved forward-curves.json ({omip_count} contracts)')
+        print(f'Saved forward-curves.json ({omip_count} contracts, {len(omip["history"])} history points)')
+    elif existing_fc:
+        # Scraper failed but existing data exists — keep it, don't overwrite
+        print(f'OMIP scraper returned no data, keeping existing forward-curves.json')
 
     # Status file
     with open('data/status.json', 'w') as f:
