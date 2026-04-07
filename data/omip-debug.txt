@@ -1,7 +1,7 @@
-=== OMIP Debug — 2026-04-07T12:10:49.151274+00:00 ===
+=== OMIP Debug — 2026-04-07T12:44:16.003126+00:00 ===
 
 Status: SUCCESS
-Contracts found: 36
+Contracts found: 40
 
 HTML length: 179864
 Clean length: 44437
@@ -95,7 +95,8 @@ ent Price for Spain Power Peak Futures Day Contract, for date 2026-04-02 FTK Wk1
   SPEL | base | PPA5Y | PPA5 | €54.42
   SPEL | base | PPA10Y | PPA10 | €53.04
   SPEL | base | day |  | €14.44
-  SPEL | base | week |  | €17.25
+  SPEL | base | weekend |  | €17.25
+  SPEL | base | week |  | €18.0
   SPEL | base | month |  | €25.35
   SPEL | base | quarter |  | €78.0
   SPEL | base | year |  | €56.7
@@ -108,23 +109,26 @@ ent Price for Spain Power Peak Futures Day Contract, for date 2026-04-02 FTK Wk1
   SPEL | solar | quarter |  | €41.35
   SPEL | solar | year |  | €32.43
   PTEL | base | day |  | €14.44
-  PTEL | base | week |  | €17.56
+  PTEL | base | weekend |  | €17.56
+  PTEL | base | week |  | €18.75
   PTEL | base | month |  | €26.1
   PTEL | base | quarter |  | €78.28
   PTEL | base | year |  | €56.8
   DEEL | base | day |  | €84.64
-  DEEL | base | week |  | €29.07
+  DEEL | base | weekend |  | €29.07
+  DEEL | base | week |  | €76.62
   DEEL | base | month |  | €83.29
   DEEL | base | quarter |  | €97.38
   DEEL | base | year |  | €92.72
   FREL | base | day |  | €75.41
-  FREL | base | week |  | €17.5
+  FREL | base | weekend |  | €17.5
+  FREL | base | week |  | €33.45
   FREL | base | month |  | €20.87
   FREL | base | quarter |  | €40.75
   FREL | base | year |  | €56.57
   PVB | base | day |  | €47.63
-  PVB | base | week |  | €48.22
-  PVB | base | unknown |  | €47.86
+  PVB | base | weekend |  | €48.22
+  PVB | base | unknown |  | €47.87
   PVB | base | month |  | €48.75
   PVB | base | quarter |  | €50.85
   PVB | base | year |  | €40.45
