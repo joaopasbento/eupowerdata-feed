@@ -1,7 +1,7 @@
-=== OMIP Debug — 2026-04-07T13:07:46.574470+00:00 ===
+=== OMIP Debug — 2026-04-07T13:19:41.487780+00:00 ===
 
 Status: SUCCESS
-Contracts found: 46
+Contracts found: 47
 
 HTML length: 237992
 Clean length: 55738
@@ -133,8 +133,9 @@ ent Price for Spain Power Peak Futures Day Contract, for date 2026-04-02 FTK Wk1
   FREL | base | year | YR-27 | €56.57 | desc=France Power Base Futures Year
   PVB | base | day | Apr-26 | €47.63 | desc=Spain Natural Gas Futures Day
   PVB | base | weekend | Apr-26 | €48.22 | desc=Spain Natural Gas Futures Weekend
-  PVB | base | unknown |  | €47.87 | desc=Spain Natural Gas Futures Weekday
-  PVB | base | unknown | Apr-26 | €47.86 | desc=Spain Natural Gas Futures BOM
+  PVB | base | weekday |  | €47.87 | desc=Spain Natural Gas Futures Weekday
+  PVB | base | bom | Apr-26 | €47.86 | desc=Spain Natural Gas Futures BOM
   PVB | base | month | May-26 | €48.75 | desc=Spain Natural Gas Futures Month
   PVB | base | quarter | Q3-26 | €50.85 | desc=Spain Natural Gas Futures Quarter
+  PVB | base | unknown |  | €49.59 | desc=Spain Natural Gas Futures Semester
   PVB | base | year | YR-27 | €40.45 | desc=Spain Natural Gas Futures Year
