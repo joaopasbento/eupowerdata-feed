@@ -530,7 +530,7 @@ def fetch_omip():
         if 'Peak' in desc: profile = 'peak'
         elif 'Solar' in desc: profile = 'solar'
 
-        # Parse product type
+        # Parse product type — ordem importa: mais específico primeiro
         product = 'unknown'
         if re.search(r'PPA\s*10', desc): product = 'PPA10Y'
         elif re.search(r'PPA\s*5', desc): product = 'PPA5Y'
@@ -538,7 +538,9 @@ def fetch_omip():
         elif re.search(r'Year|YR-\d{2}', desc): product = 'year'
         elif re.search(r'Quarter|Q\d-\d{2}', desc): product = 'quarter'
         elif re.search(r'Month|M\s+\w+-\d{2}', desc): product = 'month'
+        elif re.search(r'\bBOM\b|\bBoM\b|Balance.of.Month', desc): product = 'bom'
         elif 'Weekend' in desc: product = 'weekend'
+        elif 'Weekday' in desc: product = 'weekday'
         elif re.search(r'\bWeek\b|Wk\d+', desc): product = 'week'
         elif 'Day' in desc: product = 'day'
 
