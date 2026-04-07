@@ -49,14 +49,12 @@ ZONES = {
 
 TIER1 = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE']
 
-# Zones to consolidate: bidding zones → country average
 CONSOLIDATE = {
     'NO': ['NO1', 'NO2'],
     'SE': ['SE1', 'SE3'],
     'DK': ['DK1', 'DK2'],
 }
 
-# All countries that should have generation data
 GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'GB']
 
 CORRIDORS = [
@@ -91,7 +89,6 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 def http_get(url, timeout=45):
-    """Fetch URL with SSL fallback."""
     headers = {
         'Accept': 'application/xml',
         'User-Agent': 'EUPowerData-GitHubAction/1.0',
@@ -111,7 +108,6 @@ def http_get(url, timeout=45):
 
 
 def find_working_endpoint():
-    """Test endpoints and return the first one that works."""
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -416,8 +412,6 @@ def fetch_flows(base):
     return flows
 
 
-# --- Main ---
-
 def fetch_omip():
     """Fetch OMIP settlement prices by scraping omip.pt."""
     print('Fetching OMIP forward curves...')
@@ -477,15 +471,15 @@ def fetch_omip():
     clean = re.sub(r'\s+', ' ', clean)
     clean = clean.replace('&middot;', '·').replace('&#183;', '·').replace('•', '·').replace('‧', '·')
 
-    # Pattern 1: captura label_hint (tokens antes de €), preço e desc
-    # Suporta preços negativos: €-1.46 (contratos FTK Peak)
     SEP = r'[\s·\-–—|/,;]+'
+
+    # Pattern 1: label_hint € price Eur/MWh Settlement Price for <desc> Contract
     matches = re.findall(
         rf'([\w/\.\-]+(?:\s+[\w/\.\-]+){{0,2}})\s+€\s*(-?[\d.,]+){SEP}Eur/MWh{SEP}Settlement\s+Price\s+for\s+(.*?)\s+Contract',
         clean, re.IGNORECASE
     )
 
-    # Pattern 2: ordem invertida — sem label_hint
+    # Pattern 2: ordem invertida
     if not matches:
         rev_matches = re.findall(
             rf'Settlement\s+Price\s+for\s+(.*?)\s+Contract.*?€\s*(-?[\d.,]+)',
@@ -493,7 +487,7 @@ def fetch_omip():
         )
         matches = [('', price, desc) for desc, price in rev_matches]
 
-    # Pattern 3: €XX.XX perto de "Settlement Price for" dentro de 300 chars
+    # Pattern 3: € perto de Settlement Price within 300 chars
     if not matches:
         for m in re.finditer(r'€\s*(-?[\d.,]+)', clean):
             price_str = m.group(1)
@@ -502,7 +496,7 @@ def fetch_omip():
             if sm:
                 matches.append(('', price_str, sm.group(1)))
 
-    # Pattern 4: blocos FTB (fallback)
+    # Pattern 4: FTB blocks fallback
     if not matches:
         ftb_matches = re.findall(rf'FTB{SEP}([\w\s/\-]+?){SEP}€\s*(-?[\d.,]+)', clean)
         for label, price_str in ftb_matches:
@@ -530,7 +524,7 @@ def fetch_omip():
         if 'Peak' in desc: profile = 'peak'
         elif 'Solar' in desc: profile = 'solar'
 
-        # Parse product type — ordem importa: mais específico primeiro
+        # Parse product type — mais específico primeiro
         product = 'unknown'
         if re.search(r'PPA\s*10', desc): product = 'PPA10Y'
         elif re.search(r'PPA\s*5', desc): product = 'PPA5Y'
@@ -545,7 +539,7 @@ def fetch_omip():
         elif re.search(r'\bWeek\b|Wk\d+', desc): product = 'week'
         elif 'Day' in desc: product = 'day'
 
-        # Extract label — procura em label_hint primeiro (tem o período real), depois em desc
+        # Extract label — label_hint primeiro (tem período real), depois desc
         label = ''
         for _src in [label_hint, desc]:
             lm = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2})', _src, re.I)
@@ -554,12 +548,16 @@ def fetch_omip():
             if lm: label = lm.group(1); break
             lm = re.search(r'(YR-\d{2})', _src, re.I)
             if lm: label = lm.group(1); break
+            lm = re.search(r'((?:Win|Sum|Spr|Aut)-\d{2})', _src, re.I)
+            if lm: label = lm.group(1); break
+            lm = re.search(r'(WkDs\d+-\d{2})', _src, re.I)
+            if lm: label = lm.group(1); break
             lm = re.search(r'(Wk\d+-\d{2})', _src, re.I)
             if lm: label = lm.group(1); break
             lm = re.search(r'(PPA\s*[\d/]+)', _src)
             if lm: label = lm.group(1); break
 
-        # Avoid duplicates
+        # Deduplicate
         dup = False
         for c in contracts:
             if c['zone'] == zone and c['product'] == product and c['label'] == label and c['profile'] == profile:
@@ -577,7 +575,7 @@ def fetch_omip():
             'desc': desc.strip(),
         })
 
-    # --- Always write omip-debug.txt (success or failure) ---
+    # Always write debug file
     import re as re2
     euro_positions = [m.start() for m in re2.finditer('€', clean)]
     settle_positions = [m.start() for m in re2.finditer('Settlement Price', clean)]
