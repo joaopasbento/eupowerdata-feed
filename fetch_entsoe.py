@@ -65,6 +65,28 @@ CORRIDORS = [
     ('DE', 'PL'), ('PL', 'DE'), ('DE', 'DK1'), ('DK1', 'DE'),
 ]
 
+# Simplified zone codes for cross-border flow fetching
+# Maps aggregated codes to representative EIC zone
+FLOW_ZONES = {
+    **ZONES,
+    'NO': ZONES['NO2'],   # Southern Norway (main exchange zone)
+    'SE': ZONES['SE3'],   # Southern Sweden (most liquid)
+    'DK': ZONES['DK1'],   # Western Denmark (mainland)
+}
+
+# Flow corridors use simplified codes (DK not DK1, NO/SE/FI included)
+# These must match the pair keys expected by eew-grid.js
+FLOW_CORRIDORS = [
+    ('PT', 'ES'), ('ES', 'PT'), ('ES', 'FR'), ('FR', 'ES'),
+    ('FR', 'DE'), ('DE', 'FR'), ('FR', 'GB'), ('GB', 'FR'),
+    ('DE', 'NL'), ('NL', 'DE'), ('DE', 'AT'), ('AT', 'DE'),
+    ('FR', 'IT'), ('IT', 'FR'), ('NL', 'BE'), ('BE', 'NL'),
+    ('DE', 'PL'), ('PL', 'DE'), ('DE', 'DK'), ('DK', 'DE'),
+    ('NO', 'SE'), ('SE', 'NO'), ('NO', 'DK'), ('DK', 'NO'),
+    ('SE', 'FI'), ('FI', 'SE'), ('SE', 'DK'), ('DK', 'SE'),
+    ('NO', 'GB'), ('GB', 'NO'),
+]
+
 PSR_MAP = {
     'B01': 'Biomass', 'B02': 'Fossil Brown coal/Lignite',
     'B03': 'Fossil Coal-derived gas', 'B04': 'Fossil Gas',
@@ -362,9 +384,9 @@ def fetch_flows(base):
         'net': {},
     }
 
-    for frm, to in CORRIDORS:
-        from_eic = ZONES.get(frm, '')
-        to_eic = ZONES.get(to, '')
+    for frm, to in FLOW_CORRIDORS:
+        from_eic = FLOW_ZONES.get(frm, '')
+        to_eic = FLOW_ZONES.get(to, '')
         if not from_eic or not to_eic:
             continue
         params = urllib.parse.urlencode({
@@ -395,7 +417,7 @@ def fetch_flows(base):
         import time; time.sleep(0.2)
 
     processed = set()
-    for frm, to in CORRIDORS:
+    for frm, to in FLOW_CORRIDORS:
         pair = '-'.join(sorted([frm, to]))
         if pair in processed:
             continue
