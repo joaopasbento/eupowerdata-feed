@@ -102,7 +102,6 @@ def http_get(url, timeout=45):
             return r.read().decode('utf-8')
     except Exception:
         pass
-    # Retry without SSL verification
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
             return r.read().decode('utf-8')
@@ -137,27 +136,23 @@ def find_working_endpoint():
 # --- Parsers ---
 
 def get_ns(root):
-    """Extract namespace from root element."""
     tag = root.tag
     if '{' in tag:
         return tag[1:tag.index('}')]
     return ''
 
 def parse_prices_xml(xml_str):
-    """Parse ENTSO-E A44 price XML into list of {time, hour, price}."""
     prices = []
     try:
         root = ET.fromstring(xml_str)
         ns = get_ns(root)
         prefix = f'{{{ns}}}' if ns else ''
-
         for ts in root.iter(f'{prefix}TimeSeries'):
             for period in ts.iter(f'{prefix}Period'):
                 start_el = period.find(f'{prefix}timeInterval/{prefix}start')
                 if start_el is None:
                     continue
                 start_dt = datetime.fromisoformat(start_el.text.replace('Z', '+00:00'))
-
                 for pt in period.iter(f'{prefix}Point'):
                     pos = int(pt.find(f'{prefix}position').text)
                     price = float(pt.find(f'{prefix}price.amount').text)
@@ -173,28 +168,23 @@ def parse_prices_xml(xml_str):
 
 
 def parse_generation_xml(xml_str):
-    """Parse ENTSO-E A75 generation XML into {type: mw} dict."""
     mix = {}
     try:
         root = ET.fromstring(xml_str)
         ns = get_ns(root)
         prefix = f'{{{ns}}}' if ns else ''
-
         for ts in root.iter(f'{prefix}TimeSeries'):
             psr_el = ts.find(f'{prefix}MktPSRType/{prefix}psrType')
             if psr_el is None:
                 continue
             psr_code = psr_el.text
             gen_type = PSR_MAP.get(psr_code, 'Other')
-
-            # Get the latest point value
             last_val = 0
             for period in ts.iter(f'{prefix}Period'):
                 for pt in period.iter(f'{prefix}Point'):
                     qty_el = pt.find(f'{prefix}quantity')
                     if qty_el is not None:
                         last_val = float(qty_el.text)
-
             mix[gen_type] = mix.get(gen_type, 0) + last_val
     except Exception as e:
         print(f'  XML parse error: {e}')
@@ -202,20 +192,17 @@ def parse_generation_xml(xml_str):
 
 
 def parse_flow_xml(xml_str):
-    """Parse ENTSO-E A11 flow XML into list of {time, mw}."""
     values = []
     try:
         root = ET.fromstring(xml_str)
         ns = get_ns(root)
         prefix = f'{{{ns}}}' if ns else ''
-
         for ts in root.iter(f'{prefix}TimeSeries'):
             for period in ts.iter(f'{prefix}Period'):
                 start_el = period.find(f'{prefix}timeInterval/{prefix}start')
                 if start_el is None:
                     continue
                 start_dt = datetime.fromisoformat(start_el.text.replace('Z', '+00:00'))
-
                 for pt in period.iter(f'{prefix}Point'):
                     pos = int(pt.find(f'{prefix}position').text)
                     qty = float(pt.find(f'{prefix}quantity').text)
@@ -232,7 +219,6 @@ def parse_flow_xml(xml_str):
 # --- Fetchers ---
 
 def fetch_prices(base):
-    """Fetch day-ahead prices for all zones."""
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -258,7 +244,6 @@ def fetch_prices(base):
         if not xml:
             print('FAIL')
             continue
-
         parsed = parse_prices_xml(xml)
         if parsed:
             price_vals = [p['price'] for p in parsed]
@@ -273,19 +258,15 @@ def fetch_prices(base):
             print(f'OK ({len(parsed)} hours)')
         else:
             print('no data')
-
         import time; time.sleep(0.2)
 
-    # Consolidate multi-zone countries (NO1+NO2→NO, SE1+SE3→SE, DK1+DK2→DK)
     for country, zone_codes in CONSOLIDATE.items():
         zone_data = [prices['zones'].get(zc) for zc in zone_codes if zc in prices['zones']]
         if not zone_data:
             continue
-        # Average the prices across zones
         all_avgs = [z['avg'] for z in zone_data if z.get('avg') is not None]
         all_mins = [z['min'] for z in zone_data if z.get('min') is not None]
         all_maxs = [z['max'] for z in zone_data if z.get('max') is not None]
-        # Merge hourly prices (average across zones per hour)
         merged_prices = []
         max_hours = max(len(z.get('prices', [])) for z in zone_data)
         for h in range(max_hours):
@@ -294,7 +275,6 @@ def fetch_prices(base):
                 avg_p = round(sum(hour_prices) / len(hour_prices), 2)
                 ref = zone_data[0]['prices'][h] if h < len(zone_data[0].get('prices', [])) else {'time': f'{h:02d}:00', 'hour': h}
                 merged_prices.append({'time': ref['time'], 'hour': ref['hour'], 'price': avg_p})
-
         prices['zones'][country] = {
             'eic': ', '.join(z.get('eic', '') for z in zone_data),
             'prices': merged_prices,
@@ -303,7 +283,6 @@ def fetch_prices(base):
             'min': round(min(all_mins), 2) if all_mins else 0,
             'max': round(max(all_maxs), 2) if all_maxs else 0,
         }
-        # Remove individual zones
         for zc in zone_codes:
             prices['zones'].pop(zc, None)
         print(f'  Consolidated {"+".join(zone_codes)} → {country}')
@@ -312,7 +291,6 @@ def fetch_prices(base):
 
 
 def fetch_generation(base):
-    """Fetch generation mix for Tier 1 countries."""
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -327,7 +305,6 @@ def fetch_generation(base):
         eic = ZONES.get(code, '')
         if not eic:
             continue
-
         params = urllib.parse.urlencode({
             'securityToken': API_KEY,
             'documentType': 'A75',
@@ -341,7 +318,6 @@ def fetch_generation(base):
         if not xml:
             print('FAIL')
             continue
-
         mix = parse_generation_xml(xml)
         if mix:
             total = sum(mix.values())
@@ -354,10 +330,8 @@ def fetch_generation(base):
             print(f'OK ({len(mix)} types, {total:.0f} MW)')
         else:
             print('no data')
-
         import time; time.sleep(0.3)
 
-    # Consolidate Nordic zones
     for country, zone_codes in CONSOLIDATE.items():
         zone_data = [gen['zones'].get(zc) for zc in zone_codes if zc in gen['zones']]
         if not zone_data:
@@ -381,7 +355,6 @@ def fetch_generation(base):
 
 
 def fetch_flows(base):
-    """Fetch cross-border flows for key corridors."""
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -398,7 +371,6 @@ def fetch_flows(base):
         to_eic = ZONES.get(to, '')
         if not from_eic or not to_eic:
             continue
-
         params = urllib.parse.urlencode({
             'securityToken': API_KEY,
             'documentType': 'A11',
@@ -412,7 +384,6 @@ def fetch_flows(base):
         if not xml:
             print('FAIL')
             continue
-
         values = parse_flow_xml(xml)
         if values:
             key = f'{frm}→{to}'
@@ -425,21 +396,17 @@ def fetch_flows(base):
             print(f'OK ({len(values)} points)')
         else:
             print('no data')
-
         import time; time.sleep(0.2)
 
-    # Calculate net flows
     processed = set()
     for frm, to in CORRIDORS:
         pair = '-'.join(sorted([frm, to]))
         if pair in processed:
             continue
         processed.add(pair)
-
         fwd = flows['corridors'].get(f'{frm}→{to}', {}).get('latest', {}).get('mw', 0)
         rev = flows['corridors'].get(f'{to}→{frm}', {}).get('latest', {}).get('mw', 0)
         net = fwd - rev
-
         flows['net'][pair] = {
             'from': frm if net >= 0 else to,
             'to': to if net >= 0 else frm,
@@ -455,7 +422,6 @@ def fetch_omip():
     """Fetch OMIP settlement prices by scraping omip.pt."""
     print('Fetching OMIP forward curves...')
 
-    # OMIP does SSR but may filter non-browser User-Agents
     headers = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -463,7 +429,6 @@ def fetch_omip():
         'Cache-Control': 'no-cache',
     }
 
-    # Try multiple pages
     urls = [
         'https://www.omip.pt/en',
         'https://www.omip.pt/en/plazo-hoy',
@@ -486,7 +451,6 @@ def fetch_omip():
         except Exception as e:
             print(f'  Failed: {e}')
 
-    # Also try without SSL verification
     if not html:
         for url in urls[:1]:
             print(f'  Retry without SSL: {url}')
@@ -509,16 +473,13 @@ def fetch_omip():
 
     import re
 
-    # Strip HTML tags but keep text content (OMIP uses Drupal with inline markup)
     clean = re.sub(r'<[^>]+>', ' ', html)
-    # Normalize whitespace and common separators
     clean = re.sub(r'\s+', ' ', clean)
-    # Normalize various bullet/middot characters to standard middot
     clean = clean.replace('&middot;', '·').replace('&#183;', '·').replace('•', '·').replace('‧', '·')
 
     # Pattern 1: captura label_hint (tokens antes de €), preço e desc
     # Suporta preços negativos: €-1.46 (contratos FTK Peak)
-    SEP = r'[\s·\-–—|/,;]+'  # flexible separator
+    SEP = r'[\s·\-–—|/,;]+'
     matches = re.findall(
         rf'([\w/\.\-]+(?:\s+[\w/\.\-]+){{0,2}})\s+€\s*(-?[\d.,]+){SEP}Eur/MWh{SEP}Settlement\s+Price\s+for\s+(.*?)\s+Contract',
         clean, re.IGNORECASE
@@ -643,7 +604,7 @@ def fetch_omip():
         if contracts:
             dbg.write('\n=== Contracts Parsed ===\n')
             for c in contracts:
-                dbg.write(f'  {c["zone"]} | {c["profile"]} | {c["product"]} | {c["label"]} | €{c["price"]}\n')
+                dbg.write(f'  {c["zone"]} | {c["profile"]} | {c["product"]} | {c["label"]} | €{c["price"]} | desc={c["desc"]}\n')
 
     if not contracts:
         print('  No contracts parsed — debug saved to data/omip-debug.txt')
@@ -651,7 +612,6 @@ def fetch_omip():
 
     print(f'  → {len(contracts)} contracts parsed — debug saved to data/omip-debug.txt')
 
-    # Extract date from page if available
     date_match = re.search(r'for date (\d{4}-\d{2}-\d{2})', html)
     data_date = date_match.group(1) if date_match else today
 
@@ -676,7 +636,6 @@ def main():
     base = find_working_endpoint()
     if not base:
         print('ERROR: All ENTSO-E endpoints unreachable')
-        # Write error status
         with open('data/status.json', 'w') as f:
             json.dump({'status': 'error', 'time': datetime.now(timezone.utc).isoformat()}, f)
         return
@@ -698,7 +657,6 @@ def main():
     flow_count = len(flows['corridors'])
     print(f'  → {flow_count} corridors\n')
 
-    # Only save if we got data
     if zone_count > 0:
         with open('data/spot-prices.json', 'w') as f:
             json.dump(prices, f, separators=(',', ':'))
@@ -714,11 +672,9 @@ def main():
             json.dump(flows, f, separators=(',', ':'))
         print(f'Saved cross-border-flows.json ({flow_count} corridors)')
 
-    # OMIP forward curves (independent of ENTSO-E)
     omip = fetch_omip()
     omip_count = len(omip['latest']['contracts']) if omip and omip.get('latest') else 0
 
-    # Load existing forward-curves.json to preserve history
     existing_fc = {}
     if os.path.exists('data/forward-curves.json'):
         try:
@@ -728,10 +684,7 @@ def main():
             pass
 
     if omip_count > 0:
-        # Preserve existing history
         omip['history'] = existing_fc.get('history', [])
-
-        # Accumulate year-ahead prices for historical chart
         today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         if not any(h.get('date') == today_str for h in omip['history']):
             year_prices = {}
@@ -740,17 +693,14 @@ def main():
                     year_prices[c['zone']] = c['price']
             if year_prices:
                 omip['history'].append({'date': today_str, **year_prices})
-                # Keep last 365 entries
                 omip['history'] = omip['history'][-365:]
 
         with open('data/forward-curves.json', 'w') as f:
             json.dump(omip, f, separators=(',', ':'))
         print(f'Saved forward-curves.json ({omip_count} contracts, {len(omip["history"])} history points)')
     elif existing_fc:
-        # Scraper failed but existing data exists — keep it, don't overwrite
         print(f'OMIP scraper returned no data, keeping existing forward-curves.json')
 
-    # Status file
     with open('data/status.json', 'w') as f:
         json.dump({
             'status': 'ok',
