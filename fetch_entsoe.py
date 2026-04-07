@@ -516,41 +516,44 @@ def fetch_omip():
     # Normalize various bullet/middot characters to standard middot
     clean = clean.replace('&middot;', '·').replace('&#183;', '·').replace('•', '·').replace('‧', '·')
 
-    # Pattern 1: "€XX.XX" + separator + "Eur/MWh" + separator + "Settlement Price for [desc] Contract"
+    # Pattern 1: captura label_hint (tokens antes de €), preço e desc
+    # Suporta preços negativos: €-1.46 (contratos FTK Peak)
     SEP = r'[\s·\-–—|/,;]+'  # flexible separator
     matches = re.findall(
-        rf'€\s*([\d.,]+){SEP}Eur/MWh{SEP}Settlement\s+Price\s+for\s+(.*?)\s+Contract',
+        rf'([\w/\.\-]+(?:\s+[\w/\.\-]+){{0,2}})\s+€\s*(-?[\d.,]+){SEP}Eur/MWh{SEP}Settlement\s+Price\s+for\s+(.*?)\s+Contract',
         clean, re.IGNORECASE
     )
 
-    # Pattern 2: "Settlement Price for [desc] Contract" + separator + "€XX.XX"  (reversed order)
+    # Pattern 2: ordem invertida — sem label_hint
     if not matches:
         rev_matches = re.findall(
-            rf'Settlement\s+Price\s+for\s+(.*?)\s+Contract.*?€\s*([\d.,]+)',
+            rf'Settlement\s+Price\s+for\s+(.*?)\s+Contract.*?€\s*(-?[\d.,]+)',
             clean, re.IGNORECASE
         )
-        # Swap order: (desc, price) -> (price, desc)
-        matches = [(price, desc) for desc, price in rev_matches]
+        matches = [('', price, desc) for desc, price in rev_matches]
 
-    # Pattern 3: "€XX.XX" near "Settlement Price for" within 200 chars
+    # Pattern 3: €XX.XX perto de "Settlement Price for" dentro de 300 chars
     if not matches:
-        for m in re.finditer(r'€\s*([\d.,]+)', clean):
+        for m in re.finditer(r'€\s*(-?[\d.,]+)', clean):
             price_str = m.group(1)
             context = clean[m.start():min(len(clean), m.start() + 300)]
             sm = re.search(r'Settlement\s+Price\s+for\s+(.*?)\s+Contract', context, re.IGNORECASE)
             if sm:
-                matches.append((price_str, sm.group(1)))
+                matches.append(('', price_str, sm.group(1)))
 
-    # Pattern 4: "FTB" blocks: "FTB · Label · €Price"
+    # Pattern 4: blocos FTB (fallback)
     if not matches:
-        ftb_matches = re.findall(rf'FTB{SEP}([\w\s/\-]+?){SEP}€\s*([\d.,]+)', clean)
+        ftb_matches = re.findall(rf'FTB{SEP}([\w\s/\-]+?){SEP}€\s*(-?[\d.,]+)', clean)
         for label, price_str in ftb_matches:
-            matches.append((price_str, f'Spain Power Base Futures {label.strip()}'))
+            matches.append((label.strip(), price_str, f'Spain Power Base Futures {label.strip()}'))
 
     print(f'  Found {len(matches)} raw matches')
 
-    for price_str, desc in matches:
-        price = float(price_str.replace(',', '.'))
+    for label_hint, price_str, desc in matches:
+        try:
+            price = float(price_str.replace(',', '.'))
+        except ValueError:
+            continue
         if price == 0:
             continue
 
@@ -578,22 +581,19 @@ def fetch_omip():
         elif re.search(r'\bWeek\b|Wk\d+', desc): product = 'week'
         elif 'Day' in desc: product = 'day'
 
-        # Extract label
+        # Extract label — procura em label_hint primeiro (tem o período real), depois em desc
         label = ''
-        lm = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2})', desc)
-        if lm: label = lm.group(1)
-        else:
-            lm = re.search(r'(Q[1-4]-\d{2})', desc)
-            if lm: label = lm.group(1)
-            else:
-                lm = re.search(r'(YR-\d{2})', desc)
-                if lm: label = lm.group(1)
-                else:
-                    lm = re.search(r'(PPA\s*[\d/]+)', desc)
-                    if lm: label = lm.group(1)
-                    else:
-                        lm = re.search(r'(Wk\d+-\d{2})', desc)
-                        if lm: label = lm.group(1)
+        for _src in [label_hint, desc]:
+            lm = re.search(r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2})', _src, re.I)
+            if lm: label = lm.group(1); break
+            lm = re.search(r'(Q[1-4]-\d{2})', _src)
+            if lm: label = lm.group(1); break
+            lm = re.search(r'(YR-\d{2})', _src, re.I)
+            if lm: label = lm.group(1); break
+            lm = re.search(r'(Wk\d+-\d{2})', _src, re.I)
+            if lm: label = lm.group(1); break
+            lm = re.search(r'(PPA\s*[\d/]+)', _src)
+            if lm: label = lm.group(1); break
 
         # Avoid duplicates
         dup = False
