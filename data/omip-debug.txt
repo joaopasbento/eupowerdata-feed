@@ -1,7 +1,7 @@
-=== OMIP Debug — 2026-04-07T12:44:16.003126+00:00 ===
+=== OMIP Debug — 2026-04-07T12:56:08.572430+00:00 ===
 
 Status: SUCCESS
-Contracts found: 40
+Contracts found: 46
 
 HTML length: 179864
 Clean length: 44437
@@ -92,43 +92,49 @@ ent Price for Spain Power Peak Futures Day Contract, for date 2026-04-02 FTK Wk1
 
 
 === Contracts Parsed ===
-  SPEL | base | PPA5Y | PPA5 | €54.42
-  SPEL | base | PPA10Y | PPA10 | €53.04
-  SPEL | base | day |  | €14.44
-  SPEL | base | weekend |  | €17.25
-  SPEL | base | week |  | €18.0
-  SPEL | base | month |  | €25.35
-  SPEL | base | quarter |  | €78.0
-  SPEL | base | year |  | €56.7
-  SPEL | peak | month |  | €15.07
-  SPEL | peak | quarter |  | €76.08
-  SPEL | peak | year |  | €59.67
-  SPEL | solar | PPA5Y | PPA5 | €30.15
-  SPEL | solar | PPA10Y | PPA10 | €28.78
-  SPEL | solar | month |  | €8.19
-  SPEL | solar | quarter |  | €41.35
-  SPEL | solar | year |  | €32.43
-  PTEL | base | day |  | €14.44
-  PTEL | base | weekend |  | €17.56
-  PTEL | base | week |  | €18.75
-  PTEL | base | month |  | €26.1
-  PTEL | base | quarter |  | €78.28
-  PTEL | base | year |  | €56.8
-  DEEL | base | day |  | €84.64
-  DEEL | base | weekend |  | €29.07
-  DEEL | base | week |  | €76.62
-  DEEL | base | month |  | €83.29
-  DEEL | base | quarter |  | €97.38
-  DEEL | base | year |  | €92.72
-  FREL | base | day |  | €75.41
-  FREL | base | weekend |  | €17.5
-  FREL | base | week |  | €33.45
-  FREL | base | month |  | €20.87
-  FREL | base | quarter |  | €40.75
-  FREL | base | year |  | €56.57
-  PVB | base | day |  | €47.63
-  PVB | base | weekend |  | €48.22
+  SPEL | base | PPA5Y | PPA 27/31 | €54.42
+  SPEL | base | PPA10Y | PPA 27/36 | €53.04
+  SPEL | base | day | Apr-26 | €14.44
+  SPEL | base | weekend | Apr-26 | €17.25
+  SPEL | base | week | Wk15-26 | €18.0
+  SPEL | base | month | May-26 | €25.35
+  SPEL | base | quarter | Q3-26 | €78.0
+  SPEL | base | year | YR-27 | €56.7
+  SPEL | peak | day | Apr-26 | €-1.46
+  SPEL | peak | week | Wk15-26 | €-1.33
+  SPEL | peak | month | May-26 | €15.07
+  SPEL | peak | quarter | Q3-26 | €76.08
+  SPEL | peak | year | YR-27 | €59.67
+  SPEL | solar | PPA5Y | PPA 27/31 | €30.15
+  SPEL | solar | PPA10Y | PPA 27/36 | €28.78
+  SPEL | solar | day | Apr-26 | €-2.77
+  SPEL | solar | weekend | Apr-26 | €-2.42
+  SPEL | solar | week | Wk15-26 | €-3.41
+  SPEL | solar | month | May-26 | €8.19
+  SPEL | solar | quarter | Q3-26 | €41.35
+  SPEL | solar | year | YR-27 | €32.43
+  PTEL | base | day | Apr-26 | €14.44
+  PTEL | base | weekend | Apr-26 | €17.56
+  PTEL | base | week | Wk15-26 | €18.75
+  PTEL | base | month | May-26 | €26.1
+  PTEL | base | quarter | Q3-26 | €78.28
+  PTEL | base | year | YR-27 | €56.8
+  DEEL | base | day | Apr-26 | €84.64
+  DEEL | base | weekend | Apr-26 | €29.07
+  DEEL | base | week | Wk15-26 | €76.62
+  DEEL | base | month | May-26 | €83.29
+  DEEL | base | quarter | Q3-26 | €97.38
+  DEEL | base | year | YR-27 | €92.72
+  FREL | base | day | Apr-26 | €75.41
+  FREL | base | weekend | Apr-26 | €17.5
+  FREL | base | week | Wk15-26 | €33.45
+  FREL | base | month | May-26 | €20.87
+  FREL | base | quarter | Q3-26 | €40.75
+  FREL | base | year | YR-27 | €56.57
+  PVB | base | day | Apr-26 | €47.63
+  PVB | base | weekend | Apr-26 | €48.22
   PVB | base | unknown |  | €47.87
-  PVB | base | month |  | €48.75
-  PVB | base | quarter |  | €50.85
-  PVB | base | year |  | €40.45
+  PVB | base | unknown | Apr-26 | €47.86
+  PVB | base | month | May-26 | €48.75
+  PVB | base | quarter | Q3-26 | €50.85
+  PVB | base | year | YR-27 | €40.45
