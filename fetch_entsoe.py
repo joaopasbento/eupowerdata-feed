@@ -574,8 +574,8 @@ def fetch_omip():
         elif re.search(r'Year|YR-\d{2}', desc): product = 'year'
         elif re.search(r'Quarter|Q\d-\d{2}', desc): product = 'quarter'
         elif re.search(r'Month|M\s+\w+-\d{2}', desc): product = 'month'
-        elif re.search(r'(?<!Weekend\s)Week|Wk\d+', desc): product = 'week'
         elif 'Weekend' in desc: product = 'weekend'
+        elif re.search(r'\bWeek\b|Wk\d+', desc): product = 'week'
         elif 'Day' in desc: product = 'day'
 
         # Extract label
