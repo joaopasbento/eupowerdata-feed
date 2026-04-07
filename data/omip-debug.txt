@@ -1,9 +1,9 @@
-=== OMIP Debug — 2026-04-07T13:19:41.487780+00:00 ===
+=== OMIP Debug — 2026-04-07T13:25:30.761368+00:00 ===
 
 Status: SUCCESS
 Contracts found: 47
 
-HTML length: 237992
+HTML length: 237996
 Clean length: 55738
 Contains "Settlement": True
 Contains "FTB": True
@@ -13,10 +13,10 @@ Contains "Eur/MWh": True
 Euro sign positions: 556
 
 --- Euro #1 at pos 1929 ---
-Contracts SPEL BASE €33.47 Wk16-26 €31.00 May-26 €25.35 Q3-26 €78.00 YR-27 €56.70 PPA-27/36 €53.04 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"va
+Contracts SPEL BASE €63.21 Wk16-26 €31.00 May-26 €25.35 Q3-26 €78.00 YR-27 €56.70 PPA-27/36 €53.04 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"va
 
 --- Euro #2 at pos 1944 ---
-BASE €33.47 Wk16-26 €31.00 May-26 €25.35 Q3-26 €78.00 YR-27 €56.70 PPA-27/36 €53.04 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u2
+BASE €63.21 Wk16-26 €31.00 May-26 €25.35 Q3-26 €78.00 YR-27 €56.70 PPA-27/36 €53.04 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u2
 
 --- Euro #3 at pos 1958 ---
 16-26 €31.00 May-26 €25.35 Q3-26 €78.00 YR-27 €56.70 PPA-27/36 €53.04 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":
@@ -137,5 +137,5 @@ ent Price for Spain Power Peak Futures Day Contract, for date 2026-04-02 FTK Wk1
   PVB | base | bom | Apr-26 | €47.86 | desc=Spain Natural Gas Futures BOM
   PVB | base | month | May-26 | €48.75 | desc=Spain Natural Gas Futures Month
   PVB | base | quarter | Q3-26 | €50.85 | desc=Spain Natural Gas Futures Quarter
-  PVB | base | unknown |  | €49.59 | desc=Spain Natural Gas Futures Semester
+  PVB | base | semester |  | €49.59 | desc=Spain Natural Gas Futures Semester
   PVB | base | year | YR-27 | €40.45 | desc=Spain Natural Gas Futures Year
