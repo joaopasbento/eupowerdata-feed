@@ -85,6 +85,10 @@ FLOW_CORRIDORS = [
     ('NO', 'SE'), ('SE', 'NO'), ('NO', 'DK'), ('DK', 'NO'),
     ('SE', 'FI'), ('FI', 'SE'), ('SE', 'DK'), ('DK', 'SE'),
     ('NO', 'GB'), ('GB', 'NO'),
+    ('AT', 'HU'), ('HU', 'AT'),
+    ('HU', 'RO'), ('RO', 'HU'),
+    ('RO', 'BG'), ('BG', 'RO'),
+    ('BG', 'GR'), ('GR', 'BG'),
 ]
 
 PSR_MAP = {
