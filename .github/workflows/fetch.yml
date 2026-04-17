@@ -19,8 +19,6 @@ jobs:
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_entsoe.py
-      - name: Fetch datacenter data
-        run: python fetch_datacenters.py
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
