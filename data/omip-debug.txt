@@ -1,22 +1,22 @@
-=== OMIP Debug — 2026-04-20T07:30:08.752174+00:00 ===
+=== OMIP Debug — 2026-04-20T11:58:23.482299+00:00 ===
 
 Status: SUCCESS
 Contracts found: 47
 
-HTML length: 168601
-Clean length: 37560
+HTML length: 204688
+Clean length: 46677
 Contains "Settlement": True
 Contains "FTB": True
 Contains "€": True
 Contains "Eur/MWh": True
 
-Euro sign positions: 346
+Euro sign positions: 456
 
 --- Euro #1 at pos 1929 ---
-Contracts SPEL BASE €46.56 Wk18-26 €33.00 May-26 €34.70 Q3-26 €74.20 YR-27 €56.60 PPA-27/36 €53.02 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"va
+Contracts SPEL BASE €45.28 Wk18-26 €33.00 May-26 €34.70 Q3-26 €74.20 YR-27 €56.60 PPA-27/36 €53.02 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"va
 
 --- Euro #2 at pos 1944 ---
-BASE €46.56 Wk18-26 €33.00 May-26 €34.70 Q3-26 €74.20 YR-27 €56.60 PPA-27/36 €53.02 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u2
+BASE €45.28 Wk18-26 €33.00 May-26 €34.70 Q3-26 €74.20 YR-27 €56.60 PPA-27/36 €53.02 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u2
 
 --- Euro #3 at pos 1958 ---
 18-26 €33.00 May-26 €34.70 Q3-26 €74.20 YR-27 €56.60 PPA-27/36 €53.02 Power Spain Base Load - YR-27 Full Historic Data {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":
