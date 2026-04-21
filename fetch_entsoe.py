@@ -689,6 +689,34 @@ def main():
             json.dump(prices, f, separators=(',', ':'))
         print(f'Saved spot-prices.json ({zone_count} zones)')
 
+        # ── Archive today's snapshot under data/archive/spot-prices-YYYY-MM-DD.json
+        # Rolling 365-day history for the Overview map date filter.
+        # Overwritten on every fetch (each run that day makes the archive more complete).
+        os.makedirs('data/archive', exist_ok=True)
+        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        archive_path = f'data/archive/spot-prices-{today_str}.json'
+        try:
+            with open(archive_path, 'w') as f:
+                json.dump(prices, f, separators=(',', ':'))
+            print(f'Archived to {archive_path}')
+        except OSError as e:
+            print(f'  Warning: could not write archive: {e}')
+
+        # Cleanup: delete archive files older than 365 days
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).strftime('%Y-%m-%d')
+            removed = 0
+            for fname in os.listdir('data/archive'):
+                if fname.startswith('spot-prices-') and fname.endswith('.json'):
+                    date_part = fname[len('spot-prices-'):-len('.json')]
+                    if len(date_part) == 10 and date_part < cutoff:
+                        os.remove(os.path.join('data/archive', fname))
+                        removed += 1
+            if removed:
+                print(f'Cleaned up {removed} archive file(s) older than 365 days')
+        except OSError as e:
+            print(f'  Warning: archive cleanup failed: {e}')
+
     if gen_count > 0:
         with open('data/generation-mix.json', 'w') as f:
             json.dump(gen, f, separators=(',', ':'))
