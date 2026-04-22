@@ -122,9 +122,20 @@ def main():
     days_back = max(1, min(365, days_back))
     print(f'Backfilling up to {days_back} days of historical spot prices\n')
 
-    base = fe.find_working_endpoint()
+    # Endpoint discovery with retry — ENTSO-E occasionally returns transient
+    # 503s. A single failure at script start used to kill the whole run;
+    # now we retry up to 5 times with exponential backoff before giving up.
+    base = None
+    for attempt in range(1, 6):
+        base = fe.find_working_endpoint()
+        if base:
+            break
+        wait_s = min(60 * attempt, 300)  # 60s, 120s, 180s, 240s, 300s (5min cap)
+        print(f'  No endpoint available yet, waiting {wait_s}s before retry '
+              f'({attempt}/5)...')
+        time.sleep(wait_s)
     if not base:
-        print('ERROR: No working ENTSO-E endpoint found')
+        print('ERROR: No working ENTSO-E endpoint found after 5 attempts')
         sys.exit(1)
     print(f'Using endpoint: {base}\n')
 
