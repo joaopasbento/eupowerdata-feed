@@ -44,6 +44,9 @@ ZONES = {
     'BG': '10YCA-BULGARIA-R',
     'HU': '10YHU-MAVIR----U',
     'CZ': '10YCZ-CEPS-----N',
+    'EE': '10Y1001A1001A39I',
+    'LV': '10YLV-1001A00074',
+    'LT': '10YLT-1001A0008Q',
     'GB': '10YGB----------A',
 }
 
@@ -55,7 +58,7 @@ CONSOLIDATE = {
     'DK': ['DK1', 'DK2'],
 }
 
-GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'GB']
+GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'EE', 'LV', 'LT', 'GB']
 
 CORRIDORS = [
     ('PT', 'ES'), ('ES', 'PT'), ('ES', 'FR'), ('FR', 'ES'),
