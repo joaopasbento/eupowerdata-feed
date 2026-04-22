@@ -33,14 +33,28 @@ jobs:
           BACKFILL_DAYS: ${{ github.event.inputs.days }}
         run: python backfill_archive.py
 
-      - name: Commit archive files
+      # Safety net: the script now commits & pushes in batches of 20 during
+      # the loop. This step only fires if the script died mid-batch and left
+      # un-committed files behind. Using pull --rebase before push so we
+      # don't conflict with the regular fetch_entsoe.py cron.
+      - name: Commit any leftover files
+        if: always()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/archive/
+          git add data/archive/ || true
           if git diff --cached --quiet; then
-            echo 'No new archive files to commit'
-          else
-            git commit -m "Backfill historical archive ($(date -u +'%Y-%m-%d %H:%M UTC'))"
-            git push
+            echo 'No leftover files to commit'
+            exit 0
           fi
+          git commit -m "Backfill leftover ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "pushed on attempt $i"
+              exit 0
+            fi
+            echo "push failed attempt $i, pulling and retrying..."
+            git pull --rebase --autostash || true
+          done
+          echo "push failed after 5 attempts"
+          exit 1
