@@ -1,0 +1,46 @@
+name: Backfill historical archive
+
+# Manual trigger only — this is a one-shot backfill, not a scheduled job.
+# Once the archive is populated, the regular fetch_entsoe.py cron continues
+# to add one new file per day automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to backfill (1–365). Default 365.'
+        required: false
+        default: '365'
+
+permissions:
+  contents: write   # needed to commit the new archive files
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run backfill
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          BACKFILL_DAYS: ${{ github.event.inputs.days }}
+        run: python backfill_archive.py
+
+      - name: Commit archive files
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/archive/
+          if git diff --cached --quiet; then
+            echo 'No new archive files to commit'
+          else
+            git commit -m "Backfill historical archive ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git push
+          fi
