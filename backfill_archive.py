@@ -17,6 +17,7 @@ import os
 import sys
 import json
 import time
+import subprocess
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 
@@ -141,8 +142,20 @@ def main():
 
     os.makedirs('data/archive', exist_ok=True)
 
+    # Configure git once — used for incremental commits inside the loop.
+    # CI runs do not have git user configured by default; workflow may or may
+    # not set it, so we enforce it here to be safe.
+    _run_git(['config', 'user.name', 'github-actions[bot]'])
+    _run_git(['config', 'user.email',
+              '41898282+github-actions[bot]@users.noreply.github.com'])
+
     today = datetime.now(timezone.utc).date()
     summary = {'archived': 0, 'skipped': 0, 'empty': 0, 'failed': 0}
+    # Commit & push every N successful archives. Smaller batches mean work is
+    # protected earlier; larger batches mean fewer git operations. 20 is a
+    # good middle ground (roughly every 7-8 minutes at typical speeds).
+    COMMIT_EVERY = 20
+    since_last_commit = 0
 
     # Iterate yesterday → 365 days ago. Today's snapshot is handled by the
     # regular fetch_entsoe.py cron, so we never overwrite it here.
@@ -175,14 +188,82 @@ def main():
                 json.dump(data, f, separators=(',', ':'))
             print(f'  archived ({zone_count} zones)')
             summary['archived'] += 1
+            since_last_commit += 1
         except OSError as e:
             print(f'  WRITE FAIL: {e}')
             summary['failed'] += 1
+            continue
+
+        if since_last_commit >= COMMIT_EVERY:
+            _commit_and_push(f'Backfill batch ({summary["archived"]} total)')
+            since_last_commit = 0
+
+    # Final commit for any remaining files not yet pushed
+    if since_last_commit > 0:
+        _commit_and_push(f'Backfill batch ({summary["archived"]} total, final)')
 
     print(
         f'\nDone. archived={summary["archived"]}, skipped={summary["skipped"]}, '
         f'empty={summary["empty"]}, failed={summary["failed"]}'
     )
+
+
+def _run_git(args, check=False):
+    """Run a git command, return (returncode, stdout+stderr combined)."""
+    try:
+        result = subprocess.run(
+            ['git'] + args,
+            capture_output=True, text=True, timeout=120, check=check
+        )
+        return result.returncode, (result.stdout or '') + (result.stderr or '')
+    except subprocess.TimeoutExpired:
+        return 124, 'git command timed out'
+    except Exception as e:
+        return 1, str(e)
+
+
+def _commit_and_push(message):
+    """Stage data/archive/, commit, and push with rebase-and-retry.
+
+    The regular fetch_entsoe.py cron runs every 15 minutes and commits to the
+    same branch. If it commits during our batch, our push is rejected with
+    'non-fast-forward'. We recover with pull --rebase and retry up to 5 times.
+    Failures are logged but never abort the script — local archive files stay
+    on disk, and the next batch / run will try again.
+    """
+    print(f'  → committing batch: {message}')
+    code, out = _run_git(['add', 'data/archive/'])
+    if code != 0:
+        print(f'    git add failed: {out.strip()}')
+        return
+
+    # Nothing staged? Nothing to do.
+    code, _ = _run_git(['diff', '--cached', '--quiet'])
+    if code == 0:
+        print('    nothing staged, skip')
+        return
+
+    code, out = _run_git(['commit', '-m', message])
+    if code != 0:
+        print(f'    git commit failed: {out.strip()}')
+        return
+
+    for attempt in range(1, 6):
+        code, out = _run_git(['push'])
+        if code == 0:
+            print('    pushed')
+            return
+        # Typical failure: remote has new commits from the regular cron.
+        # Rebase local commit on top of them and retry.
+        print(f'    push failed (attempt {attempt}/5): {out.strip()[:200]}')
+        rc, rout = _run_git(['pull', '--rebase', '--autostash'])
+        if rc != 0:
+            print(f'    pull --rebase failed: {rout.strip()[:200]}')
+            # Sleep before next attempt — remote may be in the middle of a push
+            time.sleep(10 * attempt)
+
+    print('    push failed after 5 attempts — files remain committed locally; '
+          'next run will push them (git status is idempotent)')
 
 
 if __name__ == '__main__':
