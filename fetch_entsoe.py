@@ -92,6 +92,13 @@ FLOW_CORRIDORS = [
     ('HU', 'RO'), ('RO', 'HU'),
     ('RO', 'BG'), ('BG', 'RO'),
     ('BG', 'GR'), ('GR', 'BG'),
+    # Baltic states — synchronised with continental Europe since Feb 2025
+    # via LitPol Link (LT↔PL); Nordic links via NordBalt (LT↔SE) and EstLink (EE↔FI).
+    ('EE', 'FI'), ('FI', 'EE'),
+    ('EE', 'LV'), ('LV', 'EE'),
+    ('LV', 'LT'), ('LT', 'LV'),
+    ('LT', 'PL'), ('PL', 'LT'),
+    ('LT', 'SE'), ('SE', 'LT'),
 ]
 
 PSR_MAP = {
