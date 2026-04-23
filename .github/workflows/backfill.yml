@@ -1,15 +1,21 @@
 name: Backfill historical archive
 
-# Manual trigger only — this is a one-shot backfill, not a scheduled job.
-# Once the archive is populated, the regular fetch_entsoe.py cron continues
-# to add one new file per day automatically.
+# Manual trigger. Once populated, the regular fetch_entsoe.py cron keeps the
+# archive fresh (one new file per dataset per day). The workflow is designed
+# to self-re-trigger if work remains after a single run's time budget runs
+# out, so a single manual start eventually completes the full 5-year backfill
+# across however many chained runs are needed (typically 2-4).
 on:
   workflow_dispatch:
     inputs:
       days:
-        description: 'Number of days to backfill (1–365). Default 365.'
+        description: 'Number of days to backfill (1-1830). Default 1830 (~5y).'
         required: false
-        default: '365'
+        default: '1830'
+      datasets:
+        description: 'Datasets to backfill: both | prices | gen.'
+        required: false
+        default: 'both'
 
 permissions:
   contents: write   # needed to commit the new archive files
@@ -17,10 +23,15 @@ permissions:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Hard cap well below GitHub's 6h job limit. Python script uses
+    # TIME_BUDGET_SECONDS=18000 (5h) and stops gracefully before we hit this.
+    timeout-minutes: 330
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Fetch a few commits so pull --rebase can succeed inside the script
+          fetch-depth: 10
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -31,18 +42,19 @@ jobs:
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
           BACKFILL_DAYS: ${{ github.event.inputs.days }}
+          DATASETS: ${{ github.event.inputs.datasets }}
+          TIME_BUDGET_SECONDS: '18000'   # 5h soft stop (leaves margin for the next steps)
         run: python backfill_archive.py
 
-      # Safety net: the script now commits & pushes in batches of 20 during
-      # the loop. This step only fires if the script died mid-batch and left
-      # un-committed files behind. Using pull --rebase before push so we
-      # don't conflict with the regular fetch_entsoe.py cron.
+      # Safety net: if the script died mid-batch and left files uncommitted,
+      # commit+push them here. Rebase-and-retry to co-exist with the regular
+      # fetch_entsoe.py cron pushing to the same branch.
       - name: Commit any leftover files
         if: always()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/archive/ || true
+          git add data/archive/ data/.backfill-continue 2>/dev/null || true
           if git diff --cached --quiet; then
             echo 'No leftover files to commit'
             exit 0
@@ -58,3 +70,39 @@ jobs:
           done
           echo "push failed after 5 attempts"
           exit 1
+
+      # Self-re-trigger: the backfill script writes data/.backfill-continue
+      # with 'yes' if there is still work to do. If so, dispatch the same
+      # workflow again so it continues from where we stopped (idempotent).
+      #
+      # IMPORTANT: this step needs a PAT (not the default GITHUB_TOKEN),
+      # because dispatches made with GITHUB_TOKEN do NOT trigger new workflow
+      # runs - GitHub blocks that to prevent accidental infinite loops.
+      # See: https://docs.github.com/en/actions/security-guides/automatic-token-authentication
+      - name: Self-retrigger if work remains
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.BACKFILL_PAT }}
+          INPUT_DAYS: ${{ github.event.inputs.days }}
+          INPUT_DATASETS: ${{ github.event.inputs.datasets }}
+        run: |
+          if [ ! -f data/.backfill-continue ]; then
+            echo "No continuation signal file — stopping chain."
+            exit 0
+          fi
+          SIGNAL=$(cat data/.backfill-continue | tr -d '[:space:]')
+          if [ "$SIGNAL" != "yes" ]; then
+            echo "Backfill complete — nothing more to do. Chain ends here."
+            exit 0
+          fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo "WARN: BACKFILL_PAT secret is not set. Cannot self-retrigger."
+            echo "      Re-run the workflow manually to continue the backfill."
+            exit 0
+          fi
+          echo "Work remains — dispatching next run..."
+          gh workflow run backfill.yml \
+            --ref "${GITHUB_REF_NAME:-main}" \
+            -f days="${INPUT_DAYS:-1830}" \
+            -f datasets="${INPUT_DATASETS:-both}"
+          echo "Next run dispatched."
