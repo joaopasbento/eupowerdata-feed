@@ -700,7 +700,7 @@ def main():
         print(f'Saved spot-prices.json ({zone_count} zones)')
 
         # ── Archive today's snapshot under data/archive/spot-prices-YYYY-MM-DD.json
-        # Rolling 365-day history for the Overview map date filter.
+        # Rolling 5-year history for the Overview map date filter.
         # Overwritten on every fetch (each run that day makes the archive more complete).
         os.makedirs('data/archive', exist_ok=True)
         today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -712,25 +712,47 @@ def main():
         except OSError as e:
             print(f'  Warning: could not write archive: {e}')
 
-        # Cleanup: delete archive files older than 365 days
-        try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).strftime('%Y-%m-%d')
-            removed = 0
-            for fname in os.listdir('data/archive'):
-                if fname.startswith('spot-prices-') and fname.endswith('.json'):
-                    date_part = fname[len('spot-prices-'):-len('.json')]
-                    if len(date_part) == 10 and date_part < cutoff:
-                        os.remove(os.path.join('data/archive', fname))
-                        removed += 1
-            if removed:
-                print(f'Cleaned up {removed} archive file(s) older than 365 days')
-        except OSError as e:
-            print(f'  Warning: archive cleanup failed: {e}')
-
     if gen_count > 0:
         with open('data/generation-mix.json', 'w') as f:
             json.dump(gen, f, separators=(',', ':'))
         print(f'Saved generation-mix.json ({gen_count} zones)')
+
+        # ── Archive today's generation snapshot under
+        # data/archive/generation-mix-YYYY-MM-DD.json. Rolling 5-year history.
+        # Carbon intensity and renewable share are derived from this mix in the
+        # frontend, so archiving this unlocks historical Carbon & Renewables
+        # toggles on the Overview map.
+        os.makedirs('data/archive', exist_ok=True)
+        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        gen_archive = f'data/archive/generation-mix-{today_str}.json'
+        try:
+            with open(gen_archive, 'w') as f:
+                json.dump(gen, f, separators=(',', ':'))
+            print(f'Archived to {gen_archive}')
+        except OSError as e:
+            print(f'  Warning: could not write generation archive: {e}')
+
+    # ── Unified cleanup: delete archive files older than ~5 years (1830 days).
+    # Applies to both spot-prices-*.json and generation-mix-*.json.
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=1830)).strftime('%Y-%m-%d')
+        removed = 0
+        for fname in os.listdir('data/archive'):
+            if not fname.endswith('.json'):
+                continue
+            # Extract YYYY-MM-DD from either spot-prices-... or generation-mix-...
+            date_part = None
+            for prefix in ('spot-prices-', 'generation-mix-'):
+                if fname.startswith(prefix):
+                    date_part = fname[len(prefix):-len('.json')]
+                    break
+            if date_part and len(date_part) == 10 and date_part < cutoff:
+                os.remove(os.path.join('data/archive', fname))
+                removed += 1
+        if removed:
+            print(f'Cleaned up {removed} archive file(s) older than ~5 years')
+    except OSError as e:
+        print(f'  Warning: archive cleanup failed: {e}')
 
     if flow_count > 0:
         with open('data/cross-border-flows.json', 'w') as f:
