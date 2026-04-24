@@ -4,9 +4,10 @@ EU Power Data — Historical archive backfill
 One-shot script to populate data/archive/ with up to ~5 years (1830 days) of
 historical snapshots from the ENTSO-E Transparency Platform.
 
-Archives TWO datasets per day:
-  - spot-prices-YYYY-MM-DD.json    (day-ahead prices)
-  - generation-mix-YYYY-MM-DD.json (generation mix → feeds Carbon & Renewables)
+Archives THREE datasets per day:
+  - spot-prices-YYYY-MM-DD.json         (day-ahead prices)
+  - generation-mix-YYYY-MM-DD.json      (generation mix → feeds Carbon & Renewables)
+  - cross-border-flows-YYYY-MM-DD.json  (physical flows → feeds Grid Monitor)
 
 Designed to be triggered manually via GitHub Actions workflow_dispatch. The
 workflow is configured to self-re-trigger if work remains after a run hits
@@ -190,6 +191,76 @@ def fetch_gen_for_date(base, target_date):
 
 
 # ---------------------------------------------------------------------------
+# Cross-border flows for one past date
+# ---------------------------------------------------------------------------
+
+def fetch_flows_for_date(base, target_date):
+    """Fetch ENTSO-E physical flows (documentType A11) for a specific UTC date.
+
+    Returns the same dict shape as fetch_entsoe.fetch_flows() so the archived
+    file is interchangeable with files produced by the regular cron. Feeds
+    the Grid Monitor map historical date filter.
+
+    target_date: a datetime.date object (UTC date).
+    """
+    start = target_date.strftime('%Y%m%d') + '0000'
+    end_dt = target_date + timedelta(days=1)
+    end = end_dt.strftime('%Y%m%d') + '0000'
+
+    flows = {
+        'updated': datetime.now(timezone.utc).isoformat(),
+        'date': target_date.strftime('%Y-%m-%d'),
+        'source': 'ENTSO-E Transparency Platform (backfilled)',
+        'corridors': {},
+        'net': {},
+    }
+
+    for frm, to in fe.FLOW_CORRIDORS:
+        from_eic = fe.FLOW_ZONES.get(frm, '')
+        to_eic   = fe.FLOW_ZONES.get(to, '')
+        if not from_eic or not to_eic:
+            continue
+        params = urllib.parse.urlencode({
+            'securityToken': fe.API_KEY,
+            'documentType':  'A11',
+            'in_Domain':     to_eic,
+            'out_Domain':    from_eic,
+            'periodStart':   start,
+            'periodEnd':     end,
+        })
+        xml = fe.http_get(f'{base}?{params}')
+        if not xml:
+            continue
+        values = fe.parse_flow_xml(xml)
+        if values:
+            flows['corridors'][f'{frm}→{to}'] = {
+                'from':   frm,
+                'to':     to,
+                'latest': values[-1],
+                'values': values,
+            }
+        time.sleep(0.15)   # gentle on the ENTSO-E API
+
+    # Derive net flow per unordered pair — matches fetch_entsoe.fetch_flows()
+    processed = set()
+    for frm, to in fe.FLOW_CORRIDORS:
+        pair = '-'.join(sorted([frm, to]))
+        if pair in processed:
+            continue
+        processed.add(pair)
+        fwd = flows['corridors'].get(f'{frm}→{to}', {}).get('latest', {}).get('mw', 0)
+        rev = flows['corridors'].get(f'{to}→{frm}', {}).get('latest', {}).get('mw', 0)
+        net = fwd - rev
+        flows['net'][pair] = {
+            'from':   frm if net >= 0 else to,
+            'to':     to  if net >= 0 else frm,
+            'net_mw': abs(round(net)),
+        }
+
+    return flows
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -207,11 +278,13 @@ def main():
         sys.exit(1)
     days_back = max(1, min(1830, days_back))
 
-    # Which datasets to fetch. Default 'both'; override via env DATASETS.
-    # Accepts: 'both', 'prices', 'gen'. Useful for debugging one at a time.
-    datasets_env = os.environ.get('DATASETS', 'both').lower().strip()
-    fetch_prices_flag = datasets_env in ('both', 'prices')
-    fetch_gen_flag    = datasets_env in ('both', 'gen')
+    # Which datasets to fetch. Default 'all'; override via env DATASETS.
+    # Accepts: 'all' / 'both', 'prices', 'gen', 'flows'. Useful for debugging
+    # one at a time. ('both' kept as alias for 'all' for backwards compat.)
+    datasets_env = os.environ.get('DATASETS', 'all').lower().strip()
+    fetch_prices_flag = datasets_env in ('all', 'both', 'prices')
+    fetch_gen_flag    = datasets_env in ('all', 'both', 'gen')
+    fetch_flows_flag  = datasets_env in ('all', 'both', 'flows')
 
     # Per-run time budget. GitHub-hosted runners have a hard 6h limit per job;
     # we stop gracefully well before that so there's time for the final commit
@@ -223,7 +296,7 @@ def main():
     run_start = time.monotonic()
 
     print(f'Backfilling up to {days_back} days of historical data')
-    print(f'Datasets: prices={fetch_prices_flag}, gen={fetch_gen_flag}')
+    print(f'Datasets: prices={fetch_prices_flag}, gen={fetch_gen_flag}, flows={fetch_flows_flag}')
     print(f'Time budget: {time_budget_s}s ({time_budget_s // 3600}h '
           f'{(time_budget_s % 3600) // 60}m)\n')
 
@@ -253,6 +326,7 @@ def main():
     summary = {
         'prices_archived': 0, 'prices_skipped': 0, 'prices_empty': 0, 'prices_failed': 0,
         'gen_archived':    0, 'gen_skipped':    0, 'gen_empty':    0, 'gen_failed':    0,
+        'flows_archived':  0, 'flows_skipped':  0, 'flows_empty':  0, 'flows_failed':  0,
     }
     # Commit & push every N successful file writes. Roughly every 30 writes
     # covers ~15 days (2 datasets per day) — small enough to protect progress,
@@ -276,6 +350,7 @@ def main():
         date_str = target.strftime('%Y-%m-%d')
         prices_path = f'data/archive/spot-prices-{date_str}.json'
         gen_path    = f'data/archive/generation-mix-{date_str}.json'
+        flows_path  = f'data/archive/cross-border-flows-{date_str}.json'
 
         # --- Prices --------------------------------------------------------
         if fetch_prices_flag:
@@ -315,15 +390,34 @@ def main():
                     print(f'  generation EXCEPTION: {e}')
                     summary['gen_failed'] += 1
 
+        # --- Cross-border flows --------------------------------------------
+        if fetch_flows_flag:
+            if os.path.exists(flows_path):
+                summary['flows_skipped'] += 1
+            else:
+                print(f'[{offset}/{days_back}] {date_str}: fetching flows')
+                try:
+                    data = fetch_flows_for_date(base, target)
+                    if len(data.get('corridors', {})) == 0:
+                        summary['flows_empty'] += 1
+                    else:
+                        with open(flows_path, 'w') as f:
+                            json.dump(data, f, separators=(',', ':'))
+                        summary['flows_archived'] += 1
+                        writes_since_last_commit += 1
+                except Exception as e:
+                    print(f'  flows EXCEPTION: {e}')
+                    summary['flows_failed'] += 1
+
         # Periodic commit + push
         if writes_since_last_commit >= COMMIT_EVERY:
-            total = summary['prices_archived'] + summary['gen_archived']
+            total = summary['prices_archived'] + summary['gen_archived'] + summary['flows_archived']
             _commit_and_push(f'Backfill batch ({total} files total)')
             writes_since_last_commit = 0
 
     # Final commit for any remaining files not yet pushed
     if writes_since_last_commit > 0:
-        total = summary['prices_archived'] + summary['gen_archived']
+        total = summary['prices_archived'] + summary['gen_archived'] + summary['flows_archived']
         tag = 'time-budget-stop' if time_budget_hit else 'final'
         _commit_and_push(f'Backfill batch ({total} files total, {tag})')
 
@@ -336,18 +430,23 @@ def main():
           f'skipped={summary["gen_skipped"]}, '
           f'empty={summary["gen_empty"]}, '
           f'failed={summary["gen_failed"]}')
+    print(f'  flows:  archived={summary["flows_archived"]}, '
+          f'skipped={summary["flows_skipped"]}, '
+          f'empty={summary["flows_empty"]}, '
+          f'failed={summary["flows_failed"]}')
 
     # Signal file the workflow reads to decide whether to self-retrigger.
     # 'yes' -> re-dispatch the workflow; 'no' -> stop the chain.
     remaining = count_remaining_work(today, days_back,
-                                     fetch_prices_flag, fetch_gen_flag)
+                                     fetch_prices_flag, fetch_gen_flag,
+                                     fetch_flows_flag)
     print(f'  remaining dataset-days to archive: {remaining}')
     os.makedirs('data', exist_ok=True)
     with open('data/.backfill-continue', 'w') as f:
         f.write('yes' if remaining > 0 else 'no')
 
 
-def count_remaining_work(today, days_back, prices_flag, gen_flag):
+def count_remaining_work(today, days_back, prices_flag, gen_flag, flows_flag):
     """Count how many dataset-days are still missing in the target window."""
     missing = 0
     for offset in range(1, days_back + 1):
@@ -356,6 +455,8 @@ def count_remaining_work(today, days_back, prices_flag, gen_flag):
         if prices_flag and not os.path.exists(f'data/archive/spot-prices-{s}.json'):
             missing += 1
         if gen_flag and not os.path.exists(f'data/archive/generation-mix-{s}.json'):
+            missing += 1
+        if flows_flag and not os.path.exists(f'data/archive/cross-border-flows-{s}.json'):
             missing += 1
     return missing
 
