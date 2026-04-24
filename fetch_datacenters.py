@@ -282,6 +282,44 @@ def fetch_datacenters():
         json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
 
     print(f'Saved datacenters.json ({len(datacenters)} data centres, {len(ember_with_counts)} countries with energy data)')
+
+    # ── Quarterly snapshot: on the first day of each quarter (Jan/Apr/Jul/Oct
+    # 1st) also copy the current dataset to data/archive/datacenters-YYYY-Qn.json.
+    # Powers the Data Centers page date picker (quarterly granularity — DCs
+    # move slowly so daily archiving would add noise without value).
+    now_utc = datetime.now(timezone.utc)
+    if now_utc.day == 1 and now_utc.month in (1, 4, 7, 10):
+        os.makedirs('data/archive', exist_ok=True)
+        quarter = (now_utc.month - 1) // 3 + 1
+        snapshot_path = f'data/archive/datacenters-{now_utc.year}-Q{quarter}.json'
+        try:
+            with open(snapshot_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, separators=(',', ':'))
+            print(f'Archived quarterly snapshot to {snapshot_path}')
+        except OSError as e:
+            print(f'  Warning: could not write quarterly snapshot: {e}')
+
+    # ── Cleanup: delete quarterly snapshots older than ~5 years (20 quarters).
+    # Matches the retention policy of the daily price/generation archive.
+    try:
+        import re
+        cutoff_year = now_utc.year - 5
+        archive_dir = 'data/archive'
+        if os.path.isdir(archive_dir):
+            removed = 0
+            for fname in os.listdir(archive_dir):
+                m = re.match(r'^datacenters-(\d{4})-Q([1-4])\.json$', fname)
+                if not m:
+                    continue
+                file_year = int(m.group(1))
+                if file_year < cutoff_year:
+                    os.remove(os.path.join(archive_dir, fname))
+                    removed += 1
+            if removed:
+                print(f'Cleaned up {removed} quarterly snapshot(s) older than 5 years')
+    except OSError as e:
+        print(f'  Warning: quarterly snapshot cleanup failed: {e}')
+
     return True
 
 
