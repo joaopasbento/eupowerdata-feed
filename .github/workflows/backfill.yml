@@ -86,23 +86,5 @@ jobs:
           INPUT_DAYS: ${{ github.event.inputs.days }}
           INPUT_DATASETS: ${{ github.event.inputs.datasets }}
         run: |
-          if [ ! -f data/.backfill-continue ]; then
-            echo "No continuation signal file — stopping chain."
-            exit 0
-          fi
-          SIGNAL=$(cat data/.backfill-continue | tr -d '[:space:]')
-          if [ "$SIGNAL" != "yes" ]; then
-            echo "Backfill complete — nothing more to do. Chain ends here."
-            exit 0
-          fi
-          if [ -z "$GH_TOKEN" ]; then
-            echo "WARN: BACKFILL_PAT secret is not set. Cannot self-retrigger."
-            echo "      Re-run the workflow manually to continue the backfill."
-            exit 0
-          fi
-          echo "Work remains — dispatching next run..."
-          gh workflow run backfill.yml \
-            --ref "${GITHUB_REF_NAME:-main}" \
-            -f days="${INPUT_DAYS:-1830}" \
-            -f datasets="${INPUT_DATASETS:-all}"
-          echo "Next run dispatched."
+          echo "Self-retrigger temporarily disabled by commit. Restore before normal operation."
+          exit 0
