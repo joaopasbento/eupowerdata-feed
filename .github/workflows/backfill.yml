@@ -13,9 +13,9 @@ on:
         required: false
         default: '1830'
       datasets:
-        description: 'Datasets to backfill: both | prices | gen.'
+        description: 'Datasets to backfill: all | prices | gen | flows.'
         required: false
-        default: 'both'
+        default: 'all'
 
 permissions:
   contents: write   # needed to commit the new archive files
@@ -104,5 +104,5 @@ jobs:
           gh workflow run backfill.yml \
             --ref "${GITHUB_REF_NAME:-main}" \
             -f days="${INPUT_DAYS:-1830}" \
-            -f datasets="${INPUT_DATASETS:-both}"
+            -f datasets="${INPUT_DATASETS:-all}"
           echo "Next run dispatched."
