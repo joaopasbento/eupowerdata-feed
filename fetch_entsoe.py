@@ -733,16 +733,16 @@ def main():
             print(f'  Warning: could not write generation archive: {e}')
 
     # ── Unified cleanup: delete archive files older than ~5 years (1830 days).
-    # Applies to both spot-prices-*.json and generation-mix-*.json.
+    # Applies to spot-prices-*.json, generation-mix-*.json and cross-border-flows-*.json.
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=1830)).strftime('%Y-%m-%d')
         removed = 0
         for fname in os.listdir('data/archive'):
             if not fname.endswith('.json'):
                 continue
-            # Extract YYYY-MM-DD from either spot-prices-... or generation-mix-...
+            # Extract YYYY-MM-DD from any known prefix
             date_part = None
-            for prefix in ('spot-prices-', 'generation-mix-'):
+            for prefix in ('spot-prices-', 'generation-mix-', 'cross-border-flows-'):
                 if fname.startswith(prefix):
                     date_part = fname[len(prefix):-len('.json')]
                     break
@@ -758,6 +758,19 @@ def main():
         with open('data/cross-border-flows.json', 'w') as f:
             json.dump(flows, f, separators=(',', ':'))
         print(f'Saved cross-border-flows.json ({flow_count} corridors)')
+
+        # ── Archive today's flows snapshot under
+        # data/archive/cross-border-flows-YYYY-MM-DD.json. Rolling 5-year history.
+        # Unlocks historical cross-border flows on the Grid Monitor map date filter.
+        os.makedirs('data/archive', exist_ok=True)
+        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        flows_archive = f'data/archive/cross-border-flows-{today_str}.json'
+        try:
+            with open(flows_archive, 'w') as f:
+                json.dump(flows, f, separators=(',', ':'))
+            print(f'Archived to {flows_archive}')
+        except OSError as e:
+            print(f'  Warning: could not write flows archive: {e}')
 
     omip = fetch_omip()
     omip_count = len(omip['latest']['contracts']) if omip and omip.get('latest') else 0
