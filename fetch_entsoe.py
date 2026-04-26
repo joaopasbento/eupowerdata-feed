@@ -754,6 +754,37 @@ def main():
     except OSError as e:
         print(f'  Warning: archive cleanup failed: {e}')
 
+    # ── Build archive index — one source of truth for which dates are
+    # actually available per dataset. Frontend date pickers fetch this index
+    # to know what to allow / disallow / snap to. Avoids the situation where
+    # a date is within the 5-year window but the file was never written
+    # (failed fetch, gap in backfill, etc.).
+    try:
+        from collections import defaultdict
+        index = defaultdict(list)
+        for fname in os.listdir('data/archive'):
+            if not fname.endswith('.json'):
+                continue
+            for prefix in ('spot-prices-', 'generation-mix-', 'cross-border-flows-'):
+                if fname.startswith(prefix):
+                    date_part = fname[len(prefix):-len('.json')]
+                    if len(date_part) == 10:
+                        # dataset key without trailing dash
+                        index[prefix[:-1]].append(date_part)
+                    break
+        # Sort each dataset's date list ascending (chronological)
+        index_sorted = {k: sorted(v) for k, v in index.items()}
+        index_payload = {
+            'updated': datetime.now(timezone.utc).isoformat(),
+            'datasets': index_sorted,
+        }
+        with open('data/archive_index.json', 'w') as f:
+            json.dump(index_payload, f, separators=(',', ':'))
+        counts = ', '.join(f'{k}={len(v)}' for k, v in index_sorted.items())
+        print(f'Wrote archive_index.json ({counts})')
+    except OSError as e:
+        print(f'  Warning: archive index write failed: {e}')
+
     if flow_count > 0:
         with open('data/cross-border-flows.json', 'w') as f:
             json.dump(flows, f, separators=(',', ':'))
