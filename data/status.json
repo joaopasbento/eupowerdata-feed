@@ -1,7 +1,7 @@
 {
   "status": "ok",
   "endpoint": "https://web-api.tp.entsoe.eu/api",
-  "time": "2026-04-30T07:54:21.274594+00:00",
+  "time": "2026-04-30T13:11:39.651566+00:00",
   "prices_zones": 23,
   "generation_zones": 23,
   "flow_corridors": 44
