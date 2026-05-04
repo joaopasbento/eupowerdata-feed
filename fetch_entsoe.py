@@ -200,7 +200,19 @@ def parse_prices_xml(xml_str):
 
 
 def parse_generation_xml(xml_str):
+    """Parse ENTSO-E A75 (Aggregated Generation per Type) response.
+
+    For each TimeSeries (one per generation type), pick the value at the
+    latest timestamp <= now. The previous implementation iterated all
+    points and kept the LAST in the array, which for a 24h request window
+    typically pointed to the last hour of the day (23:00). At 23:00 solar
+    is 0, so 'live mix' showed solar = 0 even mid-day on sunny days.
+
+    Resolution can be PT15M, PT30M or PT60M depending on the country —
+    parsed dynamically per Period.
+    """
     mix = {}
+    now = datetime.now(timezone.utc)
     try:
         root = ET.fromstring(xml_str)
         ns = get_ns(root)
@@ -211,13 +223,43 @@ def parse_generation_xml(xml_str):
                 continue
             psr_code = psr_el.text
             gen_type = PSR_MAP.get(psr_code, 'Other')
-            last_val = 0
+
+            best_val = None
+            best_ts  = None
             for period in ts.iter(f'{prefix}Period'):
+                start_el = period.find(f'{prefix}timeInterval/{prefix}start')
+                if start_el is None:
+                    continue
+                try:
+                    start_dt = datetime.fromisoformat(start_el.text.replace('Z', '+00:00'))
+                except Exception:
+                    continue
+
+                res_el = period.find(f'{prefix}resolution')
+                res_min = 60
+                if res_el is not None and res_el.text:
+                    if res_el.text == 'PT15M':
+                        res_min = 15
+                    elif res_el.text == 'PT30M':
+                        res_min = 30
+
                 for pt in period.iter(f'{prefix}Point'):
+                    pos_el = pt.find(f'{prefix}position')
                     qty_el = pt.find(f'{prefix}quantity')
-                    if qty_el is not None:
-                        last_val = float(qty_el.text)
-            mix[gen_type] = mix.get(gen_type, 0) + last_val
+                    if pos_el is None or qty_el is None:
+                        continue
+                    try:
+                        pos = int(pos_el.text)
+                        qty = float(qty_el.text)
+                    except (TypeError, ValueError):
+                        continue
+                    point_ts = start_dt + timedelta(minutes=res_min * (pos - 1))
+                    if point_ts <= now and (best_ts is None or point_ts > best_ts):
+                        best_ts  = point_ts
+                        best_val = qty
+
+            if best_val is not None:
+                mix[gen_type] = mix.get(gen_type, 0) + best_val
     except Exception as e:
         print(f'  XML parse error: {e}')
     return mix
