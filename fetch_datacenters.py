@@ -68,7 +68,7 @@ COUNTRY_BOUNDS = {
     'SE': (55.34, 10.96, 69.06, 24.17),
     'NO': (57.96,  4.64, 71.18, 31.07),
     'FI': (59.69, 19.51, 70.09, 31.58),
-    'GR': (34.80, 19.38, 41.75, 29.65),
+    'GR': (34.80, 19.38, 41.75, 28.50),
     'IE': (51.45,-10.48, 55.38, -6.00),
     'GB': (49.91, -7.57, 60.85,  1.76),
     'RO': (43.62, 20.26, 48.27, 29.69),
@@ -174,12 +174,21 @@ def parse_elements(elements):
         seen_coords.add(coord_key)
 
         # Country: prefer OSM tag, fall back to bounding box lookup
-        country = tags.get('addr:country', '').upper().strip()
-        if len(country) != 2 or country not in EU_COUNTRIES:
+        osm_country = tags.get('addr:country', '').upper().strip()
+        if len(osm_country) == 2 and osm_country in EU_COUNTRIES:
+            country = osm_country
+        elif len(osm_country) == 2 and osm_country.isalpha():
+            # OSM explicitly tagged a non-EU country (e.g. TR, RU, UA).
+            # Skip — bbox fallback would misclassify (e.g. Istanbul as GR
+            # because it falls inside the Greek lat/lng rectangle).
+            continue
+        else:
+            # No reliable OSM tag — fall back to coordinates
             country = coords_to_country(lat, lng) or ''
 
-        # Only keep European data centers
-        if not country:
+        # Only keep European data centers (defense in depth: if coords lookup
+        # somehow returned a non-EU code, also skip)
+        if not country or country not in EU_COUNTRIES:
             continue
 
         # Name
