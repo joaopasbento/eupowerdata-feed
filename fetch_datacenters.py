@@ -49,11 +49,45 @@ EMBER_ANNUAL = {
     'SE': {'price_eur_mwh': 32,  'carbon_gco2': 10,  'clean_pct': 97, 'grid_wait_yr': 2},
 }
 
-# ─── European country codes (OSM addr:country values)
-EU_COUNTRIES = set(EMBER_ANNUAL.keys()) | {'LU', 'SK', 'SI', 'LT', 'LV', 'EE', 'HR', 'RS', 'MK', 'AL', 'ME', 'BA', 'UA', 'MD', 'BY', 'IS', 'MT', 'CY'}
+# ─── Country codes accepted on the data center map.
+# Note: this is broader than the rest of the site (which covers 24 markets).
+# The DC map has a wider scope because data centers exist beyond EU markets
+# even when we don't have live energy data for those countries. Markers
+# without Ember/ENTSO-E data are rendered in a neutral grey on the frontend.
+EXTENDED_COUNTRIES = set(EMBER_ANNUAL.keys()) | {
+    # In the original site scope (24 countries with Ember data — kept for reference)
+    'LU', 'SK', 'SI', 'LT', 'LV', 'EE', 'HR',
+    # Western Balkans (already partially in old set)
+    'RS', 'MK', 'AL', 'ME', 'BA', 'XK',
+    # Eastern Europe
+    'UA', 'MD', 'BY',
+    # Other European
+    'IS', 'MT', 'CY',
+    # Phase 1 additions: transcontinental + Caucasus + Eurasia
+    'TR', 'RU', 'GE', 'AM', 'AZ',
+}
+
+# Continent mapping for frontend grouping. Phase 1 keeps everything as
+# 'EU' (Europe) for simplicity — transcontinental countries (TR, RU,
+# GE, AZ) included on the European side. Phase 2 will add 'AS', 'NA',
+# 'SA', 'AF', 'OC' when worldwide coverage is added.
+COUNTRY_CONTINENT = {c: 'EU' for c in EXTENDED_COUNTRIES}
+# Override AM (Armenia) — fully in Asia geographically; Phase 2 will
+# revisit. Kept here as a marker that the structure handles >1 continent.
+COUNTRY_CONTINENT['AM'] = 'AS'
+
+# Backwards-compat alias used elsewhere in this file (rest of code reads
+# EU_COUNTRIES — keeping the name avoids ripple changes).
+EU_COUNTRIES = EXTENDED_COUNTRIES
 
 # ─── Approximate bounding boxes for coordinate → country lookup (fallback)
+# Used only when OSM addr:country tag is missing. Bboxes are rectangles —
+# imprecise near borders. The Greek/Turkish Aegean was a known issue:
+# GR east is reduced to 28.50° to keep Rhodes (28.22°) but exclude
+# Istanbul (28.97°+). Cross-border misclassifications can still happen
+# in rare cases — OSM tag is the primary source of truth.
 COUNTRY_BOUNDS = {
+    # Existing 21
     'PT': (36.96, -9.50, 42.15, -6.19),
     'ES': (35.17, -9.30, 43.79,  4.33),
     'FR': (41.33, -5.14, 51.09,  9.56),
@@ -75,22 +109,65 @@ COUNTRY_BOUNDS = {
     'BG': (41.24, 22.36, 44.22, 28.61),
     'HU': (45.74, 16.11, 48.59, 22.90),
     'CZ': (48.55, 12.09, 51.06, 18.86),
+    # In-EU additions (gaps)
+    'LU': (49.45,  5.73, 50.18,  6.53),
+    'SK': (47.73, 16.83, 49.61, 22.57),
+    'SI': (45.42, 13.38, 46.88, 16.61),
+    'HR': (42.39, 13.49, 46.55, 19.45),
+    'LT': (53.89, 20.95, 56.45, 26.84),
+    'LV': (55.67, 20.97, 58.09, 28.24),
+    'EE': (57.51, 21.76, 59.69, 28.21),
+    'MT': (35.79, 14.18, 36.09, 14.58),
+    'CY': (34.55, 32.27, 35.71, 34.60),
+    # Western Balkans
+    'RS': (42.23, 18.85, 46.18, 23.01),
+    'MK': (40.85, 20.46, 42.36, 23.04),
+    'AL': (39.65, 19.30, 42.65, 21.06),
+    'ME': (41.85, 18.46, 43.55, 20.36),
+    'BA': (42.55, 15.74, 45.27, 19.62),
+    'XK': (42.20, 20.01, 43.27, 21.79),
+    # Eastern Europe
+    'UA': (44.39, 22.13, 52.38, 40.23),
+    'MD': (45.47, 26.62, 48.49, 30.16),
+    'BY': (51.26, 23.18, 56.17, 32.78),
+    # Iceland
+    'IS': (63.30,-24.55, 66.55,-13.50),
+    # Phase 1 additions
+    'TR': (35.85, 26.04, 42.10, 41.50),
+    'RU': (41.20, 19.64, 81.86, 60.00),  # Western Russia (up to Urals)
+    'GE': (41.05, 39.96, 43.59, 46.71),
+    'AM': (38.84, 43.45, 41.30, 46.63),
+    'AZ': (38.39, 44.78, 41.91, 50.37),
 }
 
 
 def coords_to_country(lat, lng):
-    """Derive country code from coordinates using bounding boxes."""
-    for code, (s, w, n, e) in COUNTRY_BOUNDS.items():
+    """Derive country code from coordinates using bounding boxes.
+
+    Iterates by ascending bbox area so small countries (e.g. Kosovo,
+    Albania) are matched before large neighbours (RU, TR) that may
+    overlap. Without this ordering, RU bbox swallows the Caucasus,
+    GR bbox swallows AL, etc.
+    """
+    for code, (s, w, n, e) in _bounds_by_area:
         if s <= lat <= n and w <= lng <= e:
             return code
     return None
+
+# Pre-sort once at module load for efficiency
+_bounds_by_area = sorted(
+    COUNTRY_BOUNDS.items(),
+    key=lambda kv: (kv[1][2] - kv[1][0]) * (kv[1][3] - kv[1][1]),
+)
 
 
 def fetch_overpass():
     """Fetch European data centres from OpenStreetMap via Overpass API."""
 
-    # Europe bounding box: south, west, north, east
-    bbox = '34,-12,72,42'
+    # Europe + neighbours bounding box: south, west, north, east
+    # Covers Europe, Iceland, Caucasus, western Russia, Turkey, north of Mediterranean.
+    # Phase 2 (worldwide) will need a different approach (reverse_geocoder lib or similar).
+    bbox = '30,-25,75,60'
 
     query = f"""[out:json][timeout:90];
 (
@@ -173,22 +250,25 @@ def parse_elements(elements):
             continue
         seen_coords.add(coord_key)
 
-        # Country: prefer OSM tag, fall back to bounding box lookup
+        # Country: prefer OSM tag, fall back to bounding box lookup.
+        # The "extended" set covers more than the rest of the site — DCs in
+        # TR, RU, UA, Caucasus etc. are all rendered on the map even when
+        # we don't have live energy data for them.
         osm_country = tags.get('addr:country', '').upper().strip()
-        if len(osm_country) == 2 and osm_country in EU_COUNTRIES:
+        if len(osm_country) == 2 and osm_country in EXTENDED_COUNTRIES:
             country = osm_country
         elif len(osm_country) == 2 and osm_country.isalpha():
-            # OSM explicitly tagged a non-EU country (e.g. TR, RU, UA).
-            # Skip — bbox fallback would misclassify (e.g. Istanbul as GR
-            # because it falls inside the Greek lat/lng rectangle).
+            # OSM explicitly tagged a country we don't include yet
+            # (e.g. US, CN, JP, IN — Phase 2 territory). Skip rather than
+            # risk a misclassification via bbox lookup.
             continue
         else:
             # No reliable OSM tag — fall back to coordinates
             country = coords_to_country(lat, lng) or ''
 
-        # Only keep European data centers (defense in depth: if coords lookup
-        # somehow returned a non-EU code, also skip)
-        if not country or country not in EU_COUNTRIES:
+        # Defense in depth: if coords lookup somehow returned a code
+        # outside our extended set, also skip.
+        if not country or country not in EXTENDED_COUNTRIES:
             continue
 
         # Name
