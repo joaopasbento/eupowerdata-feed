@@ -208,6 +208,11 @@ def parse_generation_xml(xml_str):
     typically pointed to the last hour of the day (23:00). At 23:00 solar
     is 0, so 'live mix' showed solar = 0 even mid-day on sunny days.
 
+    Fallback: if no point has timestamp <= now (e.g. only forecasts are
+    available — happens for PT/REN with publication latency), use the
+    earliest future point instead. Without this fallback, the country
+    would be entirely missing from the output for that fetch.
+
     Resolution can be PT15M, PT30M or PT60M depending on the country —
     parsed dynamically per Period.
     """
@@ -226,6 +231,10 @@ def parse_generation_xml(xml_str):
 
             best_val = None
             best_ts  = None
+            # Fallback for "all forecast" responses: track earliest future point
+            fallback_val = None
+            fallback_ts  = None
+
             for period in ts.iter(f'{prefix}Period'):
                 start_el = period.find(f'{prefix}timeInterval/{prefix}start')
                 if start_el is None:
@@ -254,12 +263,21 @@ def parse_generation_xml(xml_str):
                     except (TypeError, ValueError):
                         continue
                     point_ts = start_dt + timedelta(minutes=res_min * (pos - 1))
-                    if point_ts <= now and (best_ts is None or point_ts > best_ts):
-                        best_ts  = point_ts
-                        best_val = qty
+                    if point_ts <= now:
+                        if best_ts is None or point_ts > best_ts:
+                            best_ts  = point_ts
+                            best_val = qty
+                    else:
+                        if fallback_ts is None or point_ts < fallback_ts:
+                            fallback_ts  = point_ts
+                            fallback_val = qty
 
-            if best_val is not None:
-                mix[gen_type] = mix.get(gen_type, 0) + best_val
+            # Prefer historical point; fall back to earliest future point so
+            # countries with only forecast data (PT via REN, occasionally) still
+            # appear in the output.
+            chosen = best_val if best_val is not None else fallback_val
+            if chosen is not None:
+                mix[gen_type] = mix.get(gen_type, 0) + chosen
     except Exception as e:
         print(f'  XML parse error: {e}')
     return mix
