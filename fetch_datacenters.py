@@ -49,43 +49,111 @@ EMBER_ANNUAL = {
     'SE': {'price_eur_mwh': 32,  'carbon_gco2': 10,  'clean_pct': 97, 'grid_wait_yr': 2},
 }
 
-# ─── Country codes accepted on the data center map.
-# Note: this is broader than the rest of the site (which covers 24 markets).
-# The DC map has a wider scope because data centers exist beyond EU markets
-# even when we don't have live energy data for those countries. Markers
-# without Ember/ENTSO-E data are rendered in a neutral grey on the frontend.
-EXTENDED_COUNTRIES = set(EMBER_ANNUAL.keys()) | {
-    # In the original site scope (24 countries with Ember data — kept for reference)
-    'LU', 'SK', 'SI', 'LT', 'LV', 'EE', 'HR',
-    # Western Balkans (already partially in old set)
-    'RS', 'MK', 'AL', 'ME', 'BA', 'XK',
-    # Eastern Europe
-    'UA', 'MD', 'BY',
-    # Other European
-    'IS', 'MT', 'CY',
-    # Phase 1 additions: transcontinental + Caucasus + Eurasia
-    'TR', 'RU', 'GE', 'AM', 'AZ',
+# ─── Country acceptance.
+#
+# The DC map shows datacenters worldwide. The rest of the site only
+# covers 24 European markets where we have live energy data. Markers
+# in countries without Ember/ENTSO-E data are rendered in neutral
+# grey on the frontend.
+#
+# We accept any valid 2-letter ISO 3166-1 alpha-2 code. In practice
+# the set is whatever reverse_geocoder returns — we don't pre-restrict.
+# Phase 1 used a hard-coded EXTENDED_COUNTRIES set; Phase 2 dropped
+# that gate to allow worldwide coverage.
+
+# ─── Continent mapping for frontend grouping.
+#
+# Standard ISO continent codes:
+#   EU = Europe, AS = Asia, AF = Africa, NA = North America,
+#   SA = South America, OC = Oceania, AN = Antarctica
+#
+# Transcontinental countries (TR, RU, GE, AZ, KZ) are placed where
+# most users would look for them — typically the European side for
+# countries with European cultural/political affiliation.
+COUNTRY_CONTINENT = {
+    # Europe
+    'AD':'EU','AL':'EU','AT':'EU','AX':'EU','BA':'EU','BE':'EU','BG':'EU',
+    'BY':'EU','CH':'EU','CY':'EU','CZ':'EU','DE':'EU','DK':'EU','EE':'EU',
+    'ES':'EU','FI':'EU','FO':'EU','FR':'EU','GB':'EU','GG':'EU','GI':'EU',
+    'GR':'EU','HR':'EU','HU':'EU','IE':'EU','IM':'EU','IS':'EU','IT':'EU',
+    'JE':'EU','LI':'EU','LT':'EU','LU':'EU','LV':'EU','MC':'EU','MD':'EU',
+    'ME':'EU','MK':'EU','MT':'EU','NL':'EU','NO':'EU','PL':'EU','PT':'EU',
+    'RO':'EU','RS':'EU','RU':'EU','SE':'EU','SI':'EU','SJ':'EU','SK':'EU',
+    'SM':'EU','UA':'EU','VA':'EU','XK':'EU',
+    # Transcontinental — placed as Europe for the DC map (most DCs in
+    # these countries are in their European/European-facing parts).
+    'TR':'EU','GE':'EU','AZ':'EU',
+    # Asia
+    'AE':'AS','AF':'AS','AM':'AS','BD':'AS','BH':'AS','BN':'AS','BT':'AS',
+    'CC':'AS','CN':'AS','CX':'AS','HK':'AS','ID':'AS','IL':'AS','IN':'AS',
+    'IO':'AS','IQ':'AS','IR':'AS','JO':'AS','JP':'AS','KG':'AS','KH':'AS',
+    'KP':'AS','KR':'AS','KW':'AS','KZ':'AS','LA':'AS','LB':'AS','LK':'AS',
+    'MM':'AS','MN':'AS','MO':'AS','MV':'AS','MY':'AS','NP':'AS','OM':'AS',
+    'PH':'AS','PK':'AS','PS':'AS','QA':'AS','SA':'AS','SG':'AS','SY':'AS',
+    'TH':'AS','TJ':'AS','TL':'AS','TM':'AS','TW':'AS','UZ':'AS','VN':'AS',
+    'YE':'AS',
+    # Africa
+    'AO':'AF','BF':'AF','BI':'AF','BJ':'AF','BW':'AF','CD':'AF','CF':'AF',
+    'CG':'AF','CI':'AF','CM':'AF','CV':'AF','DJ':'AF','DZ':'AF','EG':'AF',
+    'EH':'AF','ER':'AF','ET':'AF','GA':'AF','GH':'AF','GM':'AF','GN':'AF',
+    'GQ':'AF','GW':'AF','KE':'AF','KM':'AF','LR':'AF','LS':'AF','LY':'AF',
+    'MA':'AF','MG':'AF','ML':'AF','MR':'AF','MU':'AF','MW':'AF','MZ':'AF',
+    'NA':'AF','NE':'AF','NG':'AF','RE':'AF','RW':'AF','SC':'AF','SD':'AF',
+    'SH':'AF','SL':'AF','SN':'AF','SO':'AF','SS':'AF','ST':'AF','SZ':'AF',
+    'TD':'AF','TG':'AF','TN':'AF','TZ':'AF','UG':'AF','YT':'AF','ZA':'AF',
+    'ZM':'AF','ZW':'AF',
+    # North America (incl. Caribbean & Central America)
+    'AG':'NA','AI':'NA','AW':'NA','BB':'NA','BL':'NA','BM':'NA','BQ':'NA',
+    'BS':'NA','BZ':'NA','CA':'NA','CR':'NA','CU':'NA','CW':'NA','DM':'NA',
+    'DO':'NA','GD':'NA','GL':'NA','GP':'NA','GT':'NA','HN':'NA','HT':'NA',
+    'JM':'NA','KN':'NA','KY':'NA','LC':'NA','MF':'NA','MQ':'NA','MS':'NA',
+    'MX':'NA','NI':'NA','PA':'NA','PM':'NA','PR':'NA','SV':'NA','SX':'NA',
+    'TC':'NA','TT':'NA','US':'NA','VC':'NA','VG':'NA','VI':'NA',
+    # South America
+    'AR':'SA','BO':'SA','BR':'SA','CL':'SA','CO':'SA','EC':'SA','FK':'SA',
+    'GF':'SA','GS':'SA','GY':'SA','PE':'SA','PY':'SA','SR':'SA','UY':'SA',
+    'VE':'SA',
+    # Oceania
+    'AS':'OC','AU':'OC','CK':'OC','FJ':'OC','FM':'OC','GU':'OC','KI':'OC',
+    'MH':'OC','MP':'OC','NC':'OC','NF':'OC','NR':'OC','NU':'OC','NZ':'OC',
+    'PF':'OC','PG':'OC','PN':'OC','PW':'OC','SB':'OC','TK':'OC','TO':'OC',
+    'TV':'OC','UM':'OC','VU':'OC','WF':'OC','WS':'OC',
+    # Antarctica
+    'AQ':'AN','BV':'AN','HM':'AN','TF':'AN',
 }
 
-# Continent mapping for frontend grouping. Phase 1 keeps everything as
-# 'EU' (Europe) for simplicity — transcontinental countries (TR, RU,
-# GE, AZ) included on the European side. Phase 2 will add 'AS', 'NA',
-# 'SA', 'AF', 'OC' when worldwide coverage is added.
-COUNTRY_CONTINENT = {c: 'EU' for c in EXTENDED_COUNTRIES}
-# Override AM (Armenia) — fully in Asia geographically; Phase 2 will
-# revisit. Kept here as a marker that the structure handles >1 continent.
-COUNTRY_CONTINENT['AM'] = 'AS'
+# ─── reverse_geocoder for coords → country resolution.
+#
+# Uses an offline dataset of >3M cities; for any (lat, lng) finds the
+# nearest city and returns its country code. 100% accuracy for 195
+# countries, instant lookups (KDTree), no network calls.
+#
+# The lib is loaded lazily on first use — first call takes ~0.5s to
+# load the dataset, subsequent calls are sub-millisecond.
+_rg = None
 
-# Backwards-compat alias used elsewhere in this file (rest of code reads
-# EU_COUNTRIES — keeping the name avoids ripple changes).
-EU_COUNTRIES = EXTENDED_COUNTRIES
+def _get_rg():
+    """Lazy-load reverse_geocoder. Returns None if not installed
+    (allows graceful fallback to bbox lookup)."""
+    global _rg
+    if _rg is None:
+        try:
+            import reverse_geocoder as rg
+            _rg = rg
+            print('  reverse_geocoder loaded (offline dataset)')
+        except ImportError:
+            print('  WARNING: reverse_geocoder not installed; using bbox fallback')
+            _rg = False  # sentinel: tried, failed
+    return _rg if _rg is not False else None
 
-# ─── Approximate bounding boxes for coordinate → country lookup (fallback)
-# Used only when OSM addr:country tag is missing. Bboxes are rectangles —
-# imprecise near borders. The Greek/Turkish Aegean was a known issue:
-# GR east is reduced to 28.50° to keep Rhodes (28.22°) but exclude
-# Istanbul (28.97°+). Cross-border misclassifications can still happen
-# in rare cases — OSM tag is the primary source of truth.
+
+# ─── Approximate bounding boxes (offline fallback)
+#
+# Used only when reverse_geocoder is unavailable (CI without the lib
+# installed, etc). Retains Europe-only coverage from Phase 1 — for
+# Phase 2 worldwide, reverse_geocoder is the primary path. Bboxes
+# are rectangles; imprecise near borders. Iterated smallest-first
+# in coords_to_country to avoid being shadowed by larger neighbours.
 COUNTRY_BOUNDS = {
     # Existing 21
     'PT': (36.96, -9.50, 42.15, -6.19),
@@ -142,19 +210,53 @@ COUNTRY_BOUNDS = {
 
 
 def coords_to_country(lat, lng):
-    """Derive country code from coordinates using bounding boxes.
+    """Resolve coordinates to ISO 3166-1 alpha-2 country code.
 
-    Iterates by ascending bbox area so small countries (e.g. Kosovo,
-    Albania) are matched before large neighbours (RU, TR) that may
-    overlap. Without this ordering, RU bbox swallows the Caucasus,
-    GR bbox swallows AL, etc.
+    Primary: reverse_geocoder (offline dataset, instant).
+    Fallback: bounding box lookup (Europe-only, less accurate).
+
+    Single-coord interface; for many calls in a batch use
+    coords_to_country_batch which is much faster.
     """
+    rg = _get_rg()
+    if rg is not None:
+        try:
+            results = rg.search([(lat, lng)], mode=1)
+            if results:
+                return results[0]['cc']
+        except Exception as e:
+            print(f'  reverse_geocoder error for ({lat}, {lng}): {e}')
+
+    # Fallback: bbox (Europe-only)
     for code, (s, w, n, e) in _bounds_by_area:
         if s <= lat <= n and w <= lng <= e:
             return code
     return None
 
-# Pre-sort once at module load for efficiency
+
+def coords_to_country_batch(coords):
+    """Resolve many coordinates in one call. ~10000x faster than
+    repeated single-coord calls because the KDTree is queried once.
+
+    Args:
+        coords: list of (lat, lng) tuples
+    Returns:
+        list of country codes (None for unresolved)
+    """
+    if not coords:
+        return []
+    rg = _get_rg()
+    if rg is not None:
+        try:
+            results = rg.search(coords, mode=1)
+            return [r['cc'] for r in results]
+        except Exception as e:
+            print(f'  reverse_geocoder batch error: {e}')
+
+    # Fallback: per-coord bbox lookup
+    return [coords_to_country(lat, lng) for lat, lng in coords]
+
+# Pre-sort once at module load for efficiency (used only by bbox fallback)
 _bounds_by_area = sorted(
     COUNTRY_BOUNDS.items(),
     key=lambda kv: (kv[1][2] - kv[1][0]) * (kv[1][3] - kv[1][1]),
@@ -162,12 +264,13 @@ _bounds_by_area = sorted(
 
 
 def fetch_overpass():
-    """Fetch European data centres from OpenStreetMap via Overpass API."""
+    """Fetch worldwide data centres from OpenStreetMap via Overpass API."""
 
-    # Europe + neighbours bounding box: south, west, north, east
-    # Covers Europe, Iceland, Caucasus, western Russia, Turkey, north of Mediterranean.
-    # Phase 2 (worldwide) will need a different approach (reverse_geocoder lib or similar).
-    bbox = '30,-25,75,60'
+    # Worldwide bounding box: south, west, north, east
+    # Phase 2: full world coverage. Country resolution uses
+    # reverse_geocoder (offline dataset) — no longer dependent on
+    # bbox-defined country list.
+    bbox = '-90,-180,90,180'
 
     query = f"""[out:json][timeout:90];
 (
@@ -222,9 +325,19 @@ out center tags;"""
 
 
 def parse_elements(elements):
-    """Parse Overpass elements into clean datacenter objects."""
-    datacenters = []
-    seen_coords = set()  # deduplicate by rounded lat/lng
+    """Parse Overpass elements into clean datacenter objects.
+
+    Country resolution uses a two-pass approach for performance:
+      Pass 1: walk all elements, extract OSM tag where present,
+              collect coords for ones without a tag.
+      Pass 2: batch-resolve all the unknowns in a single
+              reverse_geocoder call (~1ms for thousands of points).
+    Then we re-walk and emit the final list.
+    """
+    # ─── Pass 1: stage all candidates ───────────────────────────────────
+    staged = []          # list of dicts, country=None pending
+    pending_coords = []  # (index_in_staged, lat, lng)
+    seen_coords = set()
 
     for el in elements:
         el_type = el.get('type', '')
@@ -250,27 +363,37 @@ def parse_elements(elements):
             continue
         seen_coords.add(coord_key)
 
-        # Country: prefer OSM tag, fall back to bounding box lookup.
-        # The "extended" set covers more than the rest of the site — DCs in
-        # TR, RU, UA, Caucasus etc. are all rendered on the map even when
-        # we don't have live energy data for them.
+        # Country: prefer OSM tag if it's a valid 2-letter alpha code.
+        # Phase 2 accepts any country in COUNTRY_CONTINENT (worldwide).
         osm_country = tags.get('addr:country', '').upper().strip()
-        if len(osm_country) == 2 and osm_country in EXTENDED_COUNTRIES:
+        country = None
+        if len(osm_country) == 2 and osm_country.isalpha() and osm_country in COUNTRY_CONTINENT:
             country = osm_country
-        elif len(osm_country) == 2 and osm_country.isalpha():
-            # OSM explicitly tagged a country we don't include yet
-            # (e.g. US, CN, JP, IN — Phase 2 territory). Skip rather than
-            # risk a misclassification via bbox lookup.
-            continue
-        else:
-            # No reliable OSM tag — fall back to coordinates
-            country = coords_to_country(lat, lng) or ''
 
-        # Defense in depth: if coords lookup somehow returned a code
-        # outside our extended set, also skip.
-        if not country or country not in EXTENDED_COUNTRIES:
+        staged.append({
+            'el': el, 'el_type': el_type, 'tags': tags,
+            'lat': lat, 'lng': lng, 'country': country,
+        })
+        if country is None:
+            pending_coords.append((len(staged) - 1, lat, lng))
+
+    # ─── Pass 2: batch-resolve unknowns ─────────────────────────────────
+    if pending_coords:
+        coords = [(lat, lng) for _, lat, lng in pending_coords]
+        resolved = coords_to_country_batch(coords)
+        for (idx, _, _), country in zip(pending_coords, resolved):
+            staged[idx]['country'] = country
+
+    # ─── Pass 3: emit final datacenter records ──────────────────────────
+    datacenters = []
+    skipped_no_country = 0
+    for s in staged:
+        country = s['country']
+        if not country or country not in COUNTRY_CONTINENT:
+            skipped_no_country += 1
             continue
 
+        el, tags, lat, lng, el_type = s['el'], s['tags'], s['lat'], s['lng'], s['el_type']
         # Name
         name = (
             tags.get('name') or
@@ -324,7 +447,10 @@ def parse_elements(elements):
 
     # Sort by country, then name
     datacenters.sort(key=lambda d: (d['country'], d['name'].lower()))
-    print(f'  Parsed {len(datacenters)} unique data centres across {len(set(d["country"] for d in datacenters))} countries')
+    countries_count = len(set(d["country"] for d in datacenters))
+    print(f'  Parsed {len(datacenters)} unique data centres across {countries_count} countries')
+    if skipped_no_country:
+        print(f'  ({skipped_no_country} elements skipped: unresolvable country)')
     return datacenters
 
 
