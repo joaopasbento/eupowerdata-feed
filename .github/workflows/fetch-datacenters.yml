@@ -1,26 +1,53 @@
-name: Fetch Datacenter Data
+name: fetch-datacenters
+
 on:
   schedule:
-    - cron: '0 6 * * *'
+    # Daily at 04:00 UTC (datacenter list changes slowly)
+    - cron: '0 4 * * *'
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
-  fetch:
+  fetch-datacenters:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - name: Fetch datacenter data
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        # reverse_geocoder bundles a ~85MB offline dataset of >3M cities
+        # used to resolve datacenter coordinates → ISO country codes.
+        # Worldwide coverage, no API rate limits, sub-millisecond lookups.
+        run: |
+          python -m pip install --upgrade pip
+          pip install reverse_geocoder
+
+      - name: Fetch datacenters
+        env:
+          PYTHONUNBUFFERED: '1'
         run: python fetch_datacenters.py
+
       - name: Commit and push
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Pull --rebase before push to handle the case where the user
+          # commits to fetch_datacenters.py while this workflow is running.
+          # Without this the push gets rejected ("fetch first").
+          git pull --rebase origin main || true
           git add data/
-          git diff --cached --quiet || git commit -m "Update datacenter data $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update datacenter data $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
