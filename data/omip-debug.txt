@@ -1,16 +1,16 @@
-=== OMIP Debug — 2026-05-06T22:56:29.537082+00:00 ===
+=== OMIP Debug — 2026-05-06T23:53:16.091220+00:00 ===
 
 Status: SUCCESS
 Contracts found: 47
 
-HTML length: 163858
-Clean length: 35407
+HTML length: 162473
+Clean length: 35310
 Contains "Settlement": True
 Contains "FTB": True
 Contains "€": True
 Contains "Eur/MWh": True
 
-Euro sign positions: 338
+Euro sign positions: 332
 
 --- Euro #1 at pos 1929 ---
 Contracts SPEL BASE €86.90 Wk20-26 €34.50 Jun-26 €58.00 Q3-26 €79.00 YR-27 €58.00 PPA-27/36 €52.92 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"
@@ -31,63 +31,63 @@ Jun-26 €58.00 Q3-26 €79.00 YR-27 €58.00 PPA-27/36 €52.92 Power Spain Bas
 27 €58.00 PPA-27/36 €52.92 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"datetime","crosshair":true},"yAxi
 
 --- Euro #7 at pos 3003 ---
- Contracts 07May-26 €86.90 08May-26 €73.37 09May-26 €32.29 10May-26 €29.71 Wk21-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-2
+ Contracts 08May-26 €73.37 09May-26 €32.29 10May-26 €29.71 Wk21-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €
 
 --- Euro #8 at pos 3019 ---
--26 €86.90 08May-26 €73.37 09May-26 €32.29 10May-26 €29.71 Wk21-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €
-
---- Euro #9 at pos 3035 ---
 -26 €73.37 09May-26 €32.29 10May-26 €29.71 Wk21-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.
 
---- Euro #10 at pos 3051 ---
+--- Euro #9 at pos 3035 ---
 -26 €32.29 10May-26 €29.71 Wk21-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 
 
---- Euro #11 at pos 3066 ---
+--- Euro #10 at pos 3050 ---
 y-26 €29.71 Wk21-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 YR-28 €55.00 YR
 
---- Euro #12 at pos 3081 ---
+--- Euro #11 at pos 3065 ---
 1-26 €35.25 Wk22-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 YR-28 €55.00 YR-29 €53.50 YR-3
 
---- Euro #13 at pos 3096 ---
+--- Euro #12 at pos 3080 ---
 2-26 €42.00 Wk23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 YR-28 €55.00 YR-29 €53.50 YR-30 €53.05 YR-31 
 
---- Euro #14 at pos 3110 ---
+--- Euro #13 at pos 3094 ---
 23-26 €58.00 Jul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 YR-28 €55.00 YR-29 €53.50 YR-30 €53.05 YR-31 €52.70 YR-32 €
 
---- Euro #15 at pos 3124 ---
+--- Euro #14 at pos 3108 ---
 ul-26 €79.10 Aug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 YR-28 €55.00 YR-29 €53.50 YR-30 €53.05 YR-31 €52.70 YR-32 €52.00 YR-33 €5
+
+--- Euro #15 at pos 3122 ---
+ug-26 €79.50 Sep-26 €78.38 Oct-26 €87.60 Nov-26 €84.02 Q4-26 €84.15 Q1-27 €71.00 Q2-27 €38.00 Q3-27 €61.32 Q4-27 €61.75 Q1-28 €67.30 YR-28 €55.00 YR-29 €53.50 YR-30 €53.05 YR-31 €52.70 YR-32 €52.00 YR-33 €51.85 YR-34 €51
 
 
 Settlement Price positions: 85
 
---- Settlement #1 at pos 10708 ---
+--- Settlement #1 at pos 10611 ---
  DEEL Base Futures Reference Prices FREL Base Futures Reference Prices FTB PPA 27/31 €54.45 Eur/MWh Settlement Price for Spain Power Base Futures PPA5Y Contract, for date 2026-05-06 FTB PPA 27/36 €52.
 
---- Settlement #2 at pos 10819 ---
+--- Settlement #2 at pos 10722 ---
 Price for Spain Power Base Futures PPA5Y Contract, for date 2026-05-06 FTB PPA 27/36 €52.92 Eur/MWh Settlement Price for Spain Power Base Futures PPA10Y Contract, for date 2026-05-06 FTB D Th07May-26 
 
---- Settlement #3 at pos 10934 ---
+--- Settlement #3 at pos 10837 ---
 e for Spain Power Base Futures PPA10Y Contract, for date 2026-05-06 FTB D Th07May-26 €86.90 Eur/MWh Settlement Price for Spain Power Base Futures Day Contract, for date 2026-05-06 FTB WE 09May-26 €31.
 
---- Settlement #4 at pos 11045 ---
+--- Settlement #4 at pos 10948 ---
 Price for Spain Power Base Futures Day Contract, for date 2026-05-06 FTB WE 09May-26 €31.00 Eur/MWh Settlement Price for Spain Power Base Futures Weekend Contract, for date 2026-05-06 FTB Wk20-26 €34.
 
---- Settlement #5 at pos 11156 ---
+--- Settlement #5 at pos 11059 ---
 Price for Spain Power Base Futures Weekend Contract, for date 2026-05-06 FTB Wk20-26 €34.50 Eur/MWh Settlement Price for Spain Power Base Futures Week Contract, for date 2026-05-06 FTB M Jun-26 €58.00
 
---- Settlement #6 at pos 11265 ---
+--- Settlement #6 at pos 11168 ---
 t Price for Spain Power Base Futures Week Contract, for date 2026-05-06 FTB M Jun-26 €58.00 Eur/MWh Settlement Price for Spain Power Base Futures Month Contract, for date 2026-05-06 FTB Q3-26 €79.00 E
 
---- Settlement #7 at pos 11372 ---
+--- Settlement #7 at pos 11275 ---
 ent Price for Spain Power Base Futures Month Contract, for date 2026-05-06 FTB Q3-26 €79.00 Eur/MWh Settlement Price for Spain Power Base Futures Quarter Contract, for date 2026-05-06 FTB YR-27 €58.00
 
---- Settlement #8 at pos 11481 ---
+--- Settlement #8 at pos 11384 ---
 t Price for Spain Power Base Futures Quarter Contract, for date 2026-05-06 FTB YR-27 €58.00 Eur/MWh Settlement Price for Spain Power Base Futures Year Contract, for date 2026-05-06 FTK D Th07May-26 €4
 
---- Settlement #9 at pos 11594 ---
+--- Settlement #9 at pos 11497 ---
 ice for Spain Power Base Futures Year Contract, for date 2026-05-06 FTK D Th07May-26 €49.65 Eur/MWh Settlement Price for Spain Power Peak Futures Day Contract, for date 2026-05-06 FTK Wk20-26 €13.07 E
 
---- Settlement #10 at pos 11701 ---
+--- Settlement #10 at pos 11604 ---
 ent Price for Spain Power Peak Futures Day Contract, for date 2026-05-06 FTK Wk20-26 €13.07 Eur/MWh Settlement Price for Spain Power Peak Futures Week Contract, for date 2026-05-06 FTK M Jun-26 €33.10
 
 
