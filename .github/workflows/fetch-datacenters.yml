@@ -29,7 +29,7 @@ jobs:
         # Worldwide coverage, no API rate limits, sub-millisecond lookups.
         run: |
           python -m pip install --upgrade pip
-          pip install reverse_geocoder
+          pip install -r requirements.txt
 
       - name: Fetch datacenters
         env:
