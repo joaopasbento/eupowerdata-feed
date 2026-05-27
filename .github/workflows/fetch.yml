@@ -19,6 +19,8 @@ jobs:
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_entsoe.py
+      - name: Fetch GB (Elexon Insights) data
+        run: python fetch_gb.py
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
