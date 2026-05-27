@@ -109,6 +109,25 @@ FLOW_CORRIDORS = [
     ('LV', 'LT'), ('LT', 'LV'),
     ('LT', 'PL'), ('PL', 'LT'),
     ('LT', 'SE'), ('SE', 'LT'),
+    # Phase A inc. 3 — Energy Community / SE Europe corridors.
+    # Endpoints already in ZONES (inc.1). Corridors the ENTSO-E feed does not
+    # serve are skipped server-side (no data) and never render anywhere; the
+    # display subset is wired into eew-grid.js only for corridors verified via
+    # a fetch.yml run.
+    # Anchors to core-EU nodes
+    ('SI', 'IT'), ('IT', 'SI'), ('SI', 'AT'), ('AT', 'SI'),
+    ('SI', 'HU'), ('HU', 'SI'), ('HR', 'HU'), ('HU', 'HR'),
+    ('RS', 'HU'), ('HU', 'RS'), ('RS', 'RO'), ('RO', 'RS'),
+    ('RS', 'BG'), ('BG', 'RS'), ('ME', 'IT'), ('IT', 'ME'),
+    ('MK', 'BG'), ('BG', 'MK'), ('MK', 'GR'), ('GR', 'MK'),
+    ('AL', 'GR'), ('GR', 'AL'),
+    # Internal SE-Europe mesh
+    ('SI', 'HR'), ('HR', 'SI'), ('HR', 'RS'), ('RS', 'HR'),
+    ('HR', 'BA'), ('BA', 'HR'), ('RS', 'BA'), ('BA', 'RS'),
+    ('RS', 'ME'), ('ME', 'RS'), ('RS', 'MK'), ('MK', 'RS'),
+    ('RS', 'XK'), ('XK', 'RS'), ('BA', 'ME'), ('ME', 'BA'),
+    ('ME', 'AL'), ('AL', 'ME'), ('MK', 'AL'), ('AL', 'MK'),
+    ('MK', 'XK'), ('XK', 'MK'), ('AL', 'XK'), ('XK', 'AL'),
 ]
 
 PSR_MAP = {
