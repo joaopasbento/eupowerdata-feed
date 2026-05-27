@@ -148,56 +148,33 @@ def _latest_period_mix(payload):
     return periods[key]
 
 
-# B1630 (wind-and-solar) publishes several process types per settlement period
-# (e.g. day-ahead / intraday / realtime forecasts). They must NOT be summed.
-# We pick a single series, preferring the realtime/current estimate.
-WS_PROC_PREFER = ('realtime', 'current', 'actual', 'estimate', 'intraday',
-                  'day ahead', 'dayahead', 'forecast')
-
-
-def _proc_key(rec):
-    for k in ('processType', 'process_type', 'process', 'businessType'):
-        v = _ci(rec, k)
-        if v is not None:
-            return str(v)
-    return ''
-
-
+# B1630 (wind-and-solar) returns one record per (settlement period x psrType),
+# but recent periods can carry several publishTime revisions of the same value
+# (which must NOT be summed - that inflated Solar to ~14 GW). `businessType`
+# here is only the category ("Wind generation" / "Solar generation"), NOT a
+# forecast horizon - so we keep every psrType and, for each, take its most
+# recent published estimate (latest startTime, then latest publishTime).
 def _windsolar_latest(payload):
-    """Return {psrType: MW} for the latest period of the wind-and-solar feed,
-    using ONE process-type series (never summing across forecast horizons)."""
+    """Return {psrType: MW} using, per psrType, the most recent published
+    estimate (latest startTime, then latest publishTime)."""
     recs = _records(payload)
     if recs:
         print(f'  B1630: {len(recs)} records; sample: {recs[0]}')  # diagnostic
-    by = {}  # startTime -> processType -> {psrType: MW}
+    best = {}  # psrType -> (startTime, publishTime, qty)
     for rec in recs:
-        start = _ci(rec, 'startTime', 'start_time')
-        proc = _proc_key(rec)
+        start = str(_ci(rec, 'startTime', 'start_time') or '')
+        pub = str(_ci(rec, 'publishTime', 'publish_time') or '')
         psr = _ci(rec, 'psrType', 'fuelType', 'type')
         qty = _num(_ci(rec, 'quantity', 'generation', 'value'))
-        if start is None or psr is None or qty is None:
+        if not start or psr is None or qty is None:
             continue
-        slot = by.setdefault(start, {}).setdefault(proc, {})
-        # dedup within a (start, proc, psr): keep the max, never sum
-        slot[psr] = qty if psr not in slot else max(slot[psr], qty)
-    if not by:
-        return {}
-    keyed = sorted([k for k in by if k], reverse=True)
-    start = keyed[0] if keyed else next(iter(by))
-    procs = by[start]
-    names = list(procs.keys())
-    chosen = None
-    for pref in WS_PROC_PREFER:
-        for n in names:
-            if pref in n.lower():
-                chosen = n
-                break
-        if chosen is not None:
-            break
-    if chosen is None:
-        chosen = names[0]
-    print(f'  B1630 latest {start}: processTypes={names}; using "{chosen}"')
-    return procs[chosen]
+        if psr not in best or (start, pub) > (best[psr][0], best[psr][1]):
+            best[psr] = (start, pub, qty)
+    mix = {psr: qty for psr, (st, pub, qty) in best.items()}
+    if mix:
+        detail = ', '.join(f'{k}={v:.0f}@{best[k][0][11:16]}' for k, v in mix.items())
+        print(f'  B1630 picked (per psrType, latest): {detail}')
+    return mix
 
 
 def _fx_gbp_eur():
