@@ -43,9 +43,8 @@ EP_GEN          = ELEXON_BASE + '/generation/actual/per-type'
 EP_WIND_SOLAR   = ELEXON_BASE + '/generation/actual/per-type/wind-and-solar'
 EP_MARKET_INDEX = ELEXON_BASE + '/balancing/pricing/market-index'
 
-# Preferred GB market-index data provider (N2EX). If absent, all providers
-# present in the response are averaged instead.
-MID_PROVIDER = 'N2EXMIDP'
+# MID has two providers (N2EXMIDP, APXMIDP). The official GB "Market Price" is
+# the volume-weighted average of their prices - computed in fetch_gb_price().
 
 # --- FX: GBP -> EUR (ECB via Frankfurter, no key) ---------------------------
 FX_URL      = 'https://api.frankfurter.app/latest?from=GBP&to=EUR'
@@ -214,43 +213,39 @@ def fetch_gb_price():
     if not recs:
         print('  MID: no data')
         return None
+    print(f'  MID: {len(recs)} records; sample: {recs[0]}')  # diagnostic
 
     rate = _fx_gbp_eur()
 
-    # Collect GBP prices keyed by (provider, hour).
-    by_prov_hour = {}
+    # The official GB "Market Price" is the volume-weighted average of the MIDP
+    # prices for each settlement period. Aggregate per hour, volume-weighting
+    # across providers, and skip placeholder rows (price missing or exactly 0,
+    # which the recent/unsettled periods of the current day report).
+    agg = {}  # hour -> [sum(price*volume), sum(volume), [prices]]
     for rec in recs:
         price = _num(_ci(rec, 'price'))
+        vol = _num(_ci(rec, 'volume')) or 0.0
         start = _ci(rec, 'startTime', 'start_time')
-        prov = _ci(rec, 'dataProvider', 'provider') or ''
-        if price is None or not isinstance(start, str) or len(start) < 13:
+        if price is None or price == 0 or not isinstance(start, str) or len(start) < 13:
             continue
         try:
             hour = int(start[11:13])
         except ValueError:
             continue
-        by_prov_hour.setdefault((prov, hour), []).append(price)
-
-    if not by_prov_hour:
-        return None
-
-    # Prefer the N2EX provider when present; otherwise average all providers.
-    provs = {p for (p, _) in by_prov_hour}
-    use_prov = MID_PROVIDER if MID_PROVIDER in provs else None
-
-    hours = {}
-    for (p, h), vals in by_prov_hour.items():
-        if use_prov and p != use_prov:
-            continue
-        hours.setdefault(h, []).extend(vals)
+        a = agg.setdefault(hour, [0.0, 0.0, []])
+        a[0] += price * vol
+        a[1] += vol
+        a[2].append(price)
 
     prices = []
-    for h in sorted(hours):
-        gbp = sum(hours[h]) / len(hours[h])
+    for h in sorted(agg):
+        psum, vsum, plist = agg[h]
+        gbp = psum / vsum if vsum > 0 else sum(plist) / len(plist)
         eur = round(gbp * rate, 2)
         if PRICE_MIN_EUR <= eur <= PRICE_MAX_EUR:
             prices.append({'time': f'{h:02d}:00', 'hour': h, 'price': eur})
     if not prices:
+        print('  MID: no usable (non-zero) prices in window')
         return None
 
     vals = [p['price'] for p in prices]
@@ -299,6 +294,7 @@ def main():
     if gen:
         print(f"  GB mix OK: {gen['total_mw']} MW, {len(gen['mix'])} types, "
               f"renewable {gen['renewable_pct']}%")
+        print(f"  GB mix detail: {gen['mix']}")
         _inject(GEN_FILE, 'GB', gen)
     else:
         print('  GB generation not injected (feed left untouched)')
