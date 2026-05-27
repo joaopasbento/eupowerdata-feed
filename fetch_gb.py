@@ -148,6 +148,58 @@ def _latest_period_mix(payload):
     return periods[key]
 
 
+# B1630 (wind-and-solar) publishes several process types per settlement period
+# (e.g. day-ahead / intraday / realtime forecasts). They must NOT be summed.
+# We pick a single series, preferring the realtime/current estimate.
+WS_PROC_PREFER = ('realtime', 'current', 'actual', 'estimate', 'intraday',
+                  'day ahead', 'dayahead', 'forecast')
+
+
+def _proc_key(rec):
+    for k in ('processType', 'process_type', 'process', 'businessType'):
+        v = _ci(rec, k)
+        if v is not None:
+            return str(v)
+    return ''
+
+
+def _windsolar_latest(payload):
+    """Return {psrType: MW} for the latest period of the wind-and-solar feed,
+    using ONE process-type series (never summing across forecast horizons)."""
+    recs = _records(payload)
+    if recs:
+        print(f'  B1630: {len(recs)} records; sample: {recs[0]}')  # diagnostic
+    by = {}  # startTime -> processType -> {psrType: MW}
+    for rec in recs:
+        start = _ci(rec, 'startTime', 'start_time')
+        proc = _proc_key(rec)
+        psr = _ci(rec, 'psrType', 'fuelType', 'type')
+        qty = _num(_ci(rec, 'quantity', 'generation', 'value'))
+        if start is None or psr is None or qty is None:
+            continue
+        slot = by.setdefault(start, {}).setdefault(proc, {})
+        # dedup within a (start, proc, psr): keep the max, never sum
+        slot[psr] = qty if psr not in slot else max(slot[psr], qty)
+    if not by:
+        return {}
+    keyed = sorted([k for k in by if k], reverse=True)
+    start = keyed[0] if keyed else next(iter(by))
+    procs = by[start]
+    names = list(procs.keys())
+    chosen = None
+    for pref in WS_PROC_PREFER:
+        for n in names:
+            if pref in n.lower():
+                chosen = n
+                break
+        if chosen is not None:
+            break
+    if chosen is None:
+        chosen = names[0]
+    print(f'  B1630 latest {start}: processTypes={names}; using "{chosen}"')
+    return procs[chosen]
+
+
 def _fx_gbp_eur():
     data = http_get_json(FX_URL)
     try:
@@ -181,7 +233,7 @@ def fetch_gb_generation():
     # metered output (GB solar is almost all embedded -> ~0 in AGPT), so we
     # drop AGPT's wind/solar entries and use B1630's complete figures instead,
     # which avoids both undercounting embedded output and double-counting.
-    wsmix = _latest_period_mix(http_get_json(f'{EP_WIND_SOLAR}?{q}'))
+    wsmix = _windsolar_latest(http_get_json(f'{EP_WIND_SOLAR}?{q}'))
     if wsmix:
         for k in [k for k in mix if 'solar' in k.lower() or 'wind' in k.lower()]:
             mix.pop(k, None)
