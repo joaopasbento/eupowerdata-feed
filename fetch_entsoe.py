@@ -48,6 +48,16 @@ ZONES = {
     'LV': '10YLV-1001A00074',
     'LT': '10YLT-1001A0008Q',
     'GB': '10YGB----------A',
+    # Energy Community / South-East Europe (Phase 3 — ENTSO-E members/associates)
+    'SI': '10YSI-ELES-----O',
+    'HR': '10YHR-HEP------M',
+    'RS': '10YCS-SERBIATSOV',
+    'BA': '10YBA-JPCC-----D',
+    'ME': '10YCS-CG-TSO---S',
+    'MK': '10YMK-MEPSO----8',
+    'AL': '10YAL-KESH-----5',
+    'MD': '10Y1001A1001A990',
+    'XK': '10Y1001C--00100H',
 }
 
 TIER1 = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE']
@@ -58,7 +68,7 @@ CONSOLIDATE = {
     'DK': ['DK1', 'DK2'],
 }
 
-GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'EE', 'LV', 'LT', 'GB']
+GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'EE', 'LV', 'LT', 'GB', 'SI', 'HR', 'RS', 'BA', 'ME', 'MK', 'AL', 'MD', 'XK']
 
 CORRIDORS = [
     ('PT', 'ES'), ('ES', 'PT'), ('ES', 'FR'), ('FR', 'ES'),
