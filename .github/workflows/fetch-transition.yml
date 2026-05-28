@@ -17,14 +17,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      - name: Fetch Eurostat (GHG + heat pumps) for PT
+      - name: Fetch Eurostat transition data (all countries)
         env:
           PYTHONUNBUFFERED: '1'
         run: python fetch_eurostat.py
@@ -33,11 +33,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
           git add data/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update PT transition data $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git commit -m "Update transition data (multi-country) $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git pull --rebase origin main || true
             git push
           fi
