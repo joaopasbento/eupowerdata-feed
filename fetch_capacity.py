@@ -47,6 +47,12 @@ DOMAIN = {
     'AL': '10YAL-KESH-----5', 'XK': '10Y1001C--00100H',
 }
 
+# Alternate single-domain EICs to try (in order) when the primary returns nothing.
+# IT: ENTSO-E publishes A68 on the Terna control area, not the IT-NORD bidding zone.
+DOMAIN_ALT = {
+    'IT': ['10YIT-GRTN-----B'],   # Terna control area
+}
+
 # Bidding-zone fallbacks to sum when the country-level domain returns nothing.
 ZONE_FALLBACK = {
     'NO': ['10YNO-1--------2', '10YNO-2--------T', '10YNO-3--------J',
@@ -188,6 +194,12 @@ def fetch_country(base, code):
         by_psr = query_domain(base, DOMAIN[code], year)
         if by_psr:
             return by_psr, year, 'domain'
+    # Alternate single-domain codes (e.g. IT Terna control area)
+    for alt in DOMAIN_ALT.get(code, []):
+        for year in years:
+            by_psr = query_domain(base, alt, year)
+            if by_psr:
+                return by_psr, year, 'alt'
     # Zone-sum fallback (Nordics)
     if code in ZONE_FALLBACK:
         for year in years:
