@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-fetch_eurostat.py - Portugal energy-transition annual indicators from Eurostat.
+fetch_eurostat.py - multi-country energy-transition annual indicators from Eurostat.
 
-Feeds the /transicao page (eew-transition.js). Produces data/transition-pt.json
-with three blocks:
+Feeds the /transicao page (eew-transition.js). Produces data/transition.json,
+indexed by site country code, each with three blocks:
 
   - ghg         : national greenhouse-gas inventory (env_air_gge), total GHG in
                   CO2-equivalent. Includes 1990 baseline, latest year, a short
@@ -39,8 +39,20 @@ from datetime import datetime, timezone
 
 # --- Eurostat dissemination API --------------------------------------------
 ES_BASE = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
-GEO = "PT"
-OUT_FILE = "data/transition-pt.json"
+OUT_FILE = "data/transition.json"
+
+# All countries the rest of the site covers (24 core + GB + Phase A). "Todos".
+COUNTRIES = ["PT","ES","DE","FR","IT","NL","BE","AT","CH","PL","NO","SE","DK","FI",
+             "GR","IE","RO","BG","HU","CZ","EE","LV","LT","GB",
+             "SI","HR","RS","ME","MK","AL","BA","XK"]
+
+# Site code -> Eurostat geo code (Eurostat uses EL for Greece, UK for the UK).
+GEO_MAP = {"GR": "EL", "GB": "UK"}
+
+# Remembered winning dimension codes (set on first country that resolves),
+# tried first for subsequent countries to cut request volume.
+_ghg_winner = None
+_hp_winner = None
 
 # GHG: total greenhouse gases in CO2-equivalent (env_air_gge).
 #   airpol = GHG  (all greenhouse gases, CO2-eq)
@@ -93,8 +105,8 @@ def http_get_json(url, timeout=40):
             return None
 
 
-def es_url(dataset, **params):
-    q = {"format": "JSON", "lang": "EN", "geo": GEO}
+def es_url(dataset, geo, **params):
+    q = {"format": "JSON", "lang": "EN", "geo": geo}
     q.update(params)
     return ES_BASE + dataset + "?" + urllib.parse.urlencode(q, doseq=True)
 
@@ -153,13 +165,13 @@ def _time_series(js, fixed):
     return out
 
 
-def _series_with_candidates(dataset, base_params, vary_key, candidates):
+def _series_with_candidates(dataset, geo, base_params, vary_key, candidates):
     """Fetch once per candidate code for `vary_key`; return (series, winning_code)
     for the first candidate that yields a non-empty time series."""
     for code in candidates:
         params = dict(base_params)
         params[vary_key] = code
-        js = http_get_json(es_url(dataset, **params))
+        js = http_get_json(es_url(dataset, geo, **params))
         if not js:
             continue
         fixed = {k: v for k, v in params.items() if k not in ("format", "lang", "geo")}
@@ -188,15 +200,17 @@ def _shape(series, unit, extra=None):
 
 
 # --- Builders ---------------------------------------------------------------
-def build_ghg():
+def build_ghg(geo):
+    global _ghg_winner
+    cands = ([_ghg_winner] if _ghg_winner else []) + [c for c in GHG_SRC_CANDIDATES if c != _ghg_winner]
     series, code = _series_with_candidates(
-        GHG_DATASET,
+        GHG_DATASET, geo,
         {"airpol": GHG_AIRPOL, "unit": GHG_UNIT},
-        "src_crf", GHG_SRC_CANDIDATES,
+        "src_crf", cands,
     )
     if not series:
-        print("  GHG: no series resolved (check src_crf candidates)")
         return None
+    _ghg_winner = code
     # THS_T (thousand tonnes) -> Mt CO2-eq
     series_mt = {y: v / 1000.0 for y, v in series.items()}
     base_1990 = series_mt.get("1990")
@@ -206,27 +220,26 @@ def build_ghg():
         extra["target_2030_value"] = round(base_1990 * (1 + GHG_TARGET_2030_PCT / 100.0), 2)
         latest_year = sorted(series_mt.keys())[-1]
         extra["change_vs_1990_pct"] = round((series_mt[latest_year] / base_1990 - 1) * 100, 1)
-    print(f"  GHG: src_crf={code}, {len(series)} years, latest={sorted(series)[-1]}")
     return _shape(series_mt, "Mt CO2e", extra)
 
 
-def build_heat_pumps():
+def build_heat_pumps(geo):
+    global _hp_winner
+    cands = ([_hp_winner] if _hp_winner else []) + [c for c in HP_UNIT_CANDIDATES if c != _hp_winner]
     series, unit = _series_with_candidates(
-        HP_DATASET,
+        HP_DATASET, geo,
         {"siec": HP_SIEC, "nrg_bal": HP_NRG_BAL},
-        "unit", HP_UNIT_CANDIDATES,
+        "unit", cands,
     )
     if not series:
-        print("  Heat pumps: no series resolved (check siec/nrg_bal/unit)")
         return None
-    print(f"  Heat pumps: unit={unit}, {len(series)} years, latest={sorted(series)[-1]}")
+    _hp_winner = unit
     return _shape(series, unit, {"siec": HP_SIEC, "nrg_bal": HP_NRG_BAL})
 
 
-def build_vehicles():
-    js = http_get_json(es_url(VEH_DATASET, unit=VEH_UNIT))
+def build_vehicles(geo):
+    js = http_get_json(es_url(VEH_DATASET, geo, unit=VEH_UNIT))
     if not js or "id" not in js or "dimension" not in js:
-        print("  Vehicles: no response")
         return None
 
     dims = js["id"]
@@ -255,7 +268,6 @@ def build_vehicles():
     if total_code is None and "TOTAL" in index:
         total_code = "TOTAL"
     if not total_code or not bev_code:
-        print(f"  Vehicles: couldn't identify total/BEV codes among {list(index)[:12]}")
         return None
 
     bev = _time_series(js, {mot_dim: bev_code})
@@ -265,7 +277,6 @@ def build_vehicles():
         for y, v in _time_series(js, {mot_dim: pc}).items():
             phev[y] = phev.get(y, 0.0) + v
     if not bev or not total:
-        print("  Vehicles: empty BEV/total series")
         return None
 
     years = sorted(set(bev) & set(total))
@@ -279,7 +290,6 @@ def build_vehicles():
         {"year": int(y), "value": round((bev.get(y, 0) + phev.get(y, 0)) / total[y] * 100, 1)}
         for y in years[-TREND_YEARS:] if total.get(y)
     ]
-    print(f"  Vehicles: total={total_code} bev={bev_code} phev={phev_codes}, latest={ly}, ev_share={ev_share}%")
     return {
         "unit": "registrations",
         "dataset": VEH_DATASET,
@@ -291,28 +301,42 @@ def build_vehicles():
     }
 
 
-def main():
-    print("fetch_eurostat.py - PT energy-transition annual indicators")
-    ghg = build_ghg()
-    heat_pumps = build_heat_pumps()
-    vehicles = build_vehicles()
-
+def build_country(code):
+    geo = GEO_MAP.get(code, code)
+    ghg = build_ghg(geo)
+    heat_pumps = build_heat_pumps(geo)
+    vehicles = build_vehicles(geo)
+    g = ghg["latest_year"] if ghg else "-"
+    h = heat_pumps["latest_year"] if heat_pumps else "-"
+    v = (str(vehicles["ev_share_pct"]) + "%") if vehicles and vehicles.get("ev_share_pct") is not None else "-"
+    print(f"  {code} (geo={geo}): ghg={g} hp={h} veh_ev_share={v}")
     if ghg is None and heat_pumps is None and vehicles is None:
-        print("ERROR: all blocks empty - leaving existing file untouched, exiting 0")
+        return None
+    return {"geo": geo, "ghg": ghg, "heat_pumps": heat_pumps, "vehicles": vehicles}
+
+
+def main():
+    print("fetch_eurostat.py - multi-country energy-transition annual indicators")
+    countries = {}
+    for code in COUNTRIES:
+        c = build_country(code)
+        if c is not None:
+            countries[code] = c
+
+    if not countries:
+        print("ERROR: no country resolved any block - leaving existing file untouched, exiting 0")
         return 0
 
     doc = {
         "updated": datetime.now(timezone.utc).isoformat(),
         "source": "Eurostat",
-        "geo": GEO,
-        "ghg": ghg,
-        "heat_pumps": heat_pumps,
-        "vehicles": vehicles,
+        "count": len(countries),
+        "countries": countries,
     }
     try:
         with open(OUT_FILE, "w", encoding="utf-8") as f:
             json.dump(doc, f, separators=(",", ":"))
-        print(f"Wrote {OUT_FILE}")
+        print(f"Wrote {OUT_FILE} ({len(countries)}/{len(COUNTRIES)} countries)")
     except Exception as e:
         print(f"ERROR writing {OUT_FILE}: {e} - exiting 0 (file untouched)")
     return 0
