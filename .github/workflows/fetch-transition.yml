@@ -1,0 +1,43 @@
+name: fetch-transition
+
+on:
+  schedule:
+    # Weekly, Monday 05:00 UTC. Eurostat GHG/energy-balance data is annual
+    # (GHG lags ~2 years), so weekly is more than enough.
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-transition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch Eurostat (GHG + heat pumps) for PT
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python fetch_eurostat.py
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update PT transition data $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
