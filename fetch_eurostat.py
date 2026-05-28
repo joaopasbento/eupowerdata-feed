@@ -13,6 +13,9 @@ indexed by site country code, each with three blocks:
   - vehicles    : new passenger-car registrations by motor energy
                   (road_eqr_carpda): latest BEV new registrations + EV share
                   (BEV+PHEV) of new cars, plus an EV-share trend.
+  - industry    : industrial energy use (nrg_bal_c, nrg_bal=FC_IND_E): industrial
+                  electrification rate (electricity/total), final consumption and
+                  natural-gas share, plus an electrification-rate trend.
 
 Source: Eurostat dissemination API (JSON-stat), public, no key:
   https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{code}?format=JSON&...
@@ -53,6 +56,7 @@ GEO_MAP = {"GR": "EL", "GB": "UK"}
 # tried first for subsequent countries to cut request volume.
 _ghg_winner = None
 _hp_winner = None
+_ind_unit_winner = None
 
 # GHG: total greenhouse gases in CO2-equivalent (env_air_gge).
 #   airpol = GHG  (all greenhouse gases, CO2-eq)
@@ -79,6 +83,17 @@ HP_UNIT_CANDIDATES = ["GWH", "TJ", "KTOE"]
 #   report latest BEV new registrations + EV share (BEV+PHEV) of new cars.
 VEH_DATASET = "road_eqr_carpda"
 VEH_UNIT = "NR"
+
+# Industry: final energy consumption in industry (nrg_bal_c, nrg_bal=FC_IND_E).
+#   We fetch three SIEC series and derive ratios at the latest common year:
+#     electrification rate = electricity / total ; gas share = natural gas / total
+#   Codes to confirm on first live run (graceful: any missing -> block null).
+IND_DATASET = "nrg_bal_c"
+IND_NRG_BAL = "FC_IND_E"          # final energy consumption - industry sector
+IND_SIEC_TOTAL = "TOTAL"          # all products
+IND_SIEC_ELEC = "E7000"           # electricity
+IND_SIEC_GAS = "G3000"            # natural gas
+IND_UNIT_CANDIDATES = ["KTOE", "TJ", "GWH"]
 
 TREND_YEARS = 7  # most recent N years for the sparkline-style trend
 
@@ -301,18 +316,70 @@ def build_vehicles(geo):
     }
 
 
+def _ind_series(geo, siec, unit):
+    js = http_get_json(es_url(IND_DATASET, geo, nrg_bal=IND_NRG_BAL, siec=siec, unit=unit))
+    return _time_series(js, {"nrg_bal": IND_NRG_BAL, "siec": siec, "unit": unit})
+
+
+def build_industry(geo):
+    global _ind_unit_winner
+    cands = ([_ind_unit_winner] if _ind_unit_winner else []) + \
+            [u for u in IND_UNIT_CANDIDATES if u != _ind_unit_winner]
+    total, unit = _series_with_candidates(
+        IND_DATASET, geo,
+        {"nrg_bal": IND_NRG_BAL, "siec": IND_SIEC_TOTAL},
+        "unit", cands,
+    )
+    if not total:
+        return None
+    _ind_unit_winner = unit
+    elec = _ind_series(geo, IND_SIEC_ELEC, unit)
+    gas = _ind_series(geo, IND_SIEC_GAS, unit)
+
+    years = sorted(total.keys())
+    ly = years[-1]
+    tot_ly = total.get(ly) or 0
+    elec_rate = round(elec.get(ly, 0) / tot_ly * 100, 1) if (tot_ly and elec) else None
+    gas_share = round(gas.get(ly, 0) / tot_ly * 100, 1) if (tot_ly and gas) else None
+
+    # KTOE -> report consumption in Mtoe; otherwise keep the raw unit
+    if unit == "KTOE":
+        cons_unit = "Mtoe"
+        cons = {y: v / 1000.0 for y, v in total.items()}
+    else:
+        cons_unit = unit
+        cons = total
+    trend = [{"year": int(y), "value": round(cons[y], 2)} for y in years[-TREND_YEARS:]]
+    rate_trend = [
+        {"year": int(y), "value": round(elec[y] / total[y] * 100, 1)}
+        for y in years[-TREND_YEARS:] if total.get(y) and elec.get(y) is not None
+    ]
+    return {
+        "unit": cons_unit,
+        "latest_year": int(ly),
+        "consumption": round(cons[ly], 2),
+        "electrification_rate_pct": elec_rate,
+        "gas_share_pct": gas_share,
+        "trend": trend,
+        "trend_rate": rate_trend,
+        "nrg_bal": IND_NRG_BAL,
+    }
+
+
 def build_country(code):
     geo = GEO_MAP.get(code, code)
     ghg = build_ghg(geo)
     heat_pumps = build_heat_pumps(geo)
     vehicles = build_vehicles(geo)
+    industry = build_industry(geo)
     g = ghg["latest_year"] if ghg else "-"
     h = heat_pumps["latest_year"] if heat_pumps else "-"
     v = (str(vehicles["ev_share_pct"]) + "%") if vehicles and vehicles.get("ev_share_pct") is not None else "-"
-    print(f"  {code} (geo={geo}): ghg={g} hp={h} veh_ev_share={v}")
-    if ghg is None and heat_pumps is None and vehicles is None:
+    i = industry["latest_year"] if industry else "-"
+    print(f"  {code} (geo={geo}): ghg={g} hp={h} veh_ev_share={v} ind={i}")
+    if ghg is None and heat_pumps is None and vehicles is None and industry is None:
         return None
-    return {"geo": geo, "ghg": ghg, "heat_pumps": heat_pumps, "vehicles": vehicles}
+    return {"geo": geo, "ghg": ghg, "heat_pumps": heat_pumps, "vehicles": vehicles, "industry": industry}
 
 
 def main():
