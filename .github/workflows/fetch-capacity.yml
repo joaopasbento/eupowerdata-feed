@@ -1,0 +1,33 @@
+name: Fetch installed capacity
+
+on:
+  schedule:
+    - cron: '0 4 1 * *'   # monthly, 1st at 04:00 UTC (capacity is annual data)
+  workflow_dispatch:
+
+jobs:
+  fetch-capacity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch ENTSO-E installed capacity
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_capacity.py
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update installed capacity $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
