@@ -5,6 +5,9 @@ on:
     - cron: '0 4 1 * *'   # monthly, 1st at 04:00 UTC (capacity is annual data)
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   fetch-capacity:
     runs-on: ubuntu-latest
