@@ -159,7 +159,7 @@ def _windsolar_latest(payload):
     estimate (latest startTime, then latest publishTime)."""
     recs = _records(payload)
     if recs:
-        print(f'  B1630: {len(recs)} records; sample: {recs[0]}')  # diagnostic
+        print(f'  B1630: {len(recs)} records')
     best = {}  # psrType -> (startTime, publishTime, qty)
     for rec in recs:
         start = str(_ci(rec, 'startTime', 'start_time') or '')
@@ -242,7 +242,7 @@ def fetch_gb_price():
     if not recs:
         print('  MID: no data')
         return None
-    print(f'  MID: {len(recs)} records; sample: {recs[0]}')  # diagnostic
+    print(f'  MID: {len(recs)} records')
 
     rate = _fx_gbp_eur()
 
@@ -323,7 +323,6 @@ def main():
     if gen:
         print(f"  GB mix OK: {gen['total_mw']} MW, {len(gen['mix'])} types, "
               f"renewable {gen['renewable_pct']}%")
-        print(f"  GB mix detail: {gen['mix']}")
         _inject(GEN_FILE, 'GB', gen)
     else:
         print('  GB generation not injected (feed left untouched)')
