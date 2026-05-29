@@ -16,8 +16,13 @@ indexed by site country code, each with three blocks:
   - industry    : industrial energy use (nrg_bal_c, nrg_bal=FC_IND_E): industrial
                   electrification rate (electricity/total), final consumption and
                   natural-gas share, plus an electrification-rate trend.
+  - buildings   : household energy use (nrg_bal_c, nrg_bal=FC_OTH_HH_E): household
+                  electrification rate (electricity/total), final consumption and
+                  natural-gas share, plus an electrification-rate trend.
   - policy      : renewable share in gross final energy consumption (nrg_ind_ren,
-                  nrg_bal=REN) vs the EU 2030 target (42.5%, RED III) for EU members.
+                  nrg_bal=REN) vs the EU 2030 target (42.5%, RED III) for EU members,
+                  plus the RED III sectoral split (REN_TRA transport, REN_HEAT_CL
+                  heating & cooling) shown as informative shares (no clean target bar).
 
 Source: Eurostat dissemination API (JSON-stat), public, no key:
   https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{code}?format=JSON&...
@@ -59,6 +64,7 @@ GEO_MAP = {"GR": "EL", "GB": "UK"}
 _ghg_winner = None
 _hp_winner = None
 _ind_unit_winner = None
+_bld_unit_winner = None
 
 # GHG: total greenhouse gases in CO2-equivalent (env_air_gge).
 #   airpol = GHG  (all greenhouse gases, CO2-eq)
@@ -97,6 +103,16 @@ IND_SIEC_ELEC = "E7000"           # electricity
 IND_SIEC_GAS = "G3000"            # natural gas
 IND_UNIT_CANDIDATES = ["KTOE", "TJ", "GWH"]
 
+# Buildings: final energy consumption in households (nrg_bal_c, nrg_bal=FC_OTH_HH_E).
+#   Same SIEC codes and derivation as industry: electrification rate = electricity /
+#   total, gas share = natural gas / total, at the latest common year.
+BLD_DATASET = "nrg_bal_c"
+BLD_NRG_BAL = "FC_OTH_HH_E"       # final consumption - other sectors - households - energy use
+BLD_SIEC_TOTAL = IND_SIEC_TOTAL
+BLD_SIEC_ELEC = IND_SIEC_ELEC
+BLD_SIEC_GAS = IND_SIEC_GAS
+BLD_UNIT_CANDIDATES = ["KTOE", "TJ", "GWH"]
+
 # Policy & targets: renewable share in gross final energy consumption (nrg_ind_ren).
 #   nrg_bal = REN (overall RES share); unit = PC (percent).
 #   The EU-wide binding 2030 target (RED III) is 42.5% — used as the reference for
@@ -104,6 +120,8 @@ IND_UNIT_CANDIDATES = ["KTOE", "TJ", "GWH"]
 POLICY_DATASET = "nrg_ind_ren"
 POLICY_NRG_BAL = "REN"
 POLICY_UNIT = "PC"
+POLICY_NRG_BAL_TRANSPORT = "REN_TRA"      # renewable share in transport (RED III sectoral)
+POLICY_NRG_BAL_HEATING = "REN_HEAT_CL"    # renewable share in heating & cooling (RED III sectoral)
 EU_2030_RES_TARGET = 42.5
 EU_CODES = {"PT", "ES", "DE", "FR", "IT", "NL", "BE", "AT", "PL", "SE", "DK", "FI",
             "GR", "IE", "RO", "BG", "HU", "CZ", "EE", "LV", "LT", "SI", "HR"}
@@ -379,6 +397,56 @@ def build_industry(geo):
     }
 
 
+def _bld_series(geo, siec, unit):
+    js = http_get_json(es_url(BLD_DATASET, geo, nrg_bal=BLD_NRG_BAL, siec=siec, unit=unit))
+    return _time_series(js, {"nrg_bal": BLD_NRG_BAL, "siec": siec, "unit": unit})
+
+
+def build_buildings(geo):
+    global _bld_unit_winner
+    cands = ([_bld_unit_winner] if _bld_unit_winner else []) + \
+            [u for u in BLD_UNIT_CANDIDATES if u != _bld_unit_winner]
+    total, unit = _series_with_candidates(
+        BLD_DATASET, geo,
+        {"nrg_bal": BLD_NRG_BAL, "siec": BLD_SIEC_TOTAL},
+        "unit", cands,
+    )
+    if not total:
+        return None
+    _bld_unit_winner = unit
+    elec = _bld_series(geo, BLD_SIEC_ELEC, unit)
+    gas = _bld_series(geo, BLD_SIEC_GAS, unit)
+
+    years = sorted(total.keys())
+    ly = years[-1]
+    tot_ly = total.get(ly) or 0
+    elec_rate = round(elec.get(ly, 0) / tot_ly * 100, 1) if (tot_ly and elec) else None
+    gas_share = round(gas.get(ly, 0) / tot_ly * 100, 1) if (tot_ly and gas) else None
+
+    # KTOE -> report consumption in Mtoe; otherwise keep the raw unit
+    if unit == "KTOE":
+        cons_unit = "Mtoe"
+        cons = {y: v / 1000.0 for y, v in total.items()}
+    else:
+        cons_unit = unit
+        cons = total
+    trend = [{"year": int(y), "value": round(cons[y], 2)} for y in years[-TREND_YEARS:]]
+    rate_trend = [
+        {"year": int(y), "value": round(elec[y] / total[y] * 100, 1)}
+        for y in years[-TREND_YEARS:] if total.get(y) and elec.get(y) is not None
+    ]
+    return {
+        "unit": cons_unit,
+        "latest_year": int(ly),
+        "consumption": round(cons[ly], 2),
+        "electrification_rate_pct": elec_rate,
+        "gas_share_pct": gas_share,
+        "trend": trend,
+        "trend_rate": rate_trend,
+        "nrg_bal": BLD_NRG_BAL,
+    }
+
+
 def build_policy(geo):
     js = http_get_json(es_url(POLICY_DATASET, geo, nrg_bal=POLICY_NRG_BAL, unit=POLICY_UNIT))
     series = _time_series(js, {"nrg_bal": POLICY_NRG_BAL, "unit": POLICY_UNIT})
@@ -387,9 +455,28 @@ def build_policy(geo):
     years = sorted(series.keys())
     ly = years[-1]
     trend = [{"year": int(y), "value": round(series[y], 1)} for y in years[-TREND_YEARS:]]
+
+    # RED III sectoral split: renewable share in transport and in heating & cooling.
+    # Shown as informative shares (the sectoral targets do not map to a clean bar:
+    # transport is "29% energy OR -14.5% GHG intensity"; heating is an indicative rise).
+    def _pol_latest(nrg_bal):
+        j = http_get_json(es_url(POLICY_DATASET, geo, nrg_bal=nrg_bal, unit=POLICY_UNIT))
+        s = _time_series(j, {"nrg_bal": nrg_bal, "unit": POLICY_UNIT})
+        if not s:
+            return None, None
+        y = sorted(s.keys())[-1]
+        return round(s[y], 1), int(y)
+
+    tra_pct, tra_year = _pol_latest(POLICY_NRG_BAL_TRANSPORT)
+    heat_pct, heat_year = _pol_latest(POLICY_NRG_BAL_HEATING)
+
     return {
         "res_share_pct": round(series[ly], 1),
         "res_year": int(ly),
+        "res_transport_pct": tra_pct,
+        "res_transport_year": tra_year,
+        "res_heating_pct": heat_pct,
+        "res_heating_year": heat_year,
         "trend": trend,
         "dataset": POLICY_DATASET,
     }
@@ -401,6 +488,7 @@ def build_country(code):
     heat_pumps = build_heat_pumps(geo)
     vehicles = build_vehicles(geo)
     industry = build_industry(geo)
+    buildings = build_buildings(geo)
     policy = build_policy(geo)
     if policy and code in EU_CODES:
         policy["res_target_2030"] = EU_2030_RES_TARGET
@@ -408,12 +496,14 @@ def build_country(code):
     h = heat_pumps["latest_year"] if heat_pumps else "-"
     v = (str(vehicles["ev_share_pct"]) + "%") if vehicles and vehicles.get("ev_share_pct") is not None else "-"
     i = industry["latest_year"] if industry else "-"
+    b = buildings["latest_year"] if buildings else "-"
     r = (str(policy["res_share_pct"]) + "%") if policy and policy.get("res_share_pct") is not None else "-"
-    print(f"  {code} (geo={geo}): ghg={g} hp={h} veh_ev_share={v} ind={i} res={r}")
-    if ghg is None and heat_pumps is None and vehicles is None and industry is None and policy is None:
+    print(f"  {code} (geo={geo}): ghg={g} hp={h} veh_ev_share={v} ind={i} bld={b} res={r}")
+    if (ghg is None and heat_pumps is None and vehicles is None and industry is None
+            and buildings is None and policy is None):
         return None
     return {"geo": geo, "ghg": ghg, "heat_pumps": heat_pumps, "vehicles": vehicles,
-            "industry": industry, "policy": policy}
+            "industry": industry, "buildings": buildings, "policy": policy}
 
 
 def main():
