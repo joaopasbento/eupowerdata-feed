@@ -29,6 +29,14 @@ jobs:
           PYTHONUNBUFFERED: '1'
         run: python fetch_eurostat.py
 
+      # Augments transition.json with monthly BEV registrations from EAFO.
+      # continue-on-error: an EAFO hiccup must never block the Eurostat commit.
+      - name: Fetch EAFO monthly BEV registrations
+        continue-on-error: true
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: python fetch_eafo.py
+
       - name: Commit and push
         run: |
           git config user.name  "github-actions[bot]"
