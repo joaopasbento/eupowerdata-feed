@@ -21,6 +21,9 @@ jobs:
         run: python fetch_entsoe.py
       - name: Fetch GB (Elexon Insights) data
         run: python fetch_gb.py
+      - name: Fetch REE (Spain) generation
+        continue-on-error: true
+        run: python fetch_ree.py
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
