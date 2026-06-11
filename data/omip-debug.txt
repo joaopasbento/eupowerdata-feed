@@ -1,10 +1,10 @@
-=== OMIP Debug — 2026-06-11T11:14:05.208406+00:00 ===
+=== OMIP Debug — 2026-06-11T18:17:05.885962+00:00 ===
 
 Status: SUCCESS
 Contracts found: 47
 
-HTML length: 162125
-Clean length: 35271
+HTML length: 162217
+Clean length: 35273
 Contains "Settlement": True
 Contains "FTB": True
 Contains "€": True
@@ -13,49 +13,49 @@ Contains "Eur/MWh": True
 Euro sign positions: 332
 
 --- Euro #1 at pos 1903 ---
-Contracts SPEL BASE €34.86 Wk25-26 €84.50 Jul-26 €89.50 Q3-26 €89.31 YR-27 €63.30 PPA-27/36 €53.56 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"
+Contracts SPEL BASE €29.55 Wk25-26 €85.00 Jul-26 €90.00 Q3-26 €89.40 YR-27 €63.75 PPA-27/36 €53.63 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"
 
 --- Euro #2 at pos 1918 ---
-BASE €34.86 Wk25-26 €84.50 Jul-26 €89.50 Q3-26 €89.31 YR-27 €63.30 PPA-27/36 €53.56 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"tit
+BASE €29.55 Wk25-26 €85.00 Jul-26 €90.00 Q3-26 €89.40 YR-27 €63.75 PPA-27/36 €53.63 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"tit
 
 --- Euro #3 at pos 1932 ---
-25-26 €84.50 Jul-26 €89.50 Q3-26 €89.31 YR-27 €63.30 PPA-27/36 €53.56 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""
+25-26 €85.00 Jul-26 €90.00 Q3-26 €89.40 YR-27 €63.75 PPA-27/36 €53.63 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""
 
 --- Euro #4 at pos 1945 ---
-Jul-26 €89.50 Q3-26 €89.31 YR-27 €63.30 PPA-27/36 €53.56 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"dat
+Jul-26 €90.00 Q3-26 €89.40 YR-27 €63.75 PPA-27/36 €53.63 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"dat
 
 --- Euro #5 at pos 1958 ---
- Q3-26 €89.31 YR-27 €63.30 PPA-27/36 €53.56 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"datetime","cross
+ Q3-26 €89.40 YR-27 €63.75 PPA-27/36 €53.63 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"datetime","cross
 
 --- Euro #6 at pos 1975 ---
-27 €63.30 PPA-27/36 €53.56 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"datetime","crosshair":true},"yAxi
+27 €63.75 PPA-27/36 €53.63 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u20ac"},"xAxis":{"title":{"text":""},"type":"datetime","crosshair":true},"yAxi
 
---- Euro #7 at pos 2983 ---
- Contracts 12Jun-26 €41.00 13Jun-26 €41.58 14Jun-26 €35.42 Wk26-26 €85.50 Wk27-26 €91.18 Wk28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €
+--- Euro #7 at pos 2984 ---
+ Contracts 12Jun-26 €29.55 13Jun-26 €52.66 14Jun-26 €44.34 Wk26-26 €85.15 Wk27-26 €91.44 Wk28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €
 
---- Euro #8 at pos 2999 ---
--26 €41.00 13Jun-26 €41.58 14Jun-26 €35.42 Wk26-26 €85.50 Wk27-26 €91.18 Wk28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.
+--- Euro #8 at pos 3000 ---
+-26 €29.55 13Jun-26 €52.66 14Jun-26 €44.34 Wk26-26 €85.15 Wk27-26 €91.44 Wk28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.
 
---- Euro #9 at pos 3015 ---
--26 €41.58 14Jun-26 €35.42 Wk26-26 €85.50 Wk27-26 €91.18 Wk28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 
+--- Euro #9 at pos 3016 ---
+-26 €52.66 14Jun-26 €44.34 Wk26-26 €85.15 Wk27-26 €91.44 Wk28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 
 
---- Euro #10 at pos 3030 ---
-n-26 €35.42 Wk26-26 €85.50 Wk27-26 €91.18 Wk28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 YR-28 €58.50 YR
+--- Euro #10 at pos 3031 ---
+n-26 €44.34 Wk26-26 €85.15 Wk27-26 €91.44 Wk28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 YR-28 €58.80 YR
 
---- Euro #11 at pos 3045 ---
-6-26 €85.50 Wk27-26 €91.18 Wk28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 YR-28 €58.50 YR-29 €54.00 YR-3
+--- Euro #11 at pos 3046 ---
+6-26 €85.15 Wk27-26 €91.44 Wk28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 YR-28 €58.80 YR-29 €54.00 YR-3
 
---- Euro #12 at pos 3060 ---
-7-26 €91.18 Wk28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 YR-28 €58.50 YR-29 €54.00 YR-30 €53.31 YR-31 
+--- Euro #12 at pos 3061 ---
+7-26 €91.44 Wk28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 YR-28 €58.80 YR-29 €54.00 YR-30 €53.20 YR-31 
 
---- Euro #13 at pos 3074 ---
-28-26 €89.50 Aug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 YR-28 €58.50 YR-29 €54.00 YR-30 €53.31 YR-31 €52.15 YR-32 €
+--- Euro #13 at pos 3075 ---
+28-26 €90.00 Aug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 YR-28 €58.80 YR-29 €54.00 YR-30 €53.20 YR-31 €52.15 YR-32 €
 
---- Euro #14 at pos 3088 ---
-ug-26 €88.20 Sep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 YR-28 €58.50 YR-29 €54.00 YR-30 €53.31 YR-31 €52.15 YR-32 €51.55 YR-33 €5
+--- Euro #14 at pos 3089 ---
+ug-26 €87.81 Sep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 YR-28 €58.80 YR-29 €54.00 YR-30 €53.20 YR-31 €52.15 YR-32 €51.55 YR-33 €5
 
---- Euro #15 at pos 3102 ---
-ep-26 €90.25 Oct-26 €89.40 Nov-26 €95.52 Dec-26 €95.66 Q4-26 €93.50 Q1-27 €76.00 Q2-27 €42.86 Q3-27 €66.65 Q4-27 €67.75 Q1-28 €65.46 YR-28 €58.50 YR-29 €54.00 YR-30 €53.31 YR-31 €52.15 YR-32 €51.55 YR-33 €51.35 YR-34 €50
+--- Euro #15 at pos 3103 ---
+ep-26 €90.42 Oct-26 €89.40 Nov-26 €96.27 Dec-26 €96.41 Q4-26 €94.00 Q1-27 €77.80 Q2-27 €42.86 Q3-27 €66.66 Q4-27 €67.76 Q1-28 €65.76 YR-28 €58.80 YR-29 €54.00 YR-30 €53.20 YR-31 €52.15 YR-32 €51.55 YR-33 €51.35 YR-34 €50
 
 
 Settlement Price positions: 85
