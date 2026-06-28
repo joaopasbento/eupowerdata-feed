@@ -1,1 +1,8 @@
-{"status": "error", "time": "2026-06-27T23:03:03.466595+00:00"}
+{
+  "status": "ok",
+  "endpoint": "https://web-api.tp.entsoe.eu/api",
+  "time": "2026-06-28T00:18:56.309383+00:00",
+  "prices_zones": 30,
+  "generation_zones": 0,
+  "flow_corridors": 0
+}
