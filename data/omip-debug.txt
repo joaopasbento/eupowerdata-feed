@@ -1,16 +1,16 @@
-=== OMIP Debug — 2026-09-14T18:43:50.952618+00:00 ===
+=== OMIP Debug — 2026-09-14T22:07:54.660498+00:00 ===
 
 Status: SUCCESS
 Contracts found: 47
 
-HTML length: 202558
-Clean length: 45146
+HTML length: 201894
+Clean length: 44970
 Contains "Settlement": True
 Contains "FTB": True
 Contains "€": True
 Contains "Eur/MWh": True
 
-Euro sign positions: 460
+Euro sign positions: 458
 
 --- Euro #1 at pos 1903 ---
 Contracts SPEL BASE €167.33 Wk39-26 €151.01 Oct-26 €145.00 Q4-26 €155.46 YR-27 €96.89 PPA-27/36 €57.35 Power Spain Base Load - YR-27 {point.y} ","xDateFormat":"%Y-%m-%d","valueDecimals":2,"shared":true,"valuePrefix":"\u2
