@@ -6,6 +6,11 @@ Outputs JSON files consumed by eupowerdata.com
 One run makes about 150 requests (36 price zones, 36 generation zones, 76 flow
 corridors, plus OMIP). They are sent in parallel, under a total time budget,
 and each file is written as soon as its dataset is done — see "Run limits".
+
+A zone or a corridor that does not answer in a run keeps what was published
+for it earlier the same UTC day, with the time it was obtained (fetched_at) and
+a mark (carried_over); never a value of an earlier day, and never with the
+time of the run that kept it — see carry_over.py and publish().
 """
 
 import os
@@ -22,6 +27,10 @@ import urllib.parse
 import ssl
 from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree as ET
+
+import carry_over
+from carry_over import CARRIED_OVER, FETCHED_AT
+from feed_common import load_json
 
 API_KEY = os.environ.get('ENTSOE_API_KEY', '')
 BASE_URL = 'https://web-api.tp.entsoe.eu/api'
@@ -157,6 +166,24 @@ RENEWABLE_TYPES = [
     'Biomass', 'Geothermal', 'Hydro Run-of-river', 'Hydro Water Reservoir',
     'Marine', 'Solar', 'Wind Offshore', 'Wind Onshore', 'Other renewable',
 ]
+
+# The order of the zones and corridors in the published files: the ENTSO-E
+# zones as listed above, then the countries put together from several zones,
+# then the zones that fetch_gb.py fills in from Elexon after this script. A
+# zone kept from an earlier run (see carry_over.py) goes back to its place.
+ELEXON_ZONES = ('GB',)
+SUBZONES = {zone for zones in CONSOLIDATE.values() for zone in zones}
+PRICE_ORDER = ([code for code in ZONES if code not in SUBZONES and code not in ELEXON_ZONES]
+               + list(CONSOLIDATE) + list(ELEXON_ZONES))
+GEN_ORDER = ([code for code in GEN_COUNTRIES if code not in ELEXON_ZONES]
+             + list(CONSOLIDATE) + list(ELEXON_ZONES))
+FLOW_ORDER = [f'{frm}→{to}' for frm, to in FLOW_CORRIDORS]
+
+
+def utcnow():
+    """The current time, in UTC. The run's day and the files' `updated` come from here."""
+    return datetime.now(timezone.utc)
+
 
 # --- Run limits ---
 #
@@ -552,15 +579,32 @@ def parse_flow_xml(xml_str):
 
 # --- Fetchers ---
 
+def _incomplete(country, zone_codes, zones):
+    """True when only some of a country's zones answered. The country is then
+    not built from the part that did: half of Norway is not Norway, and for
+    generation it would show the country's output falling by the missing part.
+    Its zones are dropped, so the country counts as not obtained in this run:
+    it keeps what was published earlier today, or is left out."""
+    missing = [zc for zc in zone_codes if zc not in zones]
+    if not missing:
+        return False
+    answered = [zc for zc in zone_codes if zc in zones]
+    for zc in zone_codes:
+        zones.pop(zc, None)
+    print(f'  {country}: {"+".join(answered)} answered but {"+".join(missing)} did not — '
+          f'not put together from part of the country')
+    return True
+
+
 def fetch_prices(base, deadline=None):
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
 
     prices = {
-        'updated': datetime.now(timezone.utc).isoformat(),
+        'updated': now.isoformat(),
         'source': 'ENTSO-E Transparency Platform',
         'endpoint': base,
         'zones': {},
@@ -597,6 +641,8 @@ def fetch_prices(base, deadline=None):
         zone_data = [prices['zones'].get(zc) for zc in zone_codes if zc in prices['zones']]
         if not zone_data:
             continue
+        if _incomplete(country, zone_codes, prices['zones']):
+            continue
         all_avgs = [z['avg'] for z in zone_data if z.get('avg') is not None]
         all_mins = [z['min'] for z in zone_data if z.get('min') is not None]
         all_maxs = [z['max'] for z in zone_data if z.get('max') is not None]
@@ -626,12 +672,12 @@ def fetch_prices(base, deadline=None):
 def fetch_generation(base, deadline=None):
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
 
     gen = {
-        'updated': datetime.now(timezone.utc).isoformat(),
+        'updated': now.isoformat(),
         'source': 'ENTSO-E Transparency Platform',
         'zones': {},
     }
@@ -667,6 +713,8 @@ def fetch_generation(base, deadline=None):
         zone_data = [gen['zones'].get(zc) for zc in zone_codes if zc in gen['zones']]
         if not zone_data:
             continue
+        if _incomplete(country, zone_codes, gen['zones']):
+            continue
         merged_mix = {}
         for z in zone_data:
             for k, v in z.get('mix', {}).items():
@@ -688,12 +736,12 @@ def fetch_generation(base, deadline=None):
 def fetch_flows(base, deadline=None):
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
 
     flows = {
-        'updated': datetime.now(timezone.utc).isoformat(),
+        'updated': now.isoformat(),
         'source': 'ENTSO-E Transparency Platform',
         'corridors': {},
         'net': {},
@@ -728,22 +776,37 @@ def fetch_flows(base, deadline=None):
                 'values': values,
             }
 
-    processed = set()
+    flows['net'] = net_flows(flows['corridors'])
+    return flows
+
+
+def net_flows(corridors):
+    """The `net` block: the net flow of each pair of zones, from the two
+    corridors of the pair as they are in the file.
+
+    A pair is as old as the older of its two corridors and is marked
+    carried_over when either of them was kept from an earlier run, so the
+    number never looks fresher than what it was worked out from."""
+    net = {}
     for frm, to in FLOW_CORRIDORS:
         pair = '-'.join(sorted([frm, to]))
-        if pair in processed:
+        if pair in net:
             continue
-        processed.add(pair)
-        fwd = flows['corridors'].get(f'{frm}→{to}', {}).get('latest', {}).get('mw', 0)
-        rev = flows['corridors'].get(f'{to}→{frm}', {}).get('latest', {}).get('mw', 0)
-        net = fwd - rev
-        flows['net'][pair] = {
-            'from': frm if net >= 0 else to,
-            'to': to if net >= 0 else frm,
-            'net_mw': abs(round(net)),
+        both = [corridors.get(f'{frm}→{to}'), corridors.get(f'{to}→{frm}')]
+        fwd, rev = [(c or {}).get('latest', {}).get('mw', 0) for c in both]
+        balance = fwd - rev
+        entry = {
+            'from': frm if balance >= 0 else to,
+            'to': to if balance >= 0 else frm,
+            'net_mw': abs(round(balance)),
         }
-
-    return flows
+        times = [c[FETCHED_AT] for c in both if c and c.get(FETCHED_AT)]
+        if times:
+            entry[FETCHED_AT] = min(times, key=carry_over.parse_time)
+            if any(c and c.get(CARRIED_OVER) for c in both):
+                entry[CARRIED_OVER] = True
+        net[pair] = entry
+    return net
 
 
 def fetch_omip(deadline=None):
@@ -977,7 +1040,7 @@ def archive_snapshot(dataset, payload):
     share) and on the Grid Monitor map (flows). Overwritten on every fetch.
     """
     os.makedirs('data/archive', exist_ok=True)
-    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    today_str = utcnow().strftime('%Y-%m-%d')
     archive_path = f'data/archive/{dataset}-{today_str}.json'
     try:
         write_json(archive_path, payload, separators=(',', ':'))
@@ -993,7 +1056,7 @@ def refresh_archive_index():
     # ── Unified cleanup: delete archive files older than ~5 years (1830 days).
     # Applies to spot-prices-*.json, generation-mix-*.json and cross-border-flows-*.json.
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=1830)).strftime('%Y-%m-%d')
+        cutoff = (utcnow() - timedelta(days=1830)).strftime('%Y-%m-%d')
         removed = 0
         for fname in os.listdir('data/archive'):
             if not fname.endswith('.json'):
@@ -1033,7 +1096,7 @@ def refresh_archive_index():
         # Sort each dataset's date list ascending (chronological)
         index_sorted = {k: sorted(v) for k, v in index.items()}
         index_payload = {
-            'updated': datetime.now(timezone.utc).isoformat(),
+            'updated': utcnow().isoformat(),
             'datasets': index_sorted,
         }
         write_json('data/archive_index.json', index_payload, separators=(',', ':'))
@@ -1078,6 +1141,51 @@ def update_forward_curves(deadline=None):
         print(f'  OMIP update failed: {type(e).__name__}: {e}')
 
 
+def publish(doc, key, path, order, dataset):
+    """Write one of the three files and its archive snapshot: the entries this
+    run obtained plus the ones kept from earlier today (see carry_over.py).
+
+    Returns how many entries came from this run. With none, nothing is written:
+    the published file, its `updated` included, stays exactly as it was."""
+    fresh = doc[key]
+    name = os.path.basename(path)
+    if not fresh:
+        print(f'Nothing obtained in this run: {name} is left exactly as it was')
+        return 0
+
+    entries, kept, dropped = carry_over.merge(fresh, load_json(path), key, order, doc['updated'])
+    doc[key] = entries
+    if key == 'corridors':
+        doc['net'] = net_flows(entries)      # over what the file shows, kept corridors included
+    write_json(path, doc, separators=(',', ':'))
+    print(f'Saved {name} ({len(entries)} {key}: {len(fresh)} from this run, '
+          f'{len(kept)} kept from earlier today)')
+    if kept:
+        print('  Kept, not obtained in this run: ' + ', '.join(f'{n} (from {t})' for n, t in kept))
+    if dropped:
+        print('  Left out, last obtained on an earlier day: ' + ', '.join(f'{n} ({t})' for n, t in dropped))
+
+    # The archive follows what is published. The zones fetch_gb.py fills in
+    # were never part of it, and stay out.
+    snapshot = doc
+    if key == 'zones':
+        snapshot = dict(doc, zones={n: e for n, e in entries.items() if n not in ELEXON_ZONES})
+    archive_snapshot(dataset, snapshot)
+    return len(fresh)
+
+
+def write_status(status, run_started):
+    """status.json: the run's outcome plus, for each of the three files as they
+    are published now, how many entries it has, how many of them this run
+    obtained and how many are from earlier runs."""
+    counts = carry_over.published_counts(run_started)
+    for existing in ('prices_zones', 'generation_zones', 'flow_corridors'):
+        status[existing] = counts[existing]
+    status['run_started'] = run_started.isoformat()
+    status.update(counts)
+    write_json('data/status.json', status, indent=2)
+
+
 def main():
     try:
         sys.stdout.reconfigure(line_buffering=True)   # show progress while running
@@ -1089,6 +1197,7 @@ def main():
         return 1
 
     started = time.monotonic()
+    run_started = utcnow()
     run_deadline = started + TOTAL_BUDGET_S
     os.makedirs('data', exist_ok=True)
 
@@ -1106,7 +1215,7 @@ def main():
     base = find_working_endpoint(run_deadline)
     if not base:
         print('ERROR: All ENTSO-E endpoints unreachable')
-        write_json('data/status.json', {'status': 'error', 'time': datetime.now(timezone.utc).isoformat()})
+        write_status({'status': 'error', 'time': utcnow().isoformat()}, run_started)
         wait_for_omip()
         return 1
 
@@ -1123,48 +1232,32 @@ def main():
         return now + max(0.0, run_deadline - now) * share
 
     # Every file is written as soon as its dataset is done, so a run that is
-    # cut short keeps whatever it had already fetched.
+    # cut short keeps whatever it had already fetched. A zone or corridor that
+    # did not answer keeps what was published earlier today (see carry_over.py).
     print('Fetching day-ahead prices...')
     prices = fetch_prices(base, next_deadline())
-    zone_count = len(prices['zones'])
-    print(f'  → {zone_count} zones\n')
+    print(f"  → {len(prices['zones'])} zones\n")
+    zone_count = publish(prices, 'zones', 'data/spot-prices.json', PRICE_ORDER, 'spot-prices')
     if zone_count > 0:
-        write_json('data/spot-prices.json', prices, separators=(',', ':'))
-        print(f'Saved spot-prices.json ({zone_count} zones)')
-        archive_snapshot('spot-prices', prices)
         refresh_archive_index()
 
     print('\nFetching generation mix...')
     gen = fetch_generation(base, next_deadline())
-    gen_count = len(gen['zones'])
-    print(f'  → {gen_count} zones\n')
+    print(f"  → {len(gen['zones'])} zones\n")
+    gen_count = publish(gen, 'zones', 'data/generation-mix.json', GEN_ORDER, 'generation-mix')
     if gen_count > 0:
-        write_json('data/generation-mix.json', gen, separators=(',', ':'))
-        print(f'Saved generation-mix.json ({gen_count} zones)')
-        archive_snapshot('generation-mix', gen)
         refresh_archive_index()
 
     print('\nFetching cross-border flows...')
     flows = fetch_flows(base, next_deadline())
-    flow_count = len(flows['corridors'])
-    print(f'  → {flow_count} corridors\n')
-    if flow_count > 0:
-        write_json('data/cross-border-flows.json', flows, separators=(',', ':'))
-        print(f'Saved cross-border-flows.json ({flow_count} corridors)')
-        archive_snapshot('cross-border-flows', flows)
+    print(f"  → {len(flows['corridors'])} corridors\n")
+    flow_count = publish(flows, 'corridors', 'data/cross-border-flows.json', FLOW_ORDER, 'cross-border-flows')
     # Also when a dataset came back empty: the cleanup and the index do not depend on it.
     refresh_archive_index()
 
     wait_for_omip()
 
-    write_json('data/status.json', {
-        'status': 'ok',
-        'endpoint': base,
-        'time': datetime.now(timezone.utc).isoformat(),
-        'prices_zones': zone_count,
-        'generation_zones': gen_count,
-        'flow_corridors': flow_count,
-    }, indent=2)
+    write_status({'status': 'ok', 'endpoint': base, 'time': utcnow().isoformat()}, run_started)
 
     print(f'\nDone in {time.monotonic() - started:.0f}s')
     # Fail the step only when ENTSO-E gave nothing at all, so it shows in Actions.

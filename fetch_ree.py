@@ -8,9 +8,12 @@ wrote to data/generation-mix.json earlier in the same run:
 
     {updated, source, mix: {technology: MW}, total_mw, renewable_pct}
 
-`updated` is the time of the ENTSO-E data it was copied from, not the time of
-the copy, so the file never looks fresher than its source. The `fallback` flag
-is gone (nothing on the site reads it): ENTSO-E is now the only source.
+`updated` is the time the ES zone itself was obtained from ENTSO-E (its
+fetched_at), not the time of the copy nor of the file it is copied from: when
+ENTSO-E did not answer for Spain and the zone was kept from an earlier run
+(see carry_over.py), the copy carries that earlier time, so it never looks
+fresher than its source. The `fallback` flag is gone (nothing on the site
+reads it): ENTSO-E is now the only source.
 
 The technology names are ENTSO-E's ("Wind Onshore", "Fossil Gas"...), which
 the site already maps to its categories.
@@ -21,6 +24,7 @@ previous ree-generation.json is kept.
 
 import sys
 
+from carry_over import entry_time
 from feed_common import load_json, write_json
 
 OUT_PATH = 'data/ree-generation.json'
@@ -35,7 +39,7 @@ def from_generation_mix(gen_mix):
     if not es or not es.get('mix') or not es.get('total_mw'):
         return None
     return {
-        'updated': gen_mix.get('updated'),
+        'updated': entry_time(es, gen_mix),           # when the zone was obtained
         'source': SOURCE,
         'mix': es['mix'],
         'total_mw': es['total_mw'],

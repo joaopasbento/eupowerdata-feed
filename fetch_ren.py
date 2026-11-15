@@ -10,7 +10,9 @@ fetch_ree.py does for Spain.
     {updated, source, fallback, mix: {technology: MW}, total_mw, renewable_pct[, url]}
 
 `source` and `fallback` say where the data came from. In a fallback, `updated`
-is the time of the ENTSO-E data it was copied from, not the time of the copy.
+is the time the PT zone itself was obtained from ENTSO-E (its fetched_at): not
+the time of the copy, and not the time of generation-mix.json either, which is
+later when the zone was kept from an earlier run (see carry_over.py).
 The site's JavaScript reads `mix`, `total_mw` and `renewable_pct` only.
 
 Differences from the PHP, on purpose:
@@ -30,6 +32,7 @@ import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from carry_over import entry_time
 from feed_common import http_get, load_json, now_iso, write_json
 
 OUT_PATH = 'data/ren-generation.json'
@@ -173,7 +176,7 @@ def from_generation_mix(gen_mix):
         return None
     mix = pt['mix']
     return {
-        'updated': gen_mix.get('updated'),            # the time of the ENTSO-E data
+        'updated': entry_time(pt, gen_mix),           # when the zone was obtained
         'source': 'ENTSO-E Transparency Platform',
         'fallback': True,
         'mix': mix,
