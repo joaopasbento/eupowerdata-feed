@@ -28,6 +28,15 @@ categorizeGen() and renewable_pct logic with no new mapping.
 NOTE (unit assumption): AGPT 'quantity' is taken to be MW (average power over
 the settlement period), matching the ENTSO-E A75 convention. The first live run
 should be sanity-checked: a healthy GB total is ~15-40 GW.
+
+When Elexon does not answer. fetch_entsoe.py, which rewrites the two files
+just before this script runs, keeps the GB zone that was published earlier the
+same UTC day, with the time it was obtained (fetched_at) and the mark
+carried_over (see carry_over.py). So this script only has two things to do:
+when Elexon answers, GB gets the new data, the time of this fetch and no mark;
+when it does not, GB is left as fetch_entsoe.py left it. Either way the counts
+in data/status.json are worked out again at the end, so that they say whether
+GB came from this run.
 """
 
 import json
@@ -36,6 +45,10 @@ import sys
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone, timedelta
+
+import carry_over
+from carry_over import CARRIED_OVER, FETCHED_AT
+from feed_common import load_json, write_json
 
 # --- Elexon Insights API (public, no key) -----------------------------------
 ELEXON_BASE     = 'https://data.elexon.co.uk/bmrs/api/v1'
@@ -54,6 +67,8 @@ GB_EIC = '10YGB----------A'
 
 GEN_FILE   = 'data/generation-mix.json'
 PRICE_FILE = 'data/spot-prices.json'
+STATUS_FILE = 'data/status.json'
+STATUS_MAX_AGE = timedelta(minutes=30)   # older than this, status.json is from another run
 
 # Sanity bounds to reject obviously-wrong payloads (MW / EUR per MWh).
 GB_TOTAL_MIN_MW, GB_TOTAL_MAX_MW = 3000, 80000
@@ -313,6 +328,37 @@ def _inject(path, zone_key, zone_obj):
         return False
 
 
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+def _report_left(path):
+    """Elexon gave nothing: say what the file has for GB, and from when."""
+    doc = load_json(path)
+    gb = ((doc or {}).get('zones') or {}).get('GB')
+    if not gb:
+        print(f'  no GB in {path}')
+        return
+    kept = ' (kept from an earlier run today)' if gb.get(CARRIED_OVER) else ''
+    print(f'  GB in {path} is the value obtained at {carry_over.entry_time(gb, doc)}{kept}')
+
+
+def update_status():
+    """fetch_entsoe.py wrote status.json before this script touched the two
+    files: count their zones again, so that the counts say the truth about GB
+    (obtained in this run, or kept from an earlier one)."""
+    status = load_json(STATUS_FILE)
+    started = carry_over.parse_time(status.get('run_started')) if isinstance(status, dict) else None
+    if started is None or utcnow() - started > STATUS_MAX_AGE:
+        print('  status.json is not from this run - its counts are left as they are')
+        return
+    status.update(carry_over.published_counts(started, files=(PRICE_FILE, GEN_FILE)))
+    write_json(STATUS_FILE, status, indent=2)
+    print(f"  status.json: prices {status['prices_zones_fetched']} from this run + "
+          f"{status['prices_zones_carried_over']} kept, generation "
+          f"{status['generation_zones_fetched']} + {status['generation_zones_carried_over']}")
+
+
 def main():
     print('Fetching GB generation (Elexon AGPT + wind/solar)...')
     gen = None
@@ -321,11 +367,13 @@ def main():
     except Exception as e:
         print(f'  generation error: {e}')
     if gen:
+        gen[FETCHED_AT] = utcnow().isoformat()        # obtained now: no carried_over mark
         print(f"  GB mix OK: {gen['total_mw']} MW, {len(gen['mix'])} types, "
               f"renewable {gen['renewable_pct']}%")
         _inject(GEN_FILE, 'GB', gen)
     else:
         print('  GB generation not injected (feed left untouched)')
+        _report_left(GEN_FILE)
 
     print('Fetching GB price (Elexon MID -> EUR)...')
     price = None
@@ -334,10 +382,17 @@ def main():
     except Exception as e:
         print(f'  price error: {e}')
     if price:
+        price[FETCHED_AT] = utcnow().isoformat()
         print(f"  GB price OK: {len(price['prices'])} hours, avg EUR {price['avg']}/MWh")
         _inject(PRICE_FILE, 'GB', price)
     else:
         print('  GB price not injected (feed left untouched)')
+        _report_left(PRICE_FILE)
+
+    try:
+        update_status()
+    except Exception as e:  # noqa: BLE001 - GB must never fail the workflow
+        print(f'  status.json not updated: {e}')
 
     # Always succeed: GB is supplementary and must never fail the workflow or
     # block the ENTSO-E commit.
