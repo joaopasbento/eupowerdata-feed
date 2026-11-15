@@ -170,11 +170,17 @@ RENEWABLE_TYPES = [
 #     its own slot and never holds the others back;
 #   - the run has a total time budget, shared by the three datasets;
 #   - each file is written as soon as its dataset is done.
-TOTAL_BUDGET_S = float(os.environ.get('FETCH_BUDGET_SECONDS', '240'))
-MAX_WORKERS = 8          # requests in flight at the same time
+#
+# The time limits are sized for how ENTSO-E has been answering since late
+# October 2026: roughly half of the requests, even ones it rejects outright,
+# sit for about 15 seconds before the first byte arrives, and the rest answer
+# in under a second. A request therefore needs well over 15 s, and it takes
+# many requests in flight to finish a run in a couple of minutes.
+TOTAL_BUDGET_S = float(os.environ.get('FETCH_BUDGET_SECONDS', '300'))
+MAX_WORKERS = 16         # requests in flight at the same time
 MIN_INTERVAL_S = 0.25    # between request starts: 240 requests per minute at most
-SOCKET_TIMEOUT_S = 20    # connecting, and each read
-REQUEST_MAX_S = 30       # one attempt, however slowly the bytes arrive
+SOCKET_TIMEOUT_S = 45    # connecting, and each read
+REQUEST_MAX_S = 60       # one attempt, however slowly the bytes arrive
 ATTEMPTS = 2             # one retry after a connection error or an HTTP 5xx (never after a timeout)
 GRACE_S = 5              # how long a dataset waits past its deadline for stragglers
 OUT_OF_TIME = 'time budget exhausted'   # why a request was dropped, as shown in the log

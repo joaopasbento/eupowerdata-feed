@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     # Each step has its own limit; this one is only a backstop and must stay
     # above their sum, so that it is never the job that gets cancelled.
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       PYTHONUNBUFFERED: '1'   # progress shows in the log while the script runs
     steps:
@@ -21,10 +21,10 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      # The script stops by itself after FETCH_BUDGET_SECONDS (240 s) and writes
+      # The script stops by itself after FETCH_BUDGET_SECONDS (300 s) and writes
       # each file as soon as its dataset is done, so the step limit is slack.
       - name: Fetch ENTSO-E data
-        timeout-minutes: 6
+        timeout-minutes: 7
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_entsoe.py
