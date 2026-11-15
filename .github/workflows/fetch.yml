@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     # Each step has its own limit; this one is only a backstop and must stay
     # above their sum, so that it is never the job that gets cancelled.
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PYTHONUNBUFFERED: '1'   # progress shows in the log while the script runs
     steps:
@@ -33,11 +33,38 @@ jobs:
         if: ${{ !cancelled() }}
         timeout-minutes: 2
         run: python fetch_gb.py
-      - name: Fetch REE (Spain) generation
+      # The two below read data/generation-mix.json, so they come after it.
+      - name: Spain generation (copy of the ENTSO-E ES zone)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 1
+        run: python fetch_ree.py
+      - name: Portugal generation (REN, else the ENTSO-E PT zone)
         if: ${{ !cancelled() }}
         continue-on-error: true
         timeout-minutes: 2
-        run: python fetch_ree.py
+        run: python fetch_ren.py
+      - name: OMIE day-ahead prices
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 3
+        run: python fetch_omie.py
+      # Runs every time but only does something when the file is over 12 hours old.
+      - name: Installed capacity (ENTSO-E + RenewableNodes)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 2
+        run: python merge_capacity.py
+      # MET Norway's terms must be read and accepted by a person before its API
+      # is used: until the repository variable MET_NORWAY_TOS_ACCEPTED is "true"
+      # this step makes no request. https://api.met.no/doc/TermsOfService
+      - name: Weather (MET Norway)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 4
+        env:
+          MET_NORWAY_TOS_ACCEPTED: ${{ vars.MET_NORWAY_TOS_ACCEPTED }}
+        run: python fetch_weather.py
       - name: Commit and push
         if: ${{ always() }}
         timeout-minutes: 3
