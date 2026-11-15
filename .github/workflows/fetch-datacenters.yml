@@ -40,14 +40,14 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Pull --rebase before push to handle the case where the user
-          # commits to fetch_datacenters.py while this workflow is running.
-          # Without this the push gets rejected ("fetch first").
-          git pull --rebase origin main || true
           git add data/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "Update datacenter data $(date -u +'%Y-%m-%d %H:%M UTC')"
+            # Rebase after the commit (a rebase refuses to run with uncommitted
+            # changes) and before the push, so that a commit made to main while
+            # this workflow was running does not get the push rejected.
+            git pull --rebase origin main
             git push
           fi

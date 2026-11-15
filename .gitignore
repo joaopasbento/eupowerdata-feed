@@ -1,2 +1,6 @@
 # macOS Finder metadata
 .DS_Store
+# Python bytecode
+__pycache__/
+# Temp files of interrupted atomic writes (see write_json in fetch_entsoe.py)
+*.tmp

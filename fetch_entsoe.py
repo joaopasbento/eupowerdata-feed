@@ -2,10 +2,21 @@
 EU Power Data — ENTSO-E data fetcher
 Runs via GitHub Actions every 15 minutes.
 Outputs JSON files consumed by eupowerdata.com
+
+One run makes about 150 requests (36 price zones, 36 generation zones, 76 flow
+corridors, plus OMIP). They are sent in parallel, under a total time budget,
+and each file is written as soon as its dataset is done — see "Run limits".
 """
 
 import os
+import sys
 import json
+import queue
+import tempfile
+import threading
+import time
+import http.client
+import urllib.error
 import urllib.request
 import urllib.parse
 import ssl
@@ -147,32 +158,222 @@ RENEWABLE_TYPES = [
     'Marine', 'Solar', 'Wind Offshore', 'Wind Onshore', 'Other renewable',
 ]
 
+# --- Run limits ---
+#
+# The requests used to go out one after another and the files were only written
+# at the very end of main(), so on a slow ENTSO-E day the run hit the job's time
+# limit and everything it had fetched was lost. Now:
+#   - requests run in parallel, throttled well below ENTSO-E's limit of 400
+#     requests per minute per API token (a breach suspends the token for about
+#     10 minutes): https://transparencyplatform.zendesk.com/hc/en-us/articles/12783148966036
+#   - every request has a hard time limit, so a slow or dead zone only costs
+#     its own slot and never holds the others back;
+#   - the run has a total time budget, shared by the three datasets;
+#   - each file is written as soon as its dataset is done.
+TOTAL_BUDGET_S = float(os.environ.get('FETCH_BUDGET_SECONDS', '240'))
+MAX_WORKERS = 8          # requests in flight at the same time
+MIN_INTERVAL_S = 0.25    # between request starts: 240 requests per minute at most
+SOCKET_TIMEOUT_S = 20    # connecting, and each read
+REQUEST_MAX_S = 30       # one attempt, however slowly the bytes arrive
+ATTEMPTS = 2             # one retry after a connection error or an HTTP 5xx (never after a timeout)
+GRACE_S = 5              # how long a dataset waits past its deadline for stragglers
+OUT_OF_TIME = 'time budget exhausted'   # why a request was dropped, as shown in the log
+
+
 # --- HTTP ---
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-def http_get(url, timeout=45):
+_print_lock = threading.Lock()
+
+
+def log(msg):
+    """print() that stays one whole line when several threads are writing."""
+    with _print_lock:
+        print(msg, flush=True)
+
+
+class _Throttle:
+    """Spaces out request starts across all threads."""
+
+    def __init__(self, min_interval):
+        self._lock = threading.Lock()
+        self._min = min_interval
+        self._next = 0.0
+
+    def wait(self, deadline=None):
+        """Sleep until this request's slot. False if the slot is past `deadline`."""
+        with self._lock:
+            slot = max(time.monotonic(), self._next)
+            if deadline is not None and slot >= deadline:
+                return False
+            self._next = slot + self._min
+        delay = slot - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        return True
+
+
+_throttle = _Throttle(MIN_INTERVAL_S)
+
+# Set when ENTSO-E answers 401 (key rejected) or 429 (token suspended): sending
+# the rest of the run's requests would only fail too, or prolong the suspension.
+_stop = threading.Event()
+
+
+def _http_once(req, limit, socket_timeout, context=None):
+    """One attempt. Raises on any failure, including running past `limit`."""
+    remaining = limit - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError(OUT_OF_TIME)
+    with urllib.request.urlopen(req, timeout=min(socket_timeout, remaining), context=context) as r:
+        chunks = []
+        while True:
+            chunk = r.read1(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if time.monotonic() > limit:
+                raise TimeoutError('response too slow')
+        return b''.join(chunks).decode('utf-8')
+
+
+def _timeout_reason(reason, deadline):
+    """Tell a request cut short by the run's budget from a zone that is not answering."""
+    if deadline is not None and time.monotonic() >= deadline - 0.1:
+        return OUT_OF_TIME
+    return reason
+
+
+def _get(url, deadline=None, socket_timeout=SOCKET_TIMEOUT_S, max_s=REQUEST_MAX_S):
+    """GET with a hard time limit. Returns (body, None) or (None, reason).
+
+    The reason never includes the URL, which carries the API key.
+    """
     headers = {
         'Accept': 'application/xml',
         'User-Agent': 'EUPowerData-GitHubAction/1.0',
     }
     req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read().decode('utf-8')
-    except Exception:
-        pass
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
-            return r.read().decode('utf-8')
-    except Exception as e:
-        print(f'  HTTP failed: {e}')
-        return None
+    reason = 'not attempted'
+    context = None
+    for _ in range(ATTEMPTS):
+        if not _throttle.wait(deadline):
+            return None, OUT_OF_TIME
+        limit = time.monotonic() + max_s
+        if deadline is not None:
+            limit = min(limit, deadline)
+        try:
+            return _http_once(req, limit, socket_timeout, context), None
+        except urllib.error.HTTPError as e:
+            reason = f'HTTP {e.code}'
+            if e.code < 500:
+                return None, reason      # the answer will not change on a retry
+        except urllib.error.URLError as e:
+            reason = str(e.reason)
+            if isinstance(e.reason, TimeoutError):
+                return None, _timeout_reason(reason, deadline)
+            if isinstance(e.reason, ssl.SSLCertVerificationError):
+                context = ctx            # as before: retry without certificate verification
+        except TimeoutError as e:
+            # A zone that is not answering: do not wait for it twice.
+            return None, _timeout_reason(f'timeout: {e}', deadline)
+        except (OSError, http.client.HTTPException, UnicodeDecodeError) as e:
+            reason = f'{type(e).__name__}: {e}'
+    return None, reason
 
 
-def find_working_endpoint():
+def http_get(url, timeout=45):
+    """Single GET, returning the body or None. Used by backfill_archive.py."""
+    text, reason = _get(url, socket_timeout=timeout, max_s=2 * timeout)
+    if text is None:
+        print(f'  HTTP failed: {reason}')
+    return text
+
+
+def fetch_all(label, jobs, parser, describe, deadline):
+    """Send every (key, name, url) job in parallel and parse each answer.
+
+    Returns {key: parsed} for the jobs that produced data. A job that fails,
+    stalls or is still running at `deadline` is simply left out.
+    """
+    started = time.monotonic()
+    results = {}
+    counts = {'ok': 0, 'no data': 0, 'failed': 0, 'out of time': 0}
+    lock = threading.Lock()
+    todo = queue.SimpleQueue()
+    for job in jobs:
+        todo.put(job)
+
+    def work():
+        while True:
+            try:
+                key, name, url = todo.get_nowait()
+            except queue.Empty:
+                return
+            t0 = time.monotonic()
+            if _stop.is_set():
+                text, reason = None, 'skipped: ENTSO-E is refusing this API key'
+            else:
+                text, reason = _get(url, deadline)
+            if text is None and reason == OUT_OF_TIME:
+                with lock:
+                    counts['out of time'] += 1
+                continue                 # counted in the summary, not one line each
+            if text is None:
+                if reason in ('HTTP 401', 'HTTP 429'):
+                    _stop.set()
+                outcome, line = 'failed', f'FAIL ({reason})'
+            else:
+                parsed = parser(text)
+                if parsed:
+                    with lock:
+                        results[key] = parsed
+                    outcome, line = 'ok', f'OK ({describe(parsed)})'
+                else:
+                    outcome, line = 'no data', 'no data'
+            with lock:
+                counts[outcome] += 1
+            log(f'  {label}: {name}... {line} [{time.monotonic() - t0:.1f}s]')
+
+    # Daemon threads: one stuck in a socket cannot keep the script from exiting.
+    threads = [threading.Thread(target=work, daemon=True)
+               for _ in range(min(MAX_WORKERS, len(jobs)))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(max(0.0, deadline + GRACE_S - time.monotonic()))
+
+    with lock:
+        done = dict(results)
+        tally = dict(counts)
+    out_of_time = tally['out of time'] + len(jobs) - sum(tally.values())
+    log(f"  {label}: {len(jobs)} requests in {time.monotonic() - started:.0f}s — "
+        f"{tally['ok']} ok, {tally['no data']} no data, {tally['failed']} failed, "
+        f"{out_of_time} out of time")
+    return done
+
+
+def write_json(path, payload, **dump_args):
+    """Write JSON through a temp file + rename, so a run that is interrupted
+    mid-write can never leave a truncated file for the commit step to pick up."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or '.', prefix='.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(payload, f, **dump_args)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def find_working_endpoint(deadline=None):
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -184,13 +385,19 @@ def find_working_endpoint():
         'periodStart': start,
         'periodEnd': end,
     })
-    for base in ALT_URLS:
+    for i, base in enumerate(ALT_URLS):
         print(f'Testing endpoint: {base}')
-        xml = http_get(f'{base}?{params}')
+        # The main endpoint gets time for a retry; the alternatives a single short try.
+        limit = time.monotonic() + (REQUEST_MAX_S if i == 0 else 10)
+        if deadline is not None:
+            limit = min(limit, deadline)
+        xml, reason = _get(f'{base}?{params}', limit)
         if xml and 'TimeSeries' in xml:
             print(f'  Working!')
             return base
-        print(f'  Failed')
+        print(f'  Failed ({reason or "no TimeSeries in the answer"})')
+        if reason == 'HTTP 401':
+            print('  ENTSO-E rejected the API key (HTTP 401) — check the ENTSOE_API_KEY secret')
     return None
 
 
@@ -339,7 +546,9 @@ def parse_flow_xml(xml_str):
 
 # --- Fetchers ---
 
-def fetch_prices(base):
+def fetch_prices(base, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic() + TOTAL_BUDGET_S
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -351,6 +560,7 @@ def fetch_prices(base):
         'zones': {},
     }
 
+    jobs = []
     for code, eic in ZONES.items():
         params = urllib.parse.urlencode({
             'securityToken': API_KEY,
@@ -360,12 +570,12 @@ def fetch_prices(base):
             'periodStart': start,
             'periodEnd': end,
         })
-        print(f'  Prices: {code}...', end=' ')
-        xml = http_get(f'{base}?{params}')
-        if not xml:
-            print('FAIL')
-            continue
-        parsed = parse_prices_xml(xml)
+        jobs.append((code, code, f'{base}?{params}'))
+    fetched = fetch_all('Prices', jobs, parse_prices_xml,
+                        lambda parsed: f'{len(parsed)} hours', deadline)
+
+    for code, eic in ZONES.items():      # ZONES order, so the file keeps its zone order
+        parsed = fetched.get(code)
         if parsed:
             price_vals = [p['price'] for p in parsed]
             prices['zones'][code] = {
@@ -376,10 +586,6 @@ def fetch_prices(base):
                 'min': round(min(price_vals), 2),
                 'max': round(max(price_vals), 2),
             }
-            print(f'OK ({len(parsed)} hours)')
-        else:
-            print('no data')
-        import time; time.sleep(0.2)
 
     for country, zone_codes in CONSOLIDATE.items():
         zone_data = [prices['zones'].get(zc) for zc in zone_codes if zc in prices['zones']]
@@ -411,7 +617,9 @@ def fetch_prices(base):
     return prices
 
 
-def fetch_generation(base):
+def fetch_generation(base, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic() + TOTAL_BUDGET_S
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -422,24 +630,24 @@ def fetch_generation(base):
         'zones': {},
     }
 
-    for code in GEN_COUNTRIES + ['NO1', 'NO2', 'SE1', 'SE3', 'DK1', 'DK2']:
-        eic = ZONES.get(code, '')
-        if not eic:
-            continue
+    codes = [code for code in GEN_COUNTRIES + ['NO1', 'NO2', 'SE1', 'SE3', 'DK1', 'DK2']
+             if ZONES.get(code, '')]
+    jobs = []
+    for code in codes:
         params = urllib.parse.urlencode({
             'securityToken': API_KEY,
             'documentType': 'A75',
             'processType': 'A16',
-            'in_Domain': eic,
+            'in_Domain': ZONES[code],
             'periodStart': start,
             'periodEnd': end,
         })
-        print(f'  Generation: {code}...', end=' ')
-        xml = http_get(f'{base}?{params}')
-        if not xml:
-            print('FAIL')
-            continue
-        mix = parse_generation_xml(xml)
+        jobs.append((code, code, f'{base}?{params}'))
+    fetched = fetch_all('Generation', jobs, parse_generation_xml,
+                        lambda mix: f'{len(mix)} types, {sum(mix.values()):.0f} MW', deadline)
+
+    for code in codes:                   # same order as before, so the file keeps its zone order
+        mix = fetched.get(code)
         if mix:
             total = sum(mix.values())
             renewable = sum(mix.get(rt, 0) for rt in RENEWABLE_TYPES)
@@ -448,10 +656,6 @@ def fetch_generation(base):
                 'total_mw': total,
                 'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
             }
-            print(f'OK ({len(mix)} types, {total:.0f} MW)')
-        else:
-            print('no data')
-        import time; time.sleep(0.3)
 
     for country, zone_codes in CONSOLIDATE.items():
         zone_data = [gen['zones'].get(zc) for zc in zone_codes if zc in gen['zones']]
@@ -475,7 +679,9 @@ def fetch_generation(base):
     return gen
 
 
-def fetch_flows(base):
+def fetch_flows(base, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic() + TOTAL_BUDGET_S
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -487,6 +693,7 @@ def fetch_flows(base):
         'net': {},
     }
 
+    jobs = []
     for frm, to in FLOW_CORRIDORS:
         from_eic = FLOW_ZONES.get(frm, '')
         to_eic = FLOW_ZONES.get(to, '')
@@ -500,12 +707,12 @@ def fetch_flows(base):
             'periodStart': start,
             'periodEnd': end,
         })
-        print(f'  Flow: {frm}→{to}...', end=' ')
-        xml = http_get(f'{base}?{params}')
-        if not xml:
-            print('FAIL')
-            continue
-        values = parse_flow_xml(xml)
+        jobs.append(((frm, to), f'{frm}→{to}', f'{base}?{params}'))
+    fetched = fetch_all('Flow', jobs, parse_flow_xml,
+                        lambda values: f'{len(values)} points', deadline)
+
+    for frm, to in FLOW_CORRIDORS:       # same order as before, so the file keeps its corridor order
+        values = fetched.get((frm, to))
         if values:
             key = f'{frm}→{to}'
             flows['corridors'][key] = {
@@ -514,10 +721,6 @@ def fetch_flows(base):
                 'latest': values[-1],
                 'values': values,
             }
-            print(f'OK ({len(values)} points)')
-        else:
-            print('no data')
-        import time; time.sleep(0.2)
 
     processed = set()
     for frm, to in FLOW_CORRIDORS:
@@ -537,9 +740,13 @@ def fetch_flows(base):
     return flows
 
 
-def fetch_omip():
+def fetch_omip(deadline=None):
     """Fetch OMIP settlement prices by scraping omip.pt."""
     print('Fetching OMIP forward curves...')
+
+    def time_left():
+        # Per-request timeout: 30 s, or whatever is left of the run's budget.
+        return 30 if deadline is None else min(30, deadline - time.monotonic())
 
     headers = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -556,10 +763,13 @@ def fetch_omip():
 
     html = None
     for url in urls:
+        if time_left() <= 0:
+            print('  Out of time')
+            break
         print(f'  Trying: {url}')
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=time_left()) as r:
                 html = r.read().decode('utf-8')
             if html and 'Settlement Price' in html:
                 print(f'  Got HTML with settlement data ({len(html)} bytes)')
@@ -572,10 +782,12 @@ def fetch_omip():
 
     if not html:
         for url in urls[:1]:
+            if time_left() <= 0:
+                break
             print(f'  Retry without SSL: {url}')
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+                with urllib.request.urlopen(req, timeout=time_left(), context=ctx) as r:
                     html = r.read().decode('utf-8')
                 if html and 'Settlement Price' in html:
                     print(f'  Got HTML with settlement data')
@@ -751,75 +963,26 @@ def fetch_omip():
     }
 
 
-def main():
-    if not API_KEY:
-        print('ERROR: ENTSOE_API_KEY not set')
-        return
+def archive_snapshot(dataset, payload):
+    """Write today's snapshot to data/archive/<dataset>-YYYY-MM-DD.json.
 
-    os.makedirs('data', exist_ok=True)
+    Rolling 5-year history for the date filters on the Overview map (prices;
+    generation, from which the frontend derives carbon intensity and renewable
+    share) and on the Grid Monitor map (flows). Overwritten on every fetch.
+    """
+    os.makedirs('data/archive', exist_ok=True)
+    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    archive_path = f'data/archive/{dataset}-{today_str}.json'
+    try:
+        write_json(archive_path, payload, separators=(',', ':'))
+        print(f'Archived to {archive_path}')
+    except OSError as e:
+        print(f'  Warning: could not write archive: {e}')
 
-    print('Finding working ENTSO-E endpoint...')
-    base = find_working_endpoint()
-    if not base:
-        print('ERROR: All ENTSO-E endpoints unreachable')
-        with open('data/status.json', 'w') as f:
-            json.dump({'status': 'error', 'time': datetime.now(timezone.utc).isoformat()}, f)
-        return
 
-    print(f'\nUsing endpoint: {base}\n')
-
-    print('Fetching day-ahead prices...')
-    prices = fetch_prices(base)
-    zone_count = len(prices['zones'])
-    print(f'  → {zone_count} zones\n')
-
-    print('Fetching generation mix...')
-    gen = fetch_generation(base)
-    gen_count = len(gen['zones'])
-    print(f'  → {gen_count} zones\n')
-
-    print('Fetching cross-border flows...')
-    flows = fetch_flows(base)
-    flow_count = len(flows['corridors'])
-    print(f'  → {flow_count} corridors\n')
-
-    if zone_count > 0:
-        with open('data/spot-prices.json', 'w') as f:
-            json.dump(prices, f, separators=(',', ':'))
-        print(f'Saved spot-prices.json ({zone_count} zones)')
-
-        # ── Archive today's snapshot under data/archive/spot-prices-YYYY-MM-DD.json
-        # Rolling 5-year history for the Overview map date filter.
-        # Overwritten on every fetch (each run that day makes the archive more complete).
-        os.makedirs('data/archive', exist_ok=True)
-        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        archive_path = f'data/archive/spot-prices-{today_str}.json'
-        try:
-            with open(archive_path, 'w') as f:
-                json.dump(prices, f, separators=(',', ':'))
-            print(f'Archived to {archive_path}')
-        except OSError as e:
-            print(f'  Warning: could not write archive: {e}')
-
-    if gen_count > 0:
-        with open('data/generation-mix.json', 'w') as f:
-            json.dump(gen, f, separators=(',', ':'))
-        print(f'Saved generation-mix.json ({gen_count} zones)')
-
-        # ── Archive today's generation snapshot under
-        # data/archive/generation-mix-YYYY-MM-DD.json. Rolling 5-year history.
-        # Carbon intensity and renewable share are derived from this mix in the
-        # frontend, so archiving this unlocks historical Carbon & Renewables
-        # toggles on the Overview map.
-        os.makedirs('data/archive', exist_ok=True)
-        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        gen_archive = f'data/archive/generation-mix-{today_str}.json'
-        try:
-            with open(gen_archive, 'w') as f:
-                json.dump(gen, f, separators=(',', ':'))
-            print(f'Archived to {gen_archive}')
-        except OSError as e:
-            print(f'  Warning: could not write generation archive: {e}')
+def refresh_archive_index():
+    """Prune the archive and rebuild data/archive_index.json."""
+    os.makedirs('data/archive', exist_ok=True)
 
     # ── Unified cleanup: delete archive files older than ~5 years (1830 days).
     # Applies to spot-prices-*.json, generation-mix-*.json and cross-border-flows-*.json.
@@ -867,72 +1030,140 @@ def main():
             'updated': datetime.now(timezone.utc).isoformat(),
             'datasets': index_sorted,
         }
-        with open('data/archive_index.json', 'w') as f:
-            json.dump(index_payload, f, separators=(',', ':'))
+        write_json('data/archive_index.json', index_payload, separators=(',', ':'))
         counts = ', '.join(f'{k}={len(v)}' for k, v in index_sorted.items())
         print(f'Wrote archive_index.json ({counts})')
     except OSError as e:
         print(f'  Warning: archive index write failed: {e}')
 
+
+def update_forward_curves(deadline=None):
+    """Scrape OMIP and write data/forward-curves.json (kept as it is when the
+    scrape returns nothing)."""
+    try:
+        omip = fetch_omip(deadline)
+        omip_count = len(omip['latest']['contracts']) if omip and omip.get('latest') else 0
+
+        existing_fc = {}
+        if os.path.exists('data/forward-curves.json'):
+            try:
+                with open('data/forward-curves.json') as f:
+                    existing_fc = json.load(f)
+            except Exception:
+                pass
+
+        if omip_count > 0:
+            omip['history'] = existing_fc.get('history', [])
+            today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            if not any(h.get('date') == today_str for h in omip['history']):
+                year_prices = {}
+                for c in omip['latest']['contracts']:
+                    if c.get('product') == 'year' and c.get('profile') == 'base':
+                        year_prices[c['zone']] = c['price']
+                if year_prices:
+                    omip['history'].append({'date': today_str, **year_prices})
+                    omip['history'] = omip['history'][-365:]
+
+            write_json('data/forward-curves.json', omip, separators=(',', ':'))
+            print(f'Saved forward-curves.json ({omip_count} contracts, {len(omip["history"])} history points)')
+        elif existing_fc:
+            print(f'OMIP scraper returned no data, keeping existing forward-curves.json')
+    except Exception as e:
+        print(f'  OMIP update failed: {type(e).__name__}: {e}')
+
+
+def main():
+    try:
+        sys.stdout.reconfigure(line_buffering=True)   # show progress while running
+    except (AttributeError, ValueError):
+        pass
+
+    if not API_KEY:
+        print('ERROR: ENTSOE_API_KEY not set')
+        return 1
+
+    started = time.monotonic()
+    run_deadline = started + TOTAL_BUDGET_S
+    os.makedirs('data', exist_ok=True)
+
+    # OMIP is a different site: fetch it alongside ENTSO-E, so neither waits for
+    # the other. The thread writes forward-curves.json itself when it is done.
+    omip_thread = threading.Thread(target=update_forward_curves, args=(run_deadline,), daemon=True)
+    omip_thread.start()
+
+    def wait_for_omip():
+        omip_thread.join(max(0.0, run_deadline + GRACE_S - time.monotonic()))
+        if omip_thread.is_alive():
+            print('OMIP did not finish within the time budget — forward-curves.json left as it was')
+
+    print('Finding working ENTSO-E endpoint...')
+    base = find_working_endpoint(run_deadline)
+    if not base:
+        print('ERROR: All ENTSO-E endpoints unreachable')
+        write_json('data/status.json', {'status': 'error', 'time': datetime.now(timezone.utc).isoformat()})
+        wait_for_omip()
+        return 1
+
+    print(f'\nUsing endpoint: {base}\n')
+
+    # Each dataset gets a share of the time still left, in proportion to its
+    # number of requests. One that finishes early leaves its time to the next.
+    requests_left = [len(ZONES), len(GEN_COUNTRIES) + 6, len(FLOW_CORRIDORS)]
+
+    def next_deadline():
+        now = time.monotonic()
+        share = requests_left[0] / sum(requests_left)
+        requests_left.pop(0)
+        return now + max(0.0, run_deadline - now) * share
+
+    # Every file is written as soon as its dataset is done, so a run that is
+    # cut short keeps whatever it had already fetched.
+    print('Fetching day-ahead prices...')
+    prices = fetch_prices(base, next_deadline())
+    zone_count = len(prices['zones'])
+    print(f'  → {zone_count} zones\n')
+    if zone_count > 0:
+        write_json('data/spot-prices.json', prices, separators=(',', ':'))
+        print(f'Saved spot-prices.json ({zone_count} zones)')
+        archive_snapshot('spot-prices', prices)
+        refresh_archive_index()
+
+    print('\nFetching generation mix...')
+    gen = fetch_generation(base, next_deadline())
+    gen_count = len(gen['zones'])
+    print(f'  → {gen_count} zones\n')
+    if gen_count > 0:
+        write_json('data/generation-mix.json', gen, separators=(',', ':'))
+        print(f'Saved generation-mix.json ({gen_count} zones)')
+        archive_snapshot('generation-mix', gen)
+        refresh_archive_index()
+
+    print('\nFetching cross-border flows...')
+    flows = fetch_flows(base, next_deadline())
+    flow_count = len(flows['corridors'])
+    print(f'  → {flow_count} corridors\n')
     if flow_count > 0:
-        with open('data/cross-border-flows.json', 'w') as f:
-            json.dump(flows, f, separators=(',', ':'))
+        write_json('data/cross-border-flows.json', flows, separators=(',', ':'))
         print(f'Saved cross-border-flows.json ({flow_count} corridors)')
+        archive_snapshot('cross-border-flows', flows)
+    # Also when a dataset came back empty: the cleanup and the index do not depend on it.
+    refresh_archive_index()
 
-        # ── Archive today's flows snapshot under
-        # data/archive/cross-border-flows-YYYY-MM-DD.json. Rolling 5-year history.
-        # Unlocks historical cross-border flows on the Grid Monitor map date filter.
-        os.makedirs('data/archive', exist_ok=True)
-        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        flows_archive = f'data/archive/cross-border-flows-{today_str}.json'
-        try:
-            with open(flows_archive, 'w') as f:
-                json.dump(flows, f, separators=(',', ':'))
-            print(f'Archived to {flows_archive}')
-        except OSError as e:
-            print(f'  Warning: could not write flows archive: {e}')
+    wait_for_omip()
 
-    omip = fetch_omip()
-    omip_count = len(omip['latest']['contracts']) if omip and omip.get('latest') else 0
+    write_json('data/status.json', {
+        'status': 'ok',
+        'endpoint': base,
+        'time': datetime.now(timezone.utc).isoformat(),
+        'prices_zones': zone_count,
+        'generation_zones': gen_count,
+        'flow_corridors': flow_count,
+    }, indent=2)
 
-    existing_fc = {}
-    if os.path.exists('data/forward-curves.json'):
-        try:
-            with open('data/forward-curves.json') as f:
-                existing_fc = json.load(f)
-        except Exception:
-            pass
-
-    if omip_count > 0:
-        omip['history'] = existing_fc.get('history', [])
-        today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-        if not any(h.get('date') == today_str for h in omip['history']):
-            year_prices = {}
-            for c in omip['latest']['contracts']:
-                if c.get('product') == 'year' and c.get('profile') == 'base':
-                    year_prices[c['zone']] = c['price']
-            if year_prices:
-                omip['history'].append({'date': today_str, **year_prices})
-                omip['history'] = omip['history'][-365:]
-
-        with open('data/forward-curves.json', 'w') as f:
-            json.dump(omip, f, separators=(',', ':'))
-        print(f'Saved forward-curves.json ({omip_count} contracts, {len(omip["history"])} history points)')
-    elif existing_fc:
-        print(f'OMIP scraper returned no data, keeping existing forward-curves.json')
-
-    with open('data/status.json', 'w') as f:
-        json.dump({
-            'status': 'ok',
-            'endpoint': base,
-            'time': datetime.now(timezone.utc).isoformat(),
-            'prices_zones': zone_count,
-            'generation_zones': gen_count,
-            'flow_corridors': flow_count,
-        }, f, indent=2)
-
-    print('\nDone!')
+    print(f'\nDone in {time.monotonic() - started:.0f}s')
+    # Fail the step only when ENTSO-E gave nothing at all, so it shows in Actions.
+    return 0 if (zone_count or gen_count or flow_count) else 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
