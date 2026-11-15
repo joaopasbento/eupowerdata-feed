@@ -32,5 +32,7 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Update installed capacity $(date -u +'%Y-%m-%d %H:%M UTC')"
+            # The 15-minute fetch pushes to main too: rebase on top of it, then push.
+            git pull --rebase origin main
             git push
           fi

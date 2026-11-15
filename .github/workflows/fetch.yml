@@ -1,33 +1,72 @@
 name: Fetch ENTSO-E Data
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # Every 15 minutes, off the start of the hour and the round quarters, which
+    # is when GitHub delays and drops the most scheduled runs.
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Each step has its own limit; this one is only a backstop and must stay
+    # above their sum, so that it is never the job that gets cancelled.
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: '1'   # progress shows in the log while the script runs
     steps:
       - uses: actions/checkout@v5
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      # The script stops by itself after FETCH_BUDGET_SECONDS (240 s) and writes
+      # each file as soon as its dataset is done, so the step limit is slack.
       - name: Fetch ENTSO-E data
+        timeout-minutes: 6
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_entsoe.py
+      # The steps below run even when an earlier one failed or ran out of time.
       - name: Fetch GB (Elexon Insights) data
+        if: ${{ !cancelled() }}
+        timeout-minutes: 2
         run: python fetch_gb.py
       - name: Fetch REE (Spain) generation
+        if: ${{ !cancelled() }}
         continue-on-error: true
+        timeout-minutes: 2
         run: python fetch_ree.py
       - name: Commit and push
+        if: ${{ always() }}
+        timeout-minutes: 3
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # A step that was killed mid-write may have left a broken file behind:
+          # put the committed version back rather than publish it to the site.
+          for f in $(git ls-files --modified --others --exclude-standard -- 'data/*.json'); do
+            [ -f "$f" ] || continue   # deleted on purpose (archive older than 5 years)
+            if ! python -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$f" 2>/dev/null; then
+              echo "::warning::$f is not valid JSON - keeping the committed version"
+              git checkout -q -- "$f" 2>/dev/null || rm -f "$f"
+            fi
+          done
           git add data/
-          git diff --cached --quiet || git commit -m "Update ENTSO-E data $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update ENTSO-E data $(date -u '+%Y-%m-%d %H:%M UTC')"
+          # Other workflows push to main too: rebase on top of them, then push.
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "Push attempt $attempt failed - retrying"
+            sleep 5
+          done
+          echo "::error::Could not push after 3 attempts"
+          exit 1
