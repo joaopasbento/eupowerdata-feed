@@ -1,10 +1,14 @@
 name: Fetch ENTSO-E Data
 on:
-  schedule:
-    # Every 15 minutes, off the start of the hour and the round quarters, which
-    # is when GitHub delays and drops the most scheduled runs.
-    - cron: '7,22,37,52 * * * *'
+  # The clock is the Cloudflare Worker in scheduler/: every 15 minutes, at
+  # minutes 7, 22, 37 and 52, it starts a run through workflow_dispatch.
   workflow_dispatch:
+  # GitHub's own schedule drops most of its runs (one started of the 37 due on
+  # the night of 15 to 16 Nov 2026). It stays as a fallback, for when the
+  # Worker cannot start a run: same minutes, off the start of the hour and the
+  # round quarters, which is when GitHub delays and drops the most.
+  schedule:
+    - cron: '7,22,37,52 * * * *'
 permissions:
   contents: write
 # One run at a time. A run that starts while another is going waits for it to
@@ -23,7 +27,13 @@ jobs:
     env:
       PYTHONUNBUFFERED: '1'   # progress shows in the log while the script runs
     steps:
+      # The branch as it is when the job starts, not the commit the run was
+      # asked for. A run that waited in the queue was asked for before the run
+      # ahead of it pushed its data: left on that older commit, it works on
+      # files that are no longer the published ones and cannot push (run 2371).
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
