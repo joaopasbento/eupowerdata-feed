@@ -22,7 +22,7 @@ MAIN, SECOND, THIRD = fe.ALT_URLS
 DATA = ('<?xml version="1.0"?><Publication_MarketDocument><TimeSeries><Period>'
         '<Point><position>1</position><price.amount>50</price.amount></Point>'
         '</Period></TimeSeries></Publication_MarketDocument>')
-SLOW = (None, fe.OUT_OF_TIME)                  # nothing in the 20 s the test waits
+SLOW = (None, fe.OUT_OF_TIME)                  # nothing in the seconds the test waits
 REFUSED_CONNECTION = (None, '[Errno 111] Connection refused')
 
 
@@ -83,10 +83,10 @@ class TheTest(unittest.TestCase):
         self.assertIsNone(endpoint)
         self.assertEqual(asked, [MAIN, SECOND])
 
-    def test_waits_20_seconds_for_the_main_endpoint_and_10_for_each_alternative(self):
+    def test_waits_5_seconds_for_the_main_endpoint_and_10_for_each_alternative(self):
         _endpoint, _asked, given, _log = self.ask({MAIN: REFUSED_CONNECTION})
-        self.assertEqual([round(seconds) for seconds in given], [20, 10, 10])
-        self.assertEqual(fe.PROBE_MAX_S, 20)
+        self.assertEqual([round(seconds) for seconds in given], [5, 10, 10])
+        self.assertEqual(fe.PROBE_MAX_S, 5)
 
     def test_never_waits_past_the_runs_own_deadline(self):
         _endpoint, _asked, given, _log = self.ask({MAIN: REFUSED_CONNECTION}, deadline=time.monotonic() + 4)
@@ -148,7 +148,7 @@ class TheRun(Feed):
         clock = [5000.0]
 
         def slow_probe(url):
-            clock[0] += fe.PROBE_MAX_S                                      # the 20 seconds it waited
+            clock[0] += fe.PROBE_MAX_S                                      # the seconds it waited
             return SLOW
 
         with mock.patch.object(fe.time, 'monotonic', lambda: clock[0]):
@@ -156,9 +156,10 @@ class TheRun(Feed):
         self.assertEqual(code, 0)
         budget = fe.TOTAL_BUDGET_S
         requests = [len(fe.ZONES), len(fe.GEN_COUNTRIES) + 6, len(fe.FLOW_CORRIDORS)]
-        # Prices get their share of the 280 s that are left, not of 300.
+        # Prices get their share of what is left, not of the whole budget.
+        spent = fe.PROBE_MAX_S
         self.assertAlmostEqual(self.deadlines['Prices'],
-                               5020.0 + (budget - 20) * requests[0] / sum(requests))
+                               5000.0 + spent + (budget - spent) * requests[0] / sum(requests))
         # And the last dataset ends where the run's budget ends: 300 s after its start.
         self.assertAlmostEqual(self.deadlines['Flow'], 5000.0 + budget)
 
