@@ -23,10 +23,15 @@ const API_VERSION = '2026-03-10';
 const USER_AGENT = 'EUPowerData-Feed-Scheduler/1.0 (+https://eupowerdata.com)';
 const ATTEMPTS = 2;           // one retry, after a network error or an HTTP 5xx
 const RETRY_AFTER_MS = 3000;
+const WARN_DAYS = 14;         // how long before the token expires the log starts warning
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** One request to GitHub. Returns {status, body}; throws on a network error. */
+/**
+ * One request to GitHub. Returns {status, body, expires}; throws on a network
+ * error. `expires` is when GitHub says the token stops working (it sends that
+ * with every answer to a token that has an expiration date), or null.
+ */
 async function post(env) {
 	const url = `${API}/repos/${env.GITHUB_REPOSITORY}/actions/workflows/${env.WORKFLOW_FILE}/dispatches`;
 	const response = await fetch(url, {
@@ -40,7 +45,25 @@ async function post(env) {
 		},
 		body: JSON.stringify({ ref: env.GIT_REF }),
 	});
-	return { status: response.status, body: (await response.text()).slice(0, 500) };
+	return {
+		status: response.status,
+		body: (await response.text()).slice(0, 500),
+		expires: response.headers.get('github-authentication-token-expiration'),
+	};
+}
+
+/** What to say in the log about the token's expiration date, and whether it is near. */
+export function expiry(expires, now = Date.now()) {
+	if (!expires) {
+		return { text: 'the token has no expiration date', soon: false };
+	}
+	// GitHub writes "2027-11-15 10:59:13 UTC" (or with an offset such as "+0000").
+	const when = Date.parse(expires.replace(' UTC', 'Z').replace(' ', 'T').replace(/ ([+-]\d{4})$/, '$1'));
+	if (Number.isNaN(when)) {
+		return { text: `the token expires ${expires}`, soon: false };
+	}
+	const days = Math.floor((when - now) / 86400000);
+	return { text: `the token expires ${expires}, in ${days} days`, soon: days < WARN_DAYS };
 }
 
 /**
@@ -95,7 +118,11 @@ export default {
 			} catch {
 				// An empty answer (HTTP 204): GitHub started the run without saying which.
 			}
-			console.log(`Started ${what} (due ${due}, HTTP ${answer.status}) ${run}`.trim());
+			const token = expiry(answer.expires);
+			console.log(`Started ${what} (due ${due}, HTTP ${answer.status}) ${run}; ${token.text}`);
+			if (token.soon) {
+				console.warn(`Renew the GitHub token: ${token.text}. See scheduler/README.md`);
+			}
 		} catch (error) {
 			console.error(`${error.message} (${what}, due ${due})`);
 			throw error;          // so that the invocation shows as failed in the dashboard

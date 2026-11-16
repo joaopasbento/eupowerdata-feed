@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import worker, { dispatch } from '../src/index.js';
+import worker, { dispatch, expiry } from '../src/index.js';
 
 const ENV = {
 	GITHUB_TOKEN: 'not-a-real-token',
@@ -25,7 +25,7 @@ function github(...answers) {
 		if (answer instanceof Error) {
 			throw answer;
 		}
-		return new Response(answer.body ?? null, { status: answer.status });
+		return new Response(answer.body ?? null, { status: answer.status, headers: answer.headers });
 	};
 	return calls;
 }
@@ -103,6 +103,7 @@ test('the Cron Trigger starts a run, and fails loudly when it cannot', async () 
 		github({ status: 200, body: '{"html_url":"https://github.com/x/y/actions/runs/1"}' });
 		await worker.scheduled(controller, ENV, {});
 		assert.match(lines[0], /^Started fetch\.yml on main of joaopasbento\/eupowerdata-feed \(due 2026-11-16T09:07:00\.000Z, HTTP 200\) https:/);
+		assert.match(lines[0], /; the token has no expiration date$/);
 
 		github({ status: 401, body: '{"message":"Bad credentials"}' });
 		await assert.rejects(worker.scheduled(controller, ENV, {}), /Workflow not started/);
@@ -111,6 +112,32 @@ test('the Cron Trigger starts a run, and fails loudly when it cannot', async () 
 	} finally {
 		console.log = log;
 		console.error = error;
+	}
+});
+
+test('the log says when the token expires, and warns in the last two weeks', async () => {
+	const now = Date.UTC(2026, 10, 16, 11, 0);
+	assert.deepEqual(expiry('2027-11-15 10:59:13 UTC', now),
+		{ text: 'the token expires 2027-11-15 10:59:13 UTC, in 363 days', soon: false });
+	assert.deepEqual(expiry('2026-11-25 10:59:13 UTC', now),
+		{ text: 'the token expires 2026-11-25 10:59:13 UTC, in 8 days', soon: true });
+	assert.deepEqual(expiry('2026-11-25 10:59:13 +0000', now).soon, true);
+	assert.deepEqual(expiry(null, now), { text: 'the token has no expiration date', soon: false });
+	assert.deepEqual(expiry('some other format', now), { text: 'the token expires some other format', soon: false });
+
+	const lines = [];
+	const { log, warn } = console;
+	console.log = (line) => lines.push(line);
+	console.warn = (line) => lines.push(`WARN ${line}`);
+	try {
+		const soon = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
+		github({ status: 200, body: '{}', headers: { 'github-authentication-token-expiration': soon } });
+		await worker.scheduled({ scheduledTime: Date.now() }, ENV, {});
+		assert.match(lines[0], /; the token expires .* UTC, in 4 days$/);
+		assert.match(lines[1], /^WARN Renew the GitHub token/);
+	} finally {
+		console.log = log;
+		console.warn = warn;
 	}
 });
 
