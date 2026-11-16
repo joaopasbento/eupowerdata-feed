@@ -24,7 +24,8 @@ What the columns mean:
              going. A run counts as held from 60 seconds up
   variant    what the scheduler varied on that run (see src/index.js), read
              from the run's title; "-" for a run started by hand or by
-             GitHub's own schedule
+             GitHub's own schedule, and for one GitHub has not got to yet
+             (it only gets its title when it starts)
   outcome    ran, skipped (the published data were fresh: skip_if_fresh.py),
              failed or cancelled
 """
@@ -135,7 +136,7 @@ def summary(title, groups):
     return lines
 
 
-def report(laps):
+def report(laps, now):
     """The whole report, as a list of lines."""
     lines = [f"{'requested (UTC)':<17}{'run':>5}  {'event':<18}{'wait':>7}{'queue':>7}{'held':>7}  {'outcome':<12}variant"]
     for lap in laps:
@@ -143,7 +144,9 @@ def report(laps):
             times = f"{clock(lap['wait']):>7}{clock(lap['queue']):>7}{clock(lap['held']):>7}"
             mark = '  <- held' if lap['held'] >= HELD_FROM else ''
         else:
-            times, mark = f"{'not started':>21}", ''
+            # Still waiting: it enters the summaries once it has started.
+            so_far = (now - lap['requested']).total_seconds()
+            times, mark = f"{clock(so_far):>7}{'not started':>14}", '  <- waiting' if so_far >= HELD_FROM else ''
         lines.append(f"{lap['requested']:%d %b %H:%M:%S}  {lap['number']:>5}  {lap['event']:<18}{times}  "
                      f"{lap['outcome']:<12}{lap['variant']}{mark}")
 
@@ -155,7 +158,7 @@ def report(laps):
     words = sorted({word for lap in tested for word in lap['variant'].split()})
     if words:
         lines += ['']
-        lines += summary('By what the scheduler varied (each run counts once for each of its three words)',
+        lines += summary('By what the scheduler varied (each run counts once for each of its two words)',
                          [(word, [lap for lap in tested if word in lap['variant'].split()]) for word in words])
         lines += ['']
         lines += summary('By combination',
@@ -189,7 +192,7 @@ def main(argv=None):
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs = list(pool.map(lambda run: gh(f"repos/{REPOSITORY}/actions/runs/{run['id']}/jobs").get('jobs', []), runs))
     laps = waits([describe(run, run_jobs) for run, run_jobs in zip(runs, jobs)])
-    print('\n'.join(report(laps)))
+    print('\n'.join(report(laps, now)))
     return 0
 
 
