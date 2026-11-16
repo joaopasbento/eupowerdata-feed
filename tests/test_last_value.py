@@ -105,6 +105,22 @@ class Generation(unittest.TestCase):
             series('2026-11-16 00:00', [50] * 10, psr='B10', out=True)), NOW)
         self.assertEqual(got['mix'], {'Hydro Pumped Storage': 250.0})
 
+    def test_a_consumption_series_that_stopped_does_not_date_the_mix(self):
+        # Norway (NO2) on 16 Nov 2026: pumping was last published at 13:30 the
+        # day before; everything it generates is published up to 07:45.
+        got = fe.latest_generation(document(
+            series('2026-11-15 10:00', [7000] * 88, minutes=15, psr='B12'),             # up to 07:45
+            series('2026-11-15 10:00', [20] * 88, minutes=15, psr='B10'),
+            series('2026-11-15 10:00', [13] * 15, minutes=15, psr='B10', out=True)), NOW)   # up to 13:30
+        self.assertEqual(got['mix'], {'Hydro Water Reservoir': 7000.0, 'Hydro Pumped Storage': 33.0})
+        self.assertEqual(got['data_time'], iso('2026-11-16 07:45:00'))
+        self.assertEqual(got['behind'], [('Hydro Pumped Storage consumption', iso('2026-11-15 13:30:00'), 13.0)])
+
+    def test_with_consumption_only_the_time_is_its_own(self):
+        got = fe.latest_generation(document(
+            series('2026-11-16 00:00', [50] * 6, psr='B10', out=True)), NOW)
+        self.assertEqual((got['mix'], got['data_time']), ({'Hydro Pumped Storage': 50.0}, iso('2026-11-16 05:00:00')))
+
     def test_only_later_points_gives_the_earliest_of_them_as_before(self):
         got = fe.latest_generation(document(
             series('2026-11-16 12:00', [80, 90], psr='B16')), NOW)
