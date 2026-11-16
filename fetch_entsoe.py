@@ -218,7 +218,7 @@ SOCKET_TIMEOUT_S = 45    # connecting, and each read
 REQUEST_MAX_S = 60       # one attempt, however slowly the bytes arrive
 ATTEMPTS = 2             # one retry after a connection error or an HTTP 5xx (never after a timeout)
 GRACE_S = 5              # how long a dataset waits past its deadline for stragglers
-PROBE_MAX_S = 20         # how long the test of the endpoint waits for its answer (see find_working_endpoint)
+PROBE_MAX_S = 5          # how long the test of the endpoint waits for its answer (see find_working_endpoint)
 OUT_OF_TIME = 'time budget exhausted'   # why a request was dropped, as shown in the log
 
 
@@ -452,9 +452,11 @@ def find_working_endpoint(deadline=None):
     the end of main(): with nothing at all the step fails, as before.
 
     The wait is short on purpose. Its time comes out of the run's budget, and
-    since the run goes on either way, waiting longer for the test buys nothing:
-    20 seconds covers the 15 or so that ENTSO-E has been sitting on half of
-    its answers, and leaves 280 of the 300 for the data."""
+    since the run goes on either way, waiting for the test buys nothing but the
+    confirmation. On a good day ENTSO-E answers in under a second and 5 seconds
+    are plenty; on a slow one it sits on an answer for 20 seconds and more (a
+    first limit of 20 s never got one, in any of the four runs of the afternoon
+    of 16 Nov 2026), and those seconds are better spent on the data."""
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
