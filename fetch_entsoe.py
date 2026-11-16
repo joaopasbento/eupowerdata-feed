@@ -218,6 +218,7 @@ SOCKET_TIMEOUT_S = 45    # connecting, and each read
 REQUEST_MAX_S = 60       # one attempt, however slowly the bytes arrive
 ATTEMPTS = 2             # one retry after a connection error or an HTTP 5xx (never after a timeout)
 GRACE_S = 5              # how long a dataset waits past its deadline for stragglers
+PROBE_MAX_S = 20         # how long the test of the endpoint waits for its answer (see find_working_endpoint)
 OUT_OF_TIME = 'time budget exhausted'   # why a request was dropped, as shown in the log
 
 
@@ -414,7 +415,46 @@ def write_json(path, payload, **dump_args):
         raise
 
 
+# What a failed request says about going on with the run.
+REFUSED = ('HTTP 401', 'HTTP 429')      # the key was rejected, or the token is suspended
+
+
+def _slow(reason):
+    """True when a request failed for lack of an answer in time, as opposed to
+    an answer that says something is wrong."""
+    return reason == OUT_OF_TIME or 'timed out' in (reason or '') or (reason or '').startswith('timeout')
+
+
 def find_working_endpoint(deadline=None):
+    """Which endpoint this run uses, or None when ENTSO-E is refusing the API
+    key and there is no point in going on.
+
+    One small request (today's prices for Portugal) is sent to the main
+    endpoint. Its answer chooses the endpoint; it does not decide whether the
+    run goes ahead. On 16 Nov 2026 (run 2375) that one request took over 45
+    seconds on a morning when ENTSO-E was slow but answering most requests,
+    and the run ended there without asking for prices, generation or flows.
+    Now:
+
+      - an answer with data: the endpoint is confirmed;
+      - no answer in PROBE_MAX_S: ENTSO-E is slow, not gone. The run goes on
+        with the main endpoint and brings what it can within its time budget;
+        what does not answer is kept by the usual rules (carry_over.py). The
+        alternatives are not tried: they would only take more of the budget;
+      - HTTP 401 or 429: the key is rejected or the token suspended. Every
+        other request would get the same answer (or prolong the suspension),
+        so the run ends here: None;
+      - anything else (connection refused, HTTP 5xx, a page that is not data):
+        the alternatives get one short try each and, if none of them works
+        either, the run still goes on with the main endpoint.
+
+    Whether ENTSO-E gave anything is settled by the requests that matter, at
+    the end of main(): with nothing at all the step fails, as before.
+
+    The wait is short on purpose. Its time comes out of the run's budget, and
+    since the run goes on either way, waiting longer for the test buys nothing:
+    20 seconds covers the 15 or so that ENTSO-E has been sitting on half of
+    its answers, and leaves 280 of the 300 for the data."""
     now = datetime.now(timezone.utc)
     start = now.strftime('%Y%m%d') + '0000'
     end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
@@ -426,10 +466,10 @@ def find_working_endpoint(deadline=None):
         'periodStart': start,
         'periodEnd': end,
     })
+    main_endpoint = ALT_URLS[0]
     for i, base in enumerate(ALT_URLS):
         print(f'Testing endpoint: {base}')
-        # The main endpoint gets time for a retry; the alternatives a single short try.
-        limit = time.monotonic() + (REQUEST_MAX_S if i == 0 else 10)
+        limit = time.monotonic() + (PROBE_MAX_S if i == 0 else 10)
         if deadline is not None:
             limit = min(limit, deadline)
         xml, reason = _get(f'{base}?{params}', limit)
@@ -437,9 +477,14 @@ def find_working_endpoint(deadline=None):
             print(f'  Working!')
             return base
         print(f'  Failed ({reason or "no TimeSeries in the answer"})')
-        if reason == 'HTTP 401':
-            print('  ENTSO-E rejected the API key (HTTP 401) — check the ENTSOE_API_KEY secret')
-    return None
+        if reason in REFUSED:
+            print(f'  ENTSO-E is refusing the API key ({reason}) — check the ENTSOE_API_KEY secret')
+            return None
+        if i == 0 and _slow(reason):
+            print(f'  No answer in {PROBE_MAX_S} s: ENTSO-E is slow, not gone — going on with {main_endpoint}')
+            return main_endpoint
+    print(f'  No endpoint confirmed — going on with {main_endpoint} all the same')
+    return main_endpoint
 
 
 # --- Parsers ---
@@ -1477,7 +1522,7 @@ def main():
     print('Finding working ENTSO-E endpoint...')
     base = find_working_endpoint(run_deadline)
     if not base:
-        print('ERROR: All ENTSO-E endpoints unreachable')
+        print('ERROR: ENTSO-E is refusing the API key — nothing was asked for')
         write_status({'status': 'error', 'time': utcnow().isoformat()}, run_started)
         wait_for_omip()
         return 1

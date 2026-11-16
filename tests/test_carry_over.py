@@ -55,15 +55,19 @@ class Feed(unittest.TestCase):
         os.chdir(folder.name)
         os.makedirs('data')
 
-    def entsoe(self, when, prices=None, generation=None, flows=None, endpoint='https://entsoe.test/api'):
+    def entsoe(self, when, prices=None, generation=None, flows=None, endpoint='https://entsoe.test/api',
+               probe=None):
         """One run of fetch_entsoe.py at `when`. ENTSO-E answers only for what
         is given: prices {zone: EUR/MWh}, generation {zone: MW}, flows
         {(from, to): MW}. Returns (exit code, log).
 
         Generation and flows are hourly and ENTSO-E has them up to the hour
         before the run; (MW, '2026-11-16 22:00') says up to when instead.
-        self.asked has the requests of the run, by dataset. `endpoint` is what
-        the test of the endpoint comes back with: None ends the run at once."""
+        self.asked has the requests of the run, by dataset, and self.deadlines
+        the time limit each dataset was given. `endpoint` is what the test of
+        the endpoint comes back with: None ends the run at once. With `probe`,
+        the real find_working_endpoint() runs instead and `probe(url)` is what
+        ENTSO-E answers to its requests: (body, None) or (None, reason)."""
         def answer(build, spec):
             mw, last = spec if isinstance(spec, tuple) else (spec, None)
             return build(mw, when, last)
@@ -74,10 +78,11 @@ class Feed(unittest.TestCase):
             'Generation': {zone: answer(generation_answer, spec) for zone, spec in (generation or {}).items()},
             'Flow': {pair: answer(flow_answer, spec) for pair, spec in (flows or {}).items()},
         }
-        self.asked = {}
+        self.asked, self.deadlines = {}, {}
 
         def fetch_all(label, jobs, parser, describe, deadline):
             self.asked[label] = [url for _key, _name, url in jobs]
+            self.deadlines[label] = deadline
             if label == 'Prices':
                 asked = {key for key, _name, _url in jobs}
                 return {key: value for key, value in answers[label].items() if key in asked}
@@ -88,12 +93,15 @@ class Feed(unittest.TestCase):
             return {key: value for key, value in read.items() if value}
 
         log = io.StringIO()
-        with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), \
-                mock.patch.object(fe, 'utcnow', lambda: when), \
-                mock.patch.object(fe, 'find_working_endpoint', lambda deadline=None: endpoint), \
-                mock.patch.object(fe, 'fetch_all', fetch_all), \
-                mock.patch.object(fe, 'update_forward_curves', lambda deadline=None: None), \
-                contextlib.redirect_stdout(log):
+        with contextlib.ExitStack() as stack:
+            for name, value in (('API_KEY', 'not-a-real-key'), ('utcnow', lambda: when), ('fetch_all', fetch_all),
+                                ('update_forward_curves', lambda deadline=None: None)):
+                stack.enter_context(mock.patch.object(fe, name, value))
+            if probe is None:
+                stack.enter_context(mock.patch.object(fe, 'find_working_endpoint', lambda deadline=None: endpoint))
+            else:
+                stack.enter_context(mock.patch.object(fe, '_get', lambda url, deadline=None, **limits: probe(url)))
+            stack.enter_context(contextlib.redirect_stdout(log))
             code = fe.main()
         return code, log.getvalue()
 
