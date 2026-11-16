@@ -707,7 +707,8 @@ def _first_after(period, now):
 def latest_generation(xml_str, now):
     """The generation mix an A75 answer has for `now`:
 
-        {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time}
+        {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time,
+         'behind': [(technology, ISO time, MW)]}
 
     or None when it has no data. Each technology has the last value ENTSO-E
     published for it (as in parse_generation_xml(): the latest point up to
@@ -715,7 +716,8 @@ def latest_generation(xml_str, now):
 
     `data_time` is the time of the oldest of those values and `newest` of the
     most recent: they differ when a country publishes some technologies later
-    than others. Generation and consumption of the same technology (pumped
+    than others, and `behind` says which ones, for the run log. Generation and
+    consumption of the same technology (pumped
     storage) are added together, as they always were."""
     order = []                 # (technology code, consumption?) in document order
     current, ahead = {}, {}    # -> [(time, MW)], one for each TimeSeries
@@ -733,7 +735,7 @@ def latest_generation(xml_str, now):
         if found:
             ahead.setdefault(key, []).append(min(found, key=lambda v: v[0]))
 
-    mix, times = {}, []
+    mix, parts = {}, []
     for key in order:
         if key in current:
             at = max(t for t, _mw in current[key])       # the piece with the latest value
@@ -744,11 +746,18 @@ def latest_generation(xml_str, now):
         else:
             continue
         name = PSR_MAP.get(key[0], 'Other')
-        mix[name] = mix.get(name, 0) + sum(mw for t, mw in pieces if t == at)
-        times.append(at)
+        value = sum(mw for t, mw in pieces if t == at)
+        mix[name] = mix.get(name, 0) + value
+        parts.append((name + (' consumption' if key[1] else ''), at, value))
     if not mix:
         return None
-    return {'mix': mix, DATA_TIME: min(times).isoformat(), 'newest': max(times).isoformat()}
+    oldest, newest = min(at for _n, at, _mw in parts), max(at for _n, at, _mw in parts)
+    return {
+        'mix': mix,
+        DATA_TIME: oldest.isoformat(),
+        'newest': newest.isoformat(),
+        'behind': [(name, at.isoformat(), value) for name, at, value in parts if at < newest],
+    }
 
 
 def latest_flow(xml_str, now):
@@ -804,7 +813,11 @@ def _data_of(parsed, now):
     if newest is not None and newest != oldest:
         text += f" to {newest:%H:%M}"
     minutes = round((now - oldest).total_seconds() / 60)
-    return f'{text}, {minutes} min before the run' if minutes >= 0 else f'{text}, ahead of the run'
+    text += f', {minutes} min before the run' if minutes >= 0 else ', ahead of the run'
+    if parsed.get('behind'):
+        text += '; behind the rest: ' + ', '.join(
+            f'{name} {carry_over.parse_time(at):%d %b %H:%M} ({mw:.0f} MW)' for name, at, mw in parsed['behind'])
+    return text
 
 
 # --- Fetchers ---
