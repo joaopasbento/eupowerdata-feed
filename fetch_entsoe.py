@@ -7,13 +7,21 @@ One run makes about 150 requests (36 price zones, 36 generation zones, 76 flow
 corridors, plus OMIP). They are sent in parallel, under a total time budget,
 and each file is written as soon as its dataset is done — see "Run limits".
 
+Prices are asked for by delivery day (today, UTC). Generation and flows are
+asked for the last 24 hours, and each zone and corridor shows the last value
+ENTSO-E has published for it, with the time that value is for (data_time):
+just after midnight most countries have nothing for the new day yet, and a
+request "since midnight" came back empty for them — see "The last value".
+
 A zone or a corridor that does not answer in a run keeps what was published
-for it earlier the same UTC day, with the time it was obtained (fetched_at) and
-a mark (carried_over); never a value of an earlier day, and never with the
+for it before, with the time it was obtained (fetched_at) and a mark
+(carried_over): a price if it was obtained the same UTC day, generation and
+flows if they were obtained less than three hours before, and never with the
 time of the run that kept it — see carry_over.py and publish().
 """
 
 import os
+import re
 import sys
 import json
 import queue
@@ -29,7 +37,7 @@ from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree as ET
 
 import carry_over
-from carry_over import CARRIED_OVER, FETCHED_AT
+from carry_over import CARRIED_OVER, DATA_TIME, FETCHED_AT
 from feed_common import load_json
 
 API_KEY = os.environ.get('ENTSOE_API_KEY', '')
@@ -577,6 +585,228 @@ def parse_flow_xml(xml_str):
     return values
 
 
+# --- The last value ---
+#
+# Generation and flows are asked for the last 24 hours and each zone and
+# corridor shows the last value ENTSO-E has published for it, with the time
+# that value is for. The three parsers above are left as they are for the
+# prices and for backfill_archive.py, which reads one whole day at a time; the
+# functions below read the same documents with what a rolling window needs:
+#
+#   - the real time of every point. A Period says how long its intervals are
+#     (PT15M, PT30M, PT60M); parse_flow_xml() counts every position as an hour.
+#   - curveType A03. ENTSO-E leaves out a point that repeats the one before
+#     it, so the last point written stands for every interval up to the end of
+#     the Period: the value is that point's, the time is the last interval's.
+#   - a series cut in pieces. One technology can come as several TimeSeries
+#     (a gap, a change of resolution). Only the piece with the latest value
+#     counts: adding the last value of each piece would count it twice.
+
+def last_day(now):
+    """(periodStart, periodEnd) for the last 24 hours, in whole hours: from 24
+    hours before the hour `now` is in to the end of that hour."""
+    hour = now.replace(minute=0, second=0, microsecond=0)
+    return ((hour - timedelta(hours=24)).strftime('%Y%m%d%H%M'),
+            (hour + timedelta(hours=1)).strftime('%Y%m%d%H%M'))
+
+
+def _step(text):
+    """The length of a Period's intervals: 'PT15M' -> 15 minutes. An hour when
+    it cannot be read, as the parsers above assume."""
+    found = re.fullmatch(r'PT(\d+)([MH])', (text or '').strip())
+    if not found or int(found.group(1)) == 0:
+        return timedelta(hours=1)
+    return timedelta(**{'minutes' if found.group(2) == 'M' else 'hours': int(found.group(1))})
+
+
+def _instant(element):
+    """The time in a <start> or <end> element, or None."""
+    try:
+        parsed = datetime.fromisoformat(element.text.strip().replace('Z', '+00:00'))
+    except (AttributeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def read_series(xml_str):
+    """The TimeSeries of an ENTSO-E answer as plain data, in document order:
+
+        {'psr': 'B16' | None,        the technology (generation)
+         'out': bool,                consumption (pumped storage), not generation
+         'periods': [{'start', 'end', 'step', 'variable', 'points': [(position, quantity)]}]}
+
+    `variable` is curveType A03. An answer that is not such a document (an
+    error page, "no matching data") gives an empty list."""
+    try:
+        root = ET.fromstring(xml_str)
+    except ET.ParseError:
+        return []
+    ns = get_ns(root)
+    prefix = f'{{{ns}}}' if ns else ''
+    series = []
+    for ts in root.iter(f'{prefix}TimeSeries'):
+        psr = ts.find(f'{prefix}MktPSRType/{prefix}psrType')
+        curve = ts.find(f'{prefix}curveType')
+        variable = curve is not None and (curve.text or '').strip() == 'A03'
+        periods = []
+        for period in ts.iter(f'{prefix}Period'):
+            start = _instant(period.find(f'{prefix}timeInterval/{prefix}start'))
+            if start is None:
+                continue
+            resolution = period.find(f'{prefix}resolution')
+            points = []
+            for pt in period.iter(f'{prefix}Point'):
+                try:
+                    points.append((int(pt.find(f'{prefix}position').text),
+                                   float(pt.find(f'{prefix}quantity').text)))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            periods.append({
+                'start': start,
+                'end': _instant(period.find(f'{prefix}timeInterval/{prefix}end')),
+                'step': _step(resolution.text if resolution is not None else None),
+                'variable': variable,
+                'points': sorted(points),
+            })
+        series.append({
+            'psr': psr.text.strip() if psr is not None and psr.text else None,
+            'out': ts.find(f'{prefix}outBiddingZone_Domain.mRID') is not None,
+            'periods': periods,
+        })
+    return series
+
+
+def _in_force(period, now):
+    """(time, quantity) of the value a Period has for `now`: its last point
+    that has started, and the start of the interval it is for. None when the
+    Period only has later points."""
+    start, step = period['start'], period['step']
+    at = quantity = None
+    for position, value in period['points']:
+        point_time = start + step * (position - 1)
+        if point_time > now:
+            break
+        at, quantity = point_time, value
+    if at is None:
+        return None
+    if period['variable'] and period['end'] is not None:
+        # The point stands for every interval after it, up to the end of the Period.
+        at = max(at, min(period['end'] - step, start + step * ((now - start) // step)))
+    return at, quantity
+
+
+def _first_after(period, now):
+    """(time, quantity) of a Period's first point after `now`, or None."""
+    for position, value in period['points']:
+        point_time = period['start'] + period['step'] * (position - 1)
+        if point_time > now:
+            return point_time, value
+    return None
+
+
+def latest_generation(xml_str, now):
+    """The generation mix an A75 answer has for `now`:
+
+        {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time}
+
+    or None when it has no data. Each technology has the last value ENTSO-E
+    published for it (as in parse_generation_xml(): the latest point up to
+    `now` or, when it only has later ones, the earliest of those).
+
+    `data_time` is the time of the oldest of those values and `newest` of the
+    most recent: they differ when a country publishes some technologies later
+    than others. Generation and consumption of the same technology (pumped
+    storage) are added together, as they always were."""
+    order = []                 # (technology code, consumption?) in document order
+    current, ahead = {}, {}    # -> [(time, MW)], one for each TimeSeries
+    for series in read_series(xml_str):
+        if series['psr'] is None:
+            continue
+        key = (series['psr'], series['out'])
+        if key not in order:
+            order.append(key)
+        found = [v for v in (_in_force(p, now) for p in series['periods']) if v]
+        if found:
+            current.setdefault(key, []).append(max(found, key=lambda v: v[0]))
+            continue
+        found = [v for v in (_first_after(p, now) for p in series['periods']) if v]
+        if found:
+            ahead.setdefault(key, []).append(min(found, key=lambda v: v[0]))
+
+    mix, times = {}, []
+    for key in order:
+        if key in current:
+            at = max(t for t, _mw in current[key])       # the piece with the latest value
+            pieces = current[key]
+        elif key in ahead:
+            at = min(t for t, _mw in ahead[key])
+            pieces = ahead[key]
+        else:
+            continue
+        name = PSR_MAP.get(key[0], 'Other')
+        mix[name] = mix.get(name, 0) + sum(mw for t, mw in pieces if t == at)
+        times.append(at)
+    if not mix:
+        return None
+    return {'mix': mix, DATA_TIME: min(times).isoformat(), 'newest': max(times).isoformat()}
+
+
+def latest_flow(xml_str, now):
+    """What an A11 answer has for one corridor:
+
+        {'latest': {time, mw}, 'values': [{time, mw}], 'data_time': ISO time}
+
+    or None when it has no data.
+
+    `values` is what it always was, the points of the current UTC day as
+    ENTSO-E writes them, and never has a point of the day before: just after
+    midnight it is empty until ENTSO-E has something for the new day. When a
+    Period that began the day before goes on into this one without a point at
+    midnight (curveType A03: the value did not change), the value in force at
+    midnight is given as the 00:00 point, which is what a request starting at
+    midnight gets. `latest` is the last of `values` or, when the day has none
+    yet, the last point of the day before. `data_time` is the start of the
+    last interval the answer has a value for."""
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    points = {}          # time -> MW, as published
+    covered = None
+    for series in read_series(xml_str):
+        for period in series['periods']:
+            start, step = period['start'], period['step']
+            for position, value in period['points']:
+                points[start + step * (position - 1)] = value
+            in_force = _in_force(period, now)
+            if in_force is None:
+                continue
+            covered = in_force[0] if covered is None else max(covered, in_force[0])
+            if period['variable'] and start < day <= in_force[0] and day not in points:
+                points[day] = _in_force(period, day)[1]     # the day before's last point
+    if not points or covered is None:
+        return None
+
+    def point(at):
+        return {'time': at.strftime('%H:%M'), 'mw': round(points[at])}
+
+    values = [point(at) for at in sorted(points) if at >= day]
+    return {
+        'latest': values[-1] if values else point(max(points)),
+        'values': values,
+        DATA_TIME: covered.isoformat(),
+    }
+
+
+def _data_of(parsed, now):
+    """For the run log: the time a zone's or a corridor's value is for, and how
+    long before the run that is."""
+    oldest = carry_over.parse_time(parsed[DATA_TIME])
+    text = f"data of {oldest:%d %b %H:%M}"
+    newest = carry_over.parse_time(parsed.get('newest'))
+    if newest is not None and newest != oldest:
+        text += f" to {newest:%H:%M}"
+    minutes = round((now - oldest).total_seconds() / 60)
+    return f'{text}, {minutes} min before the run' if minutes >= 0 else f'{text}, ahead of the run'
+
+
 # --- Fetchers ---
 
 def _incomplete(country, zone_codes, zones):
@@ -584,7 +814,8 @@ def _incomplete(country, zone_codes, zones):
     not built from the part that did: half of Norway is not Norway, and for
     generation it would show the country's output falling by the missing part.
     Its zones are dropped, so the country counts as not obtained in this run:
-    it keeps what was published earlier today, or is left out."""
+    it keeps what was published before, while carry_over.py allows it, or is
+    left out."""
     missing = [zc for zc in zone_codes if zc not in zones]
     if not missing:
         return False
@@ -673,8 +904,7 @@ def fetch_generation(base, deadline=None):
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
     now = utcnow()
-    start = now.strftime('%Y%m%d') + '0000'
-    end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
+    start, end = last_day(now)
 
     gen = {
         'updated': now.isoformat(),
@@ -695,18 +925,21 @@ def fetch_generation(base, deadline=None):
             'periodEnd': end,
         })
         jobs.append((code, code, f'{base}?{params}'))
-    fetched = fetch_all('Generation', jobs, parse_generation_xml,
-                        lambda mix: f'{len(mix)} types, {sum(mix.values()):.0f} MW', deadline)
+    fetched = fetch_all('Generation', jobs, lambda text: latest_generation(text, now),
+                        lambda got: (f"{len(got['mix'])} types, {sum(got['mix'].values()):.0f} MW, "
+                                     f"{_data_of(got, now)}"), deadline)
 
     for code in codes:                   # same order as before, so the file keeps its zone order
-        mix = fetched.get(code)
-        if mix:
+        got = fetched.get(code)
+        if got:
+            mix = got['mix']
             total = sum(mix.values())
             renewable = sum(mix.get(rt, 0) for rt in RENEWABLE_TYPES)
             gen['zones'][code] = {
                 'mix': mix,
                 'total_mw': total,
                 'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
+                DATA_TIME: got[DATA_TIME],
             }
 
     for country, zone_codes in CONSOLIDATE.items():
@@ -726,6 +959,9 @@ def fetch_generation(base, deadline=None):
             'total_mw': total,
             'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
         }
+        data_time = carry_over.oldest(z.get(DATA_TIME) for z in zone_data)
+        if data_time:
+            gen['zones'][country][DATA_TIME] = data_time     # as old as the oldest of its zones
         for zc in zone_codes:
             gen['zones'].pop(zc, None)
         print(f'  Consolidated generation {"+".join(zone_codes)} → {country}')
@@ -737,8 +973,7 @@ def fetch_flows(base, deadline=None):
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
     now = utcnow()
-    start = now.strftime('%Y%m%d') + '0000'
-    end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
+    start, end = last_day(now)
 
     flows = {
         'updated': now.isoformat(),
@@ -762,18 +997,20 @@ def fetch_flows(base, deadline=None):
             'periodEnd': end,
         })
         jobs.append(((frm, to), f'{frm}→{to}', f'{base}?{params}'))
-    fetched = fetch_all('Flow', jobs, parse_flow_xml,
-                        lambda values: f'{len(values)} points', deadline)
+    fetched = fetch_all('Flow', jobs, lambda text: latest_flow(text, now),
+                        lambda got: (f"{got['latest']['mw']} MW, {len(got['values'])} points today, "
+                                     f"{_data_of(got, now)}"), deadline)
 
     for frm, to in FLOW_CORRIDORS:       # same order as before, so the file keeps its corridor order
-        values = fetched.get((frm, to))
-        if values:
+        got = fetched.get((frm, to))
+        if got:
             key = f'{frm}→{to}'
             flows['corridors'][key] = {
                 'from': frm,
                 'to': to,
-                'latest': values[-1],
-                'values': values,
+                'latest': got['latest'],
+                'values': got['values'],
+                DATA_TIME: got[DATA_TIME],
             }
 
     flows['net'] = net_flows(flows['corridors'])
@@ -784,9 +1021,10 @@ def net_flows(corridors):
     """The `net` block: the net flow of each pair of zones, from the two
     corridors of the pair as they are in the file.
 
-    A pair is as old as the older of its two corridors and is marked
-    carried_over when either of them was kept from an earlier run, so the
-    number never looks fresher than what it was worked out from."""
+    A pair is as old as the older of its two corridors, in the time its data
+    are for (data_time) and in the time they were obtained (fetched_at), and is
+    marked carried_over when either of them was kept from an earlier run, so
+    the number never looks fresher than what it was worked out from."""
     net = {}
     for frm, to in FLOW_CORRIDORS:
         pair = '-'.join(sorted([frm, to]))
@@ -800,9 +1038,12 @@ def net_flows(corridors):
             'to': to if balance >= 0 else frm,
             'net_mw': abs(round(balance)),
         }
-        times = [c[FETCHED_AT] for c in both if c and c.get(FETCHED_AT)]
-        if times:
-            entry[FETCHED_AT] = min(times, key=carry_over.parse_time)
+        data_time = carry_over.oldest(c.get(DATA_TIME) for c in both if c)
+        if data_time:
+            entry[DATA_TIME] = data_time
+        fetched_at = carry_over.oldest(c.get(FETCHED_AT) for c in both if c)
+        if fetched_at:
+            entry[FETCHED_AT] = fetched_at
             if any(c and c.get(CARRIED_OVER) for c in both):
                 entry[CARRIED_OVER] = True
         net[pair] = entry
@@ -1143,7 +1384,8 @@ def update_forward_curves(deadline=None):
 
 def publish(doc, key, path, order, dataset):
     """Write one of the three files and its archive snapshot: the entries this
-    run obtained plus the ones kept from earlier today (see carry_over.py).
+    run obtained plus the ones kept from before, for as long as the file's rule
+    allows (see carry_over.py).
 
     Returns how many entries came from this run. With none, nothing is written:
     the published file, its `updated` included, stays exactly as it was."""
@@ -1153,17 +1395,18 @@ def publish(doc, key, path, order, dataset):
         print(f'Nothing obtained in this run: {name} is left exactly as it was')
         return 0
 
-    entries, kept, dropped = carry_over.merge(fresh, load_json(path), key, order, doc['updated'])
+    rule = carry_over.RULES[path]
+    entries, kept, dropped = carry_over.merge(fresh, load_json(path), key, order, doc['updated'], rule)
     doc[key] = entries
     if key == 'corridors':
         doc['net'] = net_flows(entries)      # over what the file shows, kept corridors included
     write_json(path, doc, separators=(',', ':'))
     print(f'Saved {name} ({len(entries)} {key}: {len(fresh)} from this run, '
-          f'{len(kept)} kept from earlier today)')
+          f'{len(kept)} {rule.kept})')
     if kept:
         print('  Kept, not obtained in this run: ' + ', '.join(f'{n} (from {t})' for n, t in kept))
     if dropped:
-        print('  Left out, last obtained on an earlier day: ' + ', '.join(f'{n} ({t})' for n, t in dropped))
+        print(f'  Left out, {rule.dropped}: ' + ', '.join(f'{n} ({t})' for n, t in dropped))
 
     # The archive follows what is published. The zones fetch_gb.py fills in
     # were never part of it, and stay out.
@@ -1233,7 +1476,7 @@ def main():
 
     # Every file is written as soon as its dataset is done, so a run that is
     # cut short keeps whatever it had already fetched. A zone or corridor that
-    # did not answer keeps what was published earlier today (see carry_over.py).
+    # did not answer keeps what was published before, for a while (see carry_over.py).
     print('Fetching day-ahead prices...')
     prices = fetch_prices(base, next_deadline())
     print(f"  → {len(prices['zones'])} zones\n")

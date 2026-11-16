@@ -6,14 +6,15 @@ terms of REE's REData API exclude commercial use, so this script makes no
 request to REE (or to anyone). It copies the ES zone that fetch_entsoe.py
 wrote to data/generation-mix.json earlier in the same run:
 
-    {updated, source, mix: {technology: MW}, total_mw, renewable_pct}
+    {updated, source, mix: {technology: MW}, total_mw, renewable_pct, data_time}
 
 `updated` is the time the ES zone itself was obtained from ENTSO-E (its
 fetched_at), not the time of the copy nor of the file it is copied from: when
 ENTSO-E did not answer for Spain and the zone was kept from an earlier run
 (see carry_over.py), the copy carries that earlier time, so it never looks
-fresher than its source. The `fallback` flag is gone (nothing on the site
-reads it): ENTSO-E is now the only source.
+fresher than its source. `data_time` is the zone's too: the time the mix
+itself is for. The `fallback` flag is gone (nothing on the site reads it):
+ENTSO-E is now the only source.
 
 The technology names are ENTSO-E's ("Wind Onshore", "Fossil Gas"...), which
 the site already maps to its categories.
@@ -24,7 +25,7 @@ previous ree-generation.json is kept.
 
 import sys
 
-from carry_over import entry_time
+from carry_over import DATA_TIME, entry_time
 from feed_common import load_json, write_json
 
 OUT_PATH = 'data/ree-generation.json'
@@ -38,13 +39,16 @@ def from_generation_mix(gen_mix):
     es = ((gen_mix or {}).get('zones') or {}).get('ES')
     if not es or not es.get('mix') or not es.get('total_mw'):
         return None
-    return {
+    result = {
         'updated': entry_time(es, gen_mix),           # when the zone was obtained
         'source': SOURCE,
         'mix': es['mix'],
         'total_mw': es['total_mw'],
         'renewable_pct': es.get('renewable_pct', 0),
     }
+    if es.get(DATA_TIME):
+        result[DATA_TIME] = es[DATA_TIME]             # the time the mix itself is for
+    return result
 
 
 def main():

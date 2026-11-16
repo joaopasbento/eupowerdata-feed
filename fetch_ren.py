@@ -7,12 +7,13 @@ usable, fall back to the PT zone that fetch_entsoe.py wrote to
 data/generation-mix.json earlier in the same run - as the PHP did, and as
 fetch_ree.py does for Spain.
 
-    {updated, source, fallback, mix: {technology: MW}, total_mw, renewable_pct[, url]}
+    {updated, source, fallback, mix: {technology: MW}, total_mw, renewable_pct[, url][, data_time]}
 
 `source` and `fallback` say where the data came from. In a fallback, `updated`
 is the time the PT zone itself was obtained from ENTSO-E (its fetched_at): not
 the time of the copy, and not the time of generation-mix.json either, which is
-later when the zone was kept from an earlier run (see carry_over.py).
+later when the zone was kept from an earlier run (see carry_over.py); and
+`data_time` is the zone's, the time the mix itself is for.
 The site's JavaScript reads `mix`, `total_mw` and `renewable_pct` only.
 
 Differences from the PHP, on purpose:
@@ -32,7 +33,7 @@ import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from carry_over import entry_time
+from carry_over import DATA_TIME, entry_time
 from feed_common import http_get, load_json, now_iso, write_json
 
 OUT_PATH = 'data/ren-generation.json'
@@ -175,7 +176,7 @@ def from_generation_mix(gen_mix):
     if not pt or not pt.get('mix'):
         return None
     mix = pt['mix']
-    return {
+    result = {
         'updated': entry_time(pt, gen_mix),           # when the zone was obtained
         'source': 'ENTSO-E Transparency Platform',
         'fallback': True,
@@ -183,6 +184,9 @@ def from_generation_mix(gen_mix):
         'total_mw': pt.get('total_mw') if pt.get('total_mw') is not None else sum(mix.values()),
         'renewable_pct': pt.get('renewable_pct', 0),
     }
+    if pt.get(DATA_TIME):
+        result[DATA_TIME] = pt[DATA_TIME]             # the time the mix itself is for
+    return result
 
 
 def main():
