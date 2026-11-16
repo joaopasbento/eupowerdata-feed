@@ -3,6 +3,13 @@ on:
   # The clock is the Cloudflare Worker in scheduler/: every 15 minutes, at
   # minutes 7, 22, 37 and 52, it starts a run through workflow_dispatch.
   workflow_dispatch:
+    inputs:
+      # For a run asked for by hand: gh workflow run fetch.yml -f force=true
+      # The Worker never sends it.
+      force:
+        description: Run even if the published data are under 7 minutes old
+        type: boolean
+        default: false
   # GitHub's own schedule drops most of its runs (one started of the 37 due on
   # the night of 15 to 16 Nov 2026). It stays as a fallback, for when the
   # Worker cannot start a run: same minutes, off the start of the hour and the
@@ -38,37 +45,50 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      # GitHub sometimes holds a run for 15 to 25 minutes and then lets it go
+      # right behind another. With published data under 7 minutes old there is
+      # nothing new to bring: every step below is skipped, no source is asked
+      # for anything, nothing is committed and the run ends in success (see
+      # skip_if_fresh.py). If this step cannot tell, the run goes ahead.
+      - name: Is there anything new to fetch?
+        id: fresh
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          FORCE: ${{ inputs.force }}
+        run: python skip_if_fresh.py
       # The script stops by itself after FETCH_BUDGET_SECONDS (300 s) and writes
       # each file as soon as its dataset is done, so the step limit is slack.
       - name: Fetch ENTSO-E data
+        if: ${{ steps.fresh.outputs.skip != 'true' }}
         timeout-minutes: 7
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_entsoe.py
       # The steps below run even when an earlier one failed or ran out of time.
       - name: Fetch GB (Elexon Insights) data
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         timeout-minutes: 2
         run: python fetch_gb.py
       # The two below read data/generation-mix.json, so they come after it.
       - name: Spain generation (copy of the ENTSO-E ES zone)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 1
         run: python fetch_ree.py
       - name: Portugal generation (REN, else the ENTSO-E PT zone)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2
         run: python fetch_ren.py
       - name: OMIE day-ahead prices
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 3
         run: python fetch_omie.py
       # Runs every time but only does something when the file is over 12 hours old.
       - name: Installed capacity (ENTSO-E + RenewableNodes)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2
         run: python merge_capacity.py
@@ -76,14 +96,14 @@ jobs:
       # is used: until the repository variable MET_NORWAY_TOS_ACCEPTED is "true"
       # this step makes no request. https://api.met.no/doc/TermsOfService
       - name: Weather (MET Norway)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 4
         env:
           MET_NORWAY_TOS_ACCEPTED: ${{ vars.MET_NORWAY_TOS_ACCEPTED }}
         run: python fetch_weather.py
       - name: Commit and push
-        if: ${{ always() }}
+        if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
         timeout-minutes: 3
         run: |
           git config user.name "github-actions[bot]"

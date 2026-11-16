@@ -55,14 +55,15 @@ class Feed(unittest.TestCase):
         os.chdir(folder.name)
         os.makedirs('data')
 
-    def entsoe(self, when, prices=None, generation=None, flows=None):
+    def entsoe(self, when, prices=None, generation=None, flows=None, endpoint='https://entsoe.test/api'):
         """One run of fetch_entsoe.py at `when`. ENTSO-E answers only for what
         is given: prices {zone: EUR/MWh}, generation {zone: MW}, flows
         {(from, to): MW}. Returns (exit code, log).
 
         Generation and flows are hourly and ENTSO-E has them up to the hour
         before the run; (MW, '2026-11-16 22:00') says up to when instead.
-        self.asked has the requests of the run, by dataset."""
+        self.asked has the requests of the run, by dataset. `endpoint` is what
+        the test of the endpoint comes back with: None ends the run at once."""
         def answer(build, spec):
             mw, last = spec if isinstance(spec, tuple) else (spec, None)
             return build(mw, when, last)
@@ -89,7 +90,7 @@ class Feed(unittest.TestCase):
         log = io.StringIO()
         with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), \
                 mock.patch.object(fe, 'utcnow', lambda: when), \
-                mock.patch.object(fe, 'find_working_endpoint', lambda deadline=None: 'https://entsoe.test/api'), \
+                mock.patch.object(fe, 'find_working_endpoint', lambda deadline=None: endpoint), \
                 mock.patch.object(fe, 'fetch_all', fetch_all), \
                 mock.patch.object(fe, 'update_forward_curves', lambda deadline=None: None), \
                 contextlib.redirect_stdout(log):
