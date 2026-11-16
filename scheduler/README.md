@@ -22,6 +22,7 @@ at once.
 | `src/index.js` | The Worker: one `scheduled` handler, no address of its own |
 | `wrangler.jsonc` | Its name, the Cron Trigger and what to start (repository, workflow, branch) |
 | `test/dispatch.test.js` | Tests, without network: `npm test` in this folder |
+| `waits.py` | Prints how long GitHub held each run before starting it (see below) |
 
 Nothing secret is in this folder or anywhere in the repository.
 
@@ -81,6 +82,49 @@ and the three plain settings; it leaves the `GITHUB_TOKEN` secret as it is.
 - Cloudflare: Workers & Pages > `eupowerdata-feed-scheduler` > Logs has one line
   for each run started (`Started fetch.yml on main ...`), or the reason it
   could not be.
+
+## How long GitHub holds a run, and the experiment
+
+GitHub creates a run the moment the Worker asks for it, but sometimes leaves it
+for 15 to 25 minutes before starting its job, with no other run in the way
+(three of the first eleven runs, on the morning of 16 November 2026). The wait
+is not for a machine: the machine is assigned within milliseconds of GitHub
+getting to the run, and every run, held or not, is on the same image.
+
+`waits.py` reads the runs through the API and prints the wait of each one,
+split into the time spent behind another run and the time held for no reason,
+then a summary:
+
+```
+GH_TOKEN=$(gh auth token --user joaopasbento) python3 scheduler/waits.py --since 2026-11-16T12:30Z
+```
+
+Since 16 November an experiment is on (`EXPERIMENT` set to `on` in
+`wrangler.jsonc`) to see whether either of two things the scheduler can vary
+is behind it. Each is varied on half of the four runs of every hour, and every
+hour has the four combinations once (`variant()` in `src/index.js`):
+
+| Word in the run's title | What it means |
+| --- | --- |
+| `reserve` / `alone` | GitHub's own schedule has a run due in this same minute, or not. The cron lines of `fetch.yml` cover minutes 7 and 37 of the even hours and 22 and 52 of the odd ones (UTC) |
+| `api-new` / `api-old` | The request is sent with `X-GitHub-Api-Version` 2026-03-10, or 2022-11-28 |
+
+The runs go on every 15 minutes whatever the variant, and both API versions
+are supported by GitHub. If one word shows many more held runs than its
+opposite in the summary of `waits.py`, that is the cause; if the four lines
+look alike, neither is, and the delay is GitHub's own.
+
+To end the experiment, undo its commit and publish the Worker again:
+
+```
+git revert <the commit "Vary the reserve schedule and the API version...">
+git push
+cd scheduler && npx wrangler deploy
+```
+
+That puts the reserve schedule back on all four minutes and the request back
+to one API version, without the `variant` input. To keep one of the variants
+for good instead, change `variant()` and the cron lines to that case.
 
 ## Limits of the free plan
 

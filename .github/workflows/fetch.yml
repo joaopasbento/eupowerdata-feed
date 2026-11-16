@@ -1,4 +1,7 @@
 name: Fetch ENTSO-E Data
+# The runs the scheduler starts during its experiment say in their title which
+# variant they are (see scheduler/src/index.js); scheduler/waits.py reads it.
+run-name: ${{ inputs.variant && format('Fetch ENTSO-E Data [{0}]', inputs.variant) || 'Fetch ENTSO-E Data' }}
 on:
   # The clock is the Cloudflare Worker in scheduler/: every 15 minutes, at
   # minutes 7, 22, 37 and 52, it starts a run through workflow_dispatch.
@@ -10,12 +13,25 @@ on:
         description: Run even if the published data are under 7 minutes old
         type: boolean
         default: false
+      # Only a label: it goes in the title of the run and changes nothing else.
+      variant:
+        description: Variant of the scheduler's experiment (set by the scheduler)
+        type: string
+        default: ''
   # GitHub's own schedule drops most of its runs (one started of the 37 due on
   # the night of 15 to 16 Nov 2026). It stays as a fallback, for when the
-  # Worker cannot start a run: same minutes, off the start of the hour and the
-  # round quarters, which is when GitHub delays and drops the most.
+  # Worker cannot start a run, off the start of the hour and the round
+  # quarters, which is when GitHub delays and drops the most.
+  #
+  # During the scheduler's experiment it covers half of the Worker's minutes,
+  # two in every hour, to see whether a scheduled run due in the same minute
+  # is what makes GitHub hold a run: minutes 7 and 37 of the even hours, 22
+  # and 52 of the odd ones (UTC). variant() in scheduler/src/index.js goes by
+  # the same rule; the two must change together. Before the experiment:
+  #   - cron: '7,22,37,52 * * * *'
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    - cron: '7,37 */2 * * *'
+    - cron: '22,52 1-23/2 * * *'
 permissions:
   contents: write
 # One run at a time. A run that starts while another is going waits for it to
