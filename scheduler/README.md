@@ -44,6 +44,11 @@ They could not change what the workflows do.
 
 ### When it expires
 
+Every line the Worker logs for a run it started ends with the date GitHub says
+the token expires on (`... the token expires 2027-11-15 10:59:13 UTC, in 363
+days`), and in the last two weeks it adds a warning line (`Renew the GitHub
+token ...`).
+
 GitHub revokes the token on its expiration date. From then on GitHub answers
 HTTP 401 and the Worker starts nothing: each invocation fails, with the reason
 in its log (`Workflow not started: GitHub answered HTTP 401 ... has expired`).
