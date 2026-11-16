@@ -7,6 +7,13 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+# One run at a time. A run that starts while another is going waits for it to
+# finish instead of running beside it: two runs at once write the same files
+# and the second cannot push (run 2365). At most one run waits; a newer one
+# takes its place in the queue.
+concurrency:
+  group: fetch-entsoe-data
+  cancel-in-progress: false
 jobs:
   fetch:
     runs-on: ubuntu-latest
