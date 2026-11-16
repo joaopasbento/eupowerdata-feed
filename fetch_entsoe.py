@@ -476,13 +476,13 @@ def find_working_endpoint(deadline=None):
         if xml and 'TimeSeries' in xml:
             print(f'  Working!')
             return base
+        if i == 0 and _slow(reason):
+            print(f'  No answer in {PROBE_MAX_S} s: ENTSO-E is slow, not gone — going on with {main_endpoint}')
+            return main_endpoint
         print(f'  Failed ({reason or "no TimeSeries in the answer"})')
         if reason in REFUSED:
             print(f'  ENTSO-E is refusing the API key ({reason}) — check the ENTSOE_API_KEY secret')
             return None
-        if i == 0 and _slow(reason):
-            print(f'  No answer in {PROBE_MAX_S} s: ENTSO-E is slow, not gone — going on with {main_endpoint}')
-            return main_endpoint
     print(f'  No endpoint confirmed — going on with {main_endpoint} all the same')
     return main_endpoint
 
