@@ -25,7 +25,9 @@ spot-prices.json have the first two:
                   interval the source had published when it was asked. Not
                   the time of the request. An entry put together from several
                   series (the technologies of a mix, the zones of a country,
-                  the two corridors of a net pair) has the oldest of theirs.
+                  the two corridors of a net pair) has the oldest of theirs;
+                  a consumption series that has stopped does not date a mix
+                  (see latest_generation() in fetch_entsoe.py).
 
 The rules, which exist so that old data can never pass for new:
 

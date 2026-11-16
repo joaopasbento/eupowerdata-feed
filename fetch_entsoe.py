@@ -716,9 +716,14 @@ def latest_generation(xml_str, now):
 
     `data_time` is the time of the oldest of those values and `newest` of the
     most recent: they differ when a country publishes some technologies later
-    than others, and `behind` says which ones, for the run log. Generation and
-    consumption of the same technology (pumped
-    storage) are added together, as they always were."""
+    than others, and `behind` says which ones, for the run log.
+
+    Generation and consumption of the same technology (pumped storage) are
+    added together, as they always were. A consumption series is only
+    published while there is consumption, so its last value can be many hours
+    old (Norway's on 16 Nov 2026: 13 MW, from 13:30 the day before): it is
+    listed in `behind` but does not date the mix, or a country generating
+    8 900 MW as of 07:45 would read as 19 hours late."""
     order = []                 # (technology code, consumption?) in document order
     current, ahead = {}, {}    # -> [(time, MW)], one for each TimeSeries
     for series in read_series(xml_str):
@@ -748,15 +753,17 @@ def latest_generation(xml_str, now):
         name = PSR_MAP.get(key[0], 'Other')
         value = sum(mw for t, mw in pieces if t == at)
         mix[name] = mix.get(name, 0) + value
-        parts.append((name + (' consumption' if key[1] else ''), at, value))
+        parts.append((name + (' consumption' if key[1] else ''), at, value, key[1]))
     if not mix:
         return None
-    oldest, newest = min(at for _n, at, _mw in parts), max(at for _n, at, _mw in parts)
+    generation = [at for _name, at, _mw, consumption in parts if not consumption]
+    dated_by = generation or [at for _name, at, _mw, _consumption in parts]
+    newest = max(dated_by)
     return {
         'mix': mix,
-        DATA_TIME: oldest.isoformat(),
+        DATA_TIME: min(dated_by).isoformat(),
         'newest': newest.isoformat(),
-        'behind': [(name, at.isoformat(), value) for name, at, value in parts if at < newest],
+        'behind': [(name, at.isoformat(), value) for name, at, value, _consumption in parts if at < newest],
     }
 
 
