@@ -29,14 +29,22 @@ NOTE (unit assumption): AGPT 'quantity' is taken to be MW (average power over
 the settlement period), matching the ENTSO-E A75 convention. The first live run
 should be sanity-checked: a healthy GB total is ~15-40 GW.
 
+The generation mix is asked for the last 24 hours and is the last settlement
+period Elexon has published, with the time that period began (data_time): asked
+"since midnight", Elexon has nothing just after midnight and GB went missing.
+The mix is as old as the oldest of its parts, and the wind and solar figures
+(B1630) come out later than the rest. The price is per delivery day and is
+still asked for today only.
+
 When Elexon does not answer. fetch_entsoe.py, which rewrites the two files
-just before this script runs, keeps the GB zone that was published earlier the
-same UTC day, with the time it was obtained (fetched_at) and the mark
-carried_over (see carry_over.py). So this script only has two things to do:
-when Elexon answers, GB gets the new data, the time of this fetch and no mark;
-when it does not, GB is left as fetch_entsoe.py left it. Either way the counts
-in data/status.json are worked out again at the end, so that they say whether
-GB came from this run.
+just before this script runs, keeps the GB zone that was published before, for
+as long as each file allows (a price obtained the same UTC day, a mix obtained
+less than three hours before), with the time it was obtained (fetched_at) and
+the mark carried_over (see carry_over.py). So this script only has two things
+to do: when Elexon answers, GB gets the new data, the time of this fetch and
+no mark; when it does not, GB is left as fetch_entsoe.py left it. Either way
+the counts in data/status.json are worked out again at the end, so that they
+say whether GB came from this run.
 """
 
 import json
@@ -47,7 +55,7 @@ import urllib.parse
 from datetime import datetime, timezone, timedelta
 
 import carry_over
-from carry_over import CARRIED_OVER, FETCHED_AT
+from carry_over import CARRIED_OVER, DATA_TIME, FETCHED_AT
 from feed_common import load_json, write_json
 
 # --- Elexon Insights API (public, no key) -----------------------------------
@@ -140,7 +148,7 @@ def _accum(periods, start, psr, qty):
 
 
 def _latest_period_mix(payload):
-    """Return {psrType: MW} for the most recent settlement period.
+    """Return ({psrType: MW}, startTime) for the most recent settlement period.
     Tolerates both the nested shape ({...,'data':[{psrType,quantity}]}) and a
     flat shape ({...,'psrType','quantity'})."""
     periods = {}  # startTime -> {psrType: MW}
@@ -157,10 +165,10 @@ def _latest_period_mix(payload):
                    _ci(rec, 'psrType', 'fuelType', 'type'),
                    _num(_ci(rec, 'quantity', 'generation', 'value')))
     if not periods:
-        return {}
+        return {}, None
     keyed = sorted([k for k in periods if k], reverse=True)
     key = keyed[0] if keyed else next(iter(periods))
-    return periods[key]
+    return periods[key], key
 
 
 # B1630 (wind-and-solar) returns one record per (settlement period x psrType),
@@ -170,8 +178,8 @@ def _latest_period_mix(payload):
 # forecast horizon - so we keep every psrType and, for each, take its most
 # recent published estimate (latest startTime, then latest publishTime).
 def _windsolar_latest(payload):
-    """Return {psrType: MW} using, per psrType, the most recent published
-    estimate (latest startTime, then latest publishTime)."""
+    """Return ({psrType: MW}, {psrType: startTime}) using, per psrType, the most
+    recent published estimate (latest startTime, then latest publishTime)."""
     recs = _records(payload)
     if recs:
         print(f'  B1630: {len(recs)} records')
@@ -189,7 +197,7 @@ def _windsolar_latest(payload):
     if mix:
         detail = ', '.join(f'{k}={v:.0f}@{best[k][0][11:16]}' for k, v in mix.items())
         print(f'  B1630 picked (per psrType, latest): {detail}')
-    return mix
+    return mix, {psr: start for psr, (start, pub, qty) in best.items()}
 
 
 def _fx_gbp_eur():
@@ -206,32 +214,43 @@ def _fx_gbp_eur():
 
 
 def _window():
-    now = datetime.now(timezone.utc)
+    """Today, from midnight UTC: the prices of the delivery day."""
+    now = utcnow()
     frm = now.strftime('%Y-%m-%dT00:00Z')
     to = (now + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%MZ')
     return frm, to
 
 
+def _last_day_window():
+    """The last 24 hours: the mix is the last period published, whatever its day."""
+    now = utcnow()
+    frm = (now - timedelta(hours=24)).strftime('%Y-%m-%dT%H:%MZ')
+    to = (now + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%MZ')
+    return frm, to
+
+
 def fetch_gb_generation():
-    frm, to = _window()
+    frm, to = _last_day_window()
     q = urllib.parse.urlencode({'from': frm, 'to': to})
 
-    mix = _latest_period_mix(http_get_json(f'{EP_GEN}?{q}'))
+    mix, period_start = _latest_period_mix(http_get_json(f'{EP_GEN}?{q}'))
     if not mix:
         print('  AGPT: no data')
         return None
+    times = [period_start]               # the period each part of the mix is for
 
     # Recover embedded solar/wind from B1630. AGPT only sees transmission-
     # metered output (GB solar is almost all embedded -> ~0 in AGPT), so we
     # drop AGPT's wind/solar entries and use B1630's complete figures instead,
     # which avoids both undercounting embedded output and double-counting.
-    wsmix = _windsolar_latest(http_get_json(f'{EP_WIND_SOLAR}?{q}'))
+    wsmix, wstimes = _windsolar_latest(http_get_json(f'{EP_WIND_SOLAR}?{q}'))
     if wsmix:
         for k in [k for k in mix if 'solar' in k.lower() or 'wind' in k.lower()]:
             mix.pop(k, None)
         for k, v in wsmix.items():
             if 'solar' in k.lower() or 'wind' in k.lower():
                 mix[k] = v
+                times.append(wstimes.get(k))
     else:
         print('  wind-and-solar: no data (GB solar may read low)')
 
@@ -242,12 +261,23 @@ def fetch_gb_generation():
         return None
 
     renewable = sum(mix.get(rt, 0) for rt in RENEWABLE_TYPES)
-    return {
+    gen = {
         'mix': mix,
         'total_mw': total,
         'renewable_pct': round(renewable / total * 100, 1) if total else 0,
         'source': 'Elexon (AGPT + wind/solar)',
     }
+    data_time = _data_time(times)
+    if data_time:
+        gen[DATA_TIME] = data_time       # as old as the oldest part of the mix
+    return gen
+
+
+def _data_time(start_times):
+    """The oldest of Elexon's period start times, written as the other times of
+    the feed are, or None when none can be read."""
+    known = [t for t in (carry_over.parse_time(s) for s in start_times) if t is not None]
+    return min(known).astimezone(timezone.utc).isoformat() if known else None
 
 
 def fetch_gb_price():
@@ -339,7 +369,7 @@ def _report_left(path):
     if not gb:
         print(f'  no GB in {path}')
         return
-    kept = ' (kept from an earlier run today)' if gb.get(CARRIED_OVER) else ''
+    kept = ' (kept from an earlier run)' if gb.get(CARRIED_OVER) else ''
     print(f'  GB in {path} is the value obtained at {carry_over.entry_time(gb, doc)}{kept}')
 
 
@@ -369,7 +399,7 @@ def main():
     if gen:
         gen[FETCHED_AT] = utcnow().isoformat()        # obtained now: no carried_over mark
         print(f"  GB mix OK: {gen['total_mw']} MW, {len(gen['mix'])} types, "
-              f"renewable {gen['renewable_pct']}%")
+              f"renewable {gen['renewable_pct']}%, data of {gen.get(DATA_TIME, 'an unknown time')}")
         _inject(GEN_FILE, 'GB', gen)
     else:
         print('  GB generation not injected (feed left untouched)')
