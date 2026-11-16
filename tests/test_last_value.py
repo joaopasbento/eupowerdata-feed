@@ -52,6 +52,8 @@ class Generation(unittest.TestCase):
         self.assertEqual(got['mix'], {'Solar': 130.0, 'Fossil Gas': 930.0})
         self.assertEqual(got['data_time'], iso('2026-11-16 09:45:00'))
         self.assertEqual(got['newest'], iso('2026-11-16 09:45:00'))
+        self.assertEqual(got['behind'], [])
+        self.assertEqual(fe._data_of(got, NOW), 'data of 16 Nov 09:45, 35 min before the run')
 
     def test_yesterdays_value_when_today_has_none_yet(self):
         got = fe.latest_generation(document(
@@ -92,6 +94,10 @@ class Generation(unittest.TestCase):
         self.assertEqual(got['mix'], {'Fossil Gas': 900.0, 'Wind Onshore': 300.0})
         self.assertEqual(got['data_time'], iso('2026-11-16 06:00:00'))     # the oldest part of the mix
         self.assertEqual(got['newest'], iso('2026-11-16 09:00:00'))
+        self.assertEqual(got['behind'], [('Wind Onshore', iso('2026-11-16 06:00:00'), 300.0)])
+        self.assertEqual(fe._data_of(got, NOW),
+                         'data of 16 Nov 06:00 to 09:00, 260 min before the run; '
+                         'behind the rest: Wind Onshore 16 Nov 06:00 (300 MW)')
 
     def test_generation_and_consumption_of_pumped_storage_are_added_as_before(self):
         got = fe.latest_generation(document(
