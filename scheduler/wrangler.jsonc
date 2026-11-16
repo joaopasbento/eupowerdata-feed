@@ -1,0 +1,31 @@
+// Cloudflare Worker that starts the feed's workflow every 15 minutes.
+// See README.md in this folder. Nothing secret goes in this file: the GitHub
+// token is a secret of the Worker, set in the Cloudflare dashboard.
+{
+	"name": "eupowerdata-feed-scheduler",
+	"main": "src/index.js",
+	"compatibility_date": "2026-01-01",
+
+	// No address of its own: only the Cron Trigger starts it.
+	"workers_dev": false,
+	"preview_urls": false,
+
+	// UTC. The same minutes as the schedule in .github/workflows/fetch.yml,
+	// which stays as a fallback.
+	"triggers": {
+		"crons": ["7,22,37,52 * * * *"]
+	},
+
+	// What to start. Plain settings, not secrets.
+	"vars": {
+		"GITHUB_REPOSITORY": "joaopasbento/eupowerdata-feed",
+		"WORKFLOW_FILE": "fetch.yml",
+		"GIT_REF": "main"
+	},
+
+	// Keeps the Worker's log lines (one for each run it starts, or the reason
+	// it could not) for the dashboard: Workers & Pages > the Worker > Logs.
+	"observability": {
+		"enabled": true
+	}
+}

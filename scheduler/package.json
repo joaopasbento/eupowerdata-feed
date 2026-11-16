@@ -1,0 +1,10 @@
+{
+  "name": "eupowerdata-feed-scheduler",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that starts the feed's GitHub workflow every 15 minutes",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "deploy": "wrangler deploy"
+  }
+}

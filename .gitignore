@@ -4,3 +4,6 @@
 __pycache__/
 # Temp files of interrupted atomic writes (see write_json in fetch_entsoe.py)
 *.tmp
+# Wrangler's local state and Node packages (scheduler/)
+.wrangler/
+node_modules/
