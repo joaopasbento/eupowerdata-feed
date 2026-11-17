@@ -23,7 +23,7 @@ import fetch_entsoe as fe
 import fetch_gb
 import fetch_ree
 import fetch_ren
-from entsoe_xml import at, flow_answer, generation_answer, iso
+from entsoe_xml import at, flow_answer, generation_answer, iso, price_answer
 
 PRICES = 'data/spot-prices.json'
 GENERATION = 'data/generation-mix.json'
@@ -61,6 +61,10 @@ class Feed(unittest.TestCase):
         is given: prices {zone: EUR/MWh}, generation {zone: MW}, flows
         {(from, to): MW}. Returns (exit code, log).
 
+        A zone's prices are hourly, of the delivery day in course at `when`:
+        the price given in the first hour and 1 more in each hour after it;
+        (EUR/MWh, '2026-11-16') says of which day instead.
+
         Generation and flows are hourly and ENTSO-E has them up to the hour
         before the run; (MW, '2026-11-16 22:00') says up to when instead, and
         a string is taken as ENTSO-E's answer itself, in XML.
@@ -76,8 +80,7 @@ class Feed(unittest.TestCase):
             return build(mw, when, last)
 
         answers = {
-            'Prices': {zone: [{'time': f'{h:02d}:00', 'hour': h, 'price': price + h} for h in range(24)]
-                       for zone, price in (prices or {}).items()},
+            'Prices': {zone: answer(price_answer, spec) for zone, spec in (prices or {}).items()},
             'Generation': {zone: answer(generation_answer, spec) for zone, spec in (generation or {}).items()},
             'Flow': {pair: answer(flow_answer, spec) for pair, spec in (flows or {}).items()},
         }
@@ -86,9 +89,6 @@ class Feed(unittest.TestCase):
         def fetch_all(label, jobs, parser, describe, deadline):
             self.asked[label] = [url for _key, _name, url in jobs]
             self.deadlines[label] = deadline
-            if label == 'Prices':
-                asked = {key for key, _name, _url in jobs}
-                return {key: value for key, value in answers[label].items() if key in asked}
             read = {}
             for key, name, _url in jobs:
                 if key in answers[label]:
@@ -201,51 +201,62 @@ class AZoneThatDoesNotAnswer(Feed):
 
 
 class ThePreviousDay(Feed):
-    """Prices are per delivery day: yesterday's never pass for today's.
-    Generation and flows are the last value published, whatever its day."""
+    """Prices are per delivery day: yesterday's never pass for today's. The
+    day is the market's (Central European Time): in winter it turns at 23:00
+    UTC. Generation and flows are the last value published, whatever its day."""
 
-    def test_prices_are_not_kept_in_the_first_run_after_midnight(self):
+    def test_prices_are_not_kept_in_the_first_run_of_the_next_delivery_day(self):
+        self.entsoe(at('2026-11-16 22:50:00'), prices={'PT': 50, 'FR': 70})
+        _code, log = self.entsoe(at('2026-11-16 23:05:00'), prices={'PT': 55})      # 00:05 on the market's clock
+        prices = read(PRICES)
+        self.assertEqual(list(prices['zones']), ['PT'])
+        self.assertEqual(prices['zones']['PT']['fetched_at'], iso('2026-11-16 23:05:00'))
+        self.assertEqual(prices['zones']['PT']['delivery_date'], '2026-11-17')
+        self.assertIn('Left out, not of the day in course: FR', log)
+
+    def test_midnight_utc_is_not_the_end_of_the_delivery_day(self):
+        # 23:50 and 00:05 UTC are 00:50 and 01:05 of the same day on the market's clock.
         self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50, 'FR': 70})
-        _code, log = self.entsoe(at('2026-11-17 00:05:00'), prices={'PT': 55})
-        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
-        self.assertEqual(read(PRICES)['zones']['PT']['fetched_at'], iso('2026-11-17 00:05:00'))
-        self.assertIn('Left out, last obtained on an earlier day: FR', log)
+        self.entsoe(at('2026-11-17 00:05:00'), prices={'PT': 55})
+        fr = read(PRICES)['zones']['FR']
+        self.assertEqual((fr['delivery_date'], fr['fetched_at'], fr['carried_over']),
+                         ('2026-11-17', iso('2026-11-16 23:50:00'), True))
 
-    def test_generation_and_flows_are_kept_across_midnight(self):
-        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50, 'FR': 70},
+    def test_generation_and_flows_are_kept_across_the_change_of_day(self):
+        self.entsoe(at('2026-11-16 22:50:00'), prices={'PT': 50, 'FR': 70},
                     generation={'PT': 4000, 'FR': 50000}, flows={('PT', 'ES'): 1000, ('ES', 'PT'): 200})
-        self.entsoe(at('2026-11-17 00:05:00'), prices={'PT': 55},
+        self.entsoe(at('2026-11-16 23:05:00'), prices={'PT': 55},
                     generation={'PT': 4400}, flows={('PT', 'ES'): 1200})
 
         self.assertEqual(list(read(PRICES)['zones']), ['PT'])              # the price is gone...
         fr = read(GENERATION)['zones']['FR']                               # ...the mix is not
         self.assertEqual((fr['total_mw'], fr['fetched_at'], fr['carried_over']),
-                         (50000, iso('2026-11-16 23:50:00'), True))
+                         (50000, iso('2026-11-16 22:50:00'), True))
         kept = read(FLOWS)['corridors']['ES→PT']
         self.assertEqual((kept['latest']['mw'], kept['fetched_at'], kept['carried_over']),
-                         (200, iso('2026-11-16 23:50:00'), True))
+                         (200, iso('2026-11-16 22:50:00'), True))
 
     def test_prices_are_not_kept_even_if_they_were_being_kept_the_day_before(self):
         self.entsoe(at('2026-11-16 10:00:00'), prices={'PT': 50, 'FR': 70})
-        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 52})
+        self.entsoe(at('2026-11-16 22:50:00'), prices={'PT': 52})
         self.assertEqual(read(PRICES)['zones']['FR']['fetched_at'], iso('2026-11-16 10:00:00'))
-        self.entsoe(at('2026-11-17 00:05:00'), prices={'PT': 55})
+        self.entsoe(at('2026-11-16 23:05:00'), prices={'PT': 55})
         self.assertNotIn('FR', read(PRICES)['zones'])
 
-    def test_the_day_is_the_utc_day_of_the_value_not_of_the_file(self):
-        # Obtained yesterday at 23:50, but kept by a run of today: the file is
-        # of today, the value is not.
-        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50, 'FR': 70})
-        self.entsoe(at('2026-11-17 00:05:00'), prices={'PT': 55, 'FR': 75})
-        self.entsoe(at('2026-11-17 00:20:00'), prices={'PT': 56})
-        fr = read(PRICES)['zones']['FR']
-        self.assertEqual((fr['fetched_at'], fr['carried_over']), (iso('2026-11-17 00:05:00'), True))
+    def test_the_day_is_the_delivery_day_of_the_prices_not_the_day_they_were_obtained(self):
+        # At 23:05 UTC ENTSO-E still answers with yesterday's prices for FR
+        # (it should not, but the day is read from the prices, not from the
+        # clock of the run): nothing of the day in course, so not obtained.
+        self.entsoe(at('2026-11-16 22:50:00'), prices={'PT': 50, 'FR': 70})
+        self.entsoe(at('2026-11-16 23:05:00'), prices={'PT': 55, 'FR': (75, '2026-11-16')})
+        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
 
     def test_a_price_is_kept_all_day_however_long_ago_it_was_obtained(self):
-        self.entsoe(at('2026-11-16 00:10:00'), prices={'PT': 50, 'FR': 70})
-        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 55})
+        self.entsoe(at('2026-11-15 23:10:00'), prices={'PT': 50, 'FR': 70})         # 00:10 on the 16th
+        self.entsoe(at('2026-11-16 22:50:00'), prices={'PT': 55})                   # 23:50 on the 16th
         fr = read(PRICES)['zones']['FR']
-        self.assertEqual((fr['fetched_at'], fr['carried_over']), (iso('2026-11-16 00:10:00'), True))
+        self.assertEqual((fr['fetched_at'], fr['carried_over'], fr['delivery_date']),
+                         (iso('2026-11-15 23:10:00'), True, '2026-11-16'))
 
 
 class TheFirstRunAfterMidnight(Feed):
@@ -261,7 +272,7 @@ class TheFirstRunAfterMidnight(Feed):
             for url in self.asked[label]:
                 self.assertIn('periodStart=202611160000&periodEnd=202611170100', url, label)
         for url in self.asked['Prices']:
-            self.assertIn('periodStart=202611170000&periodEnd=202611180000', url)
+            self.assertIn('periodStart=202611162300&periodEnd=202611172300', url)   # the market's day
 
     def test_with_only_yesterdays_values_shows_them_with_their_time(self):
         self.entsoe(self.NIGHT,
@@ -413,12 +424,14 @@ class WhenNothingAnswers(Feed):
 
 
 class AFileFromBeforeTheseFields(Feed):
-    """The published files have no fetched_at yet: their zones are taken to be
-    as old as the file's own `updated`."""
+    """The prices published before 17 Nov 2026 have no delivery_date and are
+    in the old shape, with every position of the answer taken for an hour.
+    None of them is ever kept: a zone that does not answer in the first run of
+    the new reading is left out until it does."""
 
-    def legacy(self, updated):
+    def legacy(self, updated, **more):
         zone = {'eic': 'x', 'prices': [{'time': '00:00', 'hour': 0, 'price': 40.0}],
-                'latest': {'time': '00:00', 'hour': 0, 'price': 40.0}, 'avg': 40.0, 'min': 40.0, 'max': 40.0}
+                'latest': {'time': '00:00', 'hour': 0, 'price': 40.0}, 'avg': 40.0, 'min': 40.0, 'max': 40.0, **more}
         with open(PRICES, 'w', encoding='utf-8') as f:
             json.dump({'updated': updated, 'source': 'ENTSO-E Transparency Platform',
                        'endpoint': 'https://web-api.tp.entsoe.eu/api',
@@ -426,10 +439,14 @@ class AFileFromBeforeTheseFields(Feed):
 
     def test_of_the_same_day(self):
         self.legacy(iso('2026-11-16 08:00:00'))
+        _code, log = self.entsoe(MORNING, prices={'PT': 50})
+        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
+        self.assertIn('Left out, not of the day in course: FR', log)
+
+    def test_of_the_same_day_with_the_time_it_was_obtained(self):
+        self.legacy(iso('2026-11-16 09:45:00'), fetched_at=iso('2026-11-16 09:45:00'))
         self.entsoe(MORNING, prices={'PT': 50})
-        fr = read(PRICES)['zones']['FR']
-        self.assertEqual((fr['fetched_at'], fr['carried_over'], fr['avg']),
-                         (iso('2026-11-16 08:00:00'), True, 40.0))
+        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
 
     def test_of_a_previous_day(self):
         self.legacy(iso('2026-10-29 03:02:01'))        # the feed as it stood for 17 days
@@ -652,7 +669,7 @@ class TheUnitedKingdom(Feed):
                           ('2026-11-17 00:59:59', True), ('2026-11-17 01:00:00', False)):
             _code, log = self.entsoe(at(run), prices={'PT': 55})
             self.assertEqual('GB' in read(PRICES)['zones'], kept, run)
-        self.assertIn('Left out, last obtained on an earlier day: GB', log)
+        self.assertIn('Left out, not of the day in course: GB', log)
         # And once it is out it does not come back by itself.
         self.entsoe(at('2026-11-17 01:07:00'), prices={'PT': 55})
         self.assertEqual(list(read(PRICES)['zones']), ['PT'])
@@ -665,10 +682,14 @@ class TheUnitedKingdom(Feed):
         self.assertEqual(list(read(PRICES)['zones']), ['PT'])
 
     def test_the_hour_after_midnight_is_for_the_united_kingdom_only(self):
-        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50, 'FR': 70})
-        self.elexon(at('2026-11-16 23:53:00'))
-        self.entsoe(at('2026-11-17 00:07:00'), prices={'PT': 55})
-        self.assertEqual(list(read(PRICES)['zones']), ['PT', 'GB'])         # FR's is of yesterday: out
+        # A price of ENTSO-E goes by its delivery day, whatever the hour: one
+        # of the day before is out, also in the hour after midnight UTC.
+        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50, 'FR': (70, '2026-11-16')})
+        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
+        self.entsoe(at('2026-11-16 22:50:00'), prices={'PT': 50, 'FR': 70})          # FR of the 16th...
+        self.elexon(at('2026-11-16 22:53:00'))
+        self.entsoe(at('2026-11-17 00:07:00'), prices={'PT': 55})                     # ...is out on the 17th
+        self.assertEqual(list(read(PRICES)['zones']), ['PT', 'GB'])
 
     def test_a_mix_obtained_three_hours_before_is_not_kept(self):
         self.entsoe(at('2026-11-16 10:00:00'), generation={'PT': 4000})
@@ -739,9 +760,10 @@ class TheFormat(Feed):
         self.assertEqual(list(gen['zones']), ['PT', 'ES', 'XK', 'SE', 'GB'])
         self.assertEqual(list(flows['corridors']), ['PT→ES', 'ES→PT'])
 
-        self.assertEqual(list(prices['zones']['ES']), ['eic', 'prices', 'latest', 'avg', 'min', 'max', 'fetched_at'])
+        self.assertEqual(list(prices['zones']['ES']),
+                         ['eic', 'prices', 'latest', 'avg', 'min', 'max', 'delivery_date', 'fetched_at'])
         self.assertEqual(list(prices['zones']['PT']),
-                         ['eic', 'prices', 'latest', 'avg', 'min', 'max', 'fetched_at', 'carried_over'])
+                         ['eic', 'prices', 'latest', 'avg', 'min', 'max', 'delivery_date', 'fetched_at', 'carried_over'])
         self.assertEqual(list(prices['zones']['GB']),
                          ['eic', 'prices', 'latest', 'avg', 'min', 'max', 'source', 'currency',
                           'fetched_at', 'carried_over'])
