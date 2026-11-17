@@ -791,12 +791,37 @@ def _values_at(all_series, now, ahead=True):
     return values
 
 
+def _generating(values):
+    """The MW of the generation series in a list of _values_at(), consumption left out."""
+    return sum(mw for _code, consumption, _at, mw in values if not consumption)
+
+
+def _last_with_generation(all_series, before):
+    """_values_at() for the last interval before `before` in which the
+    generation series add up to more than zero, or None when the answer has
+    no such interval."""
+    moments = set()
+    for series in all_series:
+        if series['psr'] is None or series['out']:
+            continue
+        for period in series['periods']:
+            count = period['points'][-1][0] if period['points'] else 0
+            if period['end'] is not None:
+                count = max(count, int((period['end'] - period['start']) / period['step']))
+            moments.update(period['start'] + period['step'] * i for i in range(min(count, 2000)))
+    for moment in sorted((m for m in moments if m < before), reverse=True):
+        values = _values_at(all_series, moment, ahead=False)
+        if _generating(values) > 0:
+            return values
+    return None
+
+
 def latest_generation(xml_str, now):
     """The generation mix an A75 answer has for `now`:
 
         {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time,
          'behind': [(technology, ISO time, MW)],
-         'consumption': [(technology, ISO time, MW)]}
+         'consumption': [(technology, ISO time, MW)][, 'zero_at': ISO time]}
 
     or None when it has no data. Each technology has the last value ENTSO-E
     published for it (as in parse_generation_xml(): the latest point up to
@@ -813,17 +838,35 @@ def latest_generation(xml_str, now):
     was pumping 1 000 MW showed 1 000 MW more generation, all of it "hydro".
     They are left out of the mix, and so of the total and of the renewable
     share; `consumption` lists them for the run log. A country with nothing
-    but consumption series has no mix: None."""
-    values = _values_at(read_series(xml_str), now)
+    but consumption series has no mix: None.
+
+    A latest interval that adds up to zero is not a country that stopped.
+    Montenegro now and then publishes its newest interval with every
+    technology at 0 and fills it in later, and showed 0 MW meanwhile. When the
+    last values add up to zero the mix is read from the last interval before
+    it in which they do not, with the time of that interval (`zero_at` says
+    which interval was passed over); with no such interval in the answer, the
+    country has no mix: None, and counts as not obtained in the run."""
+    all_series = read_series(xml_str)
+    values = _values_at(all_series, now)
     generation = [value for value in values if not value[1]]
     if not generation:
         return None
+    zero_at = None
+    if _generating(values) <= 0:
+        zero_at = max(at for _code, _consumption, at, _mw in generation)
+        values = _last_with_generation(all_series, zero_at)
+        if values is None:
+            return None
+        generation = [value for value in values if not value[1]]
     mix = {}
     for code, _consumption, _at, mw in generation:
         name = PSR_MAP.get(code, 'Other')
         mix[name] = mix.get(name, 0) + mw
     newest = max(at for _code, _consumption, at, _mw in generation)
+    found = {'zero_at': zero_at.isoformat()} if zero_at else {}
     return {
+        **found,
         'mix': mix,
         DATA_TIME: min(at for _code, _consumption, at, _mw in generation).isoformat(),
         'newest': newest.isoformat(),
@@ -891,6 +934,9 @@ def _data_of(parsed, now):
     if parsed.get('behind'):
         text += '; behind the rest: ' + ', '.join(
             f'{name} {carry_over.parse_time(at):%d %b %H:%M} ({mw:.0f} MW)' for name, at, mw in parsed['behind'])
+    if parsed.get('zero_at'):
+        text += (f"; the interval of {carry_over.parse_time(parsed['zero_at']):%d %b %H:%M} adds up to zero: "
+                 f'read from the last one with generation')
     if parsed.get('consumption'):
         text += '; consumption, not in the mix: ' + ', '.join(
             f'{name} {mw:.0f} MW ({carry_over.parse_time(at):%d %b %H:%M})' for name, at, mw in parsed['consumption'])
