@@ -7,17 +7,21 @@ file used to be written without it and the country vanished from the site
 until the next run. Now the entry keeps what the published file already had
 for it, for as long as the file's rule allows:
 
-    spot-prices.json           while the value was obtained on the same UTC
-                               day as the run. Prices are per delivery day:
-                               yesterday's must never pass for today's. One
-                               exception, the United Kingdom's, for the first
-                               hour of the day: see AFTER_MIDNIGHT.
+    spot-prices.json           while the value is of the delivery day in
+                               course on the market's clock (delivery_date,
+                               Central European Time). Prices are per
+                               delivery day: yesterday's must never pass for
+                               today's. The United Kingdom's, which comes from
+                               Elexon by the UTC day, goes by the UTC day and
+                               has the first hour of the day as an exception:
+                               see AFTER_MIDNIGHT.
     generation-mix.json        while the value was obtained less than three
     cross-border-flows.json    hours before the run, whatever the day.
 
 Three fields say what an entry is, on every zone of generation-mix.json and
 on every corridor (and net pair) of cross-border-flows.json; the zones of
-spot-prices.json have the first two:
+spot-prices.json have the first two, and delivery_date (the day its prices
+are for, see fetch_entsoe.py) in place of the third:
 
     fetched_at    when the entry's data were obtained from the source: the
                   `updated` time of the run that got them. Present on every
@@ -45,12 +49,19 @@ The rules, which exist so that old data can never pass for new:
 
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from feed_common import load_json
 
 FETCHED_AT = 'fetched_at'
 CARRIED_OVER = 'carried_over'
 DATA_TIME = 'data_time'
+DELIVERY_DATE = 'delivery_date'
+
+# The clock of the day-ahead market: Central European Time, the same as OMIE's.
+# A delivery day runs from midnight to midnight on it: from 23:00 UTC of the
+# day before in winter, from 22:00 UTC in summer.
+MARKET_TZ = ZoneInfo('Europe/Brussels')
 
 # Published file -> (key of its entries, prefix of its counts in status.json)
 FILES = {
@@ -75,6 +86,22 @@ def utc_day(value):
     """The UTC date of an ISO 8601 time, or None."""
     parsed = parse_time(value)
     return parsed.astimezone(timezone.utc).date() if parsed else None
+
+
+def delivery_day(value):
+    """The delivery day a moment (a time, or its ISO 8601 text) is in on the
+    market's clock, or None."""
+    when = value if isinstance(value, datetime) else parse_time(value)
+    return when.astimezone(MARKET_TZ).date() if when else None
+
+
+def day_bounds(day):
+    """(start, end) of a delivery day, in UTC: 24 hours apart, or 23 and 25 on
+    the two days the market's clock changes."""
+    start = datetime(day.year, day.month, day.day, tzinfo=MARKET_TZ).astimezone(timezone.utc)
+    after = day + timedelta(days=1)
+    end = datetime(after.year, after.month, after.day, tzinfo=MARKET_TZ).astimezone(timezone.utc)
+    return start, end
 
 
 def oldest(times):
@@ -123,20 +150,27 @@ def _just_after_midnight(original, run_time, grace):
 
 
 def _price_may_be_kept(name, entry, original, run_time):
-    if _same_utc_day(original, run_time):
-        return True
-    return name in AFTER_MIDNIGHT and _just_after_midnight(original, run_time, AFTER_MIDNIGHT[name])
+    """A price is kept while it is of the day in course: by its delivery_date
+    on the market's clock or, for the zones that come from Elexon, by the UTC
+    day it was obtained on (with the hour after midnight). An entry published
+    before prices had a delivery_date has none, and is never kept: it is in
+    the old shape, with every position taken for an hour."""
+    if name in AFTER_MIDNIGHT:
+        return (_same_utc_day(original, run_time)
+                or _just_after_midnight(original, run_time, AFTER_MIDNIGHT[name]))
+    day = delivery_day(run_time)
+    return day is not None and entry.get(DELIVERY_DATE) == day.isoformat()
 
 
 # allows(name, entry, original fetched_at, time of the run) -> whether the
 # entry may be kept; `kept` and `dropped` are how the run log puts it.
 Rule = namedtuple('Rule', 'allows kept dropped')
-SAME_UTC_DAY = Rule(_price_may_be_kept, 'kept from an earlier run', 'last obtained on an earlier day')
+PRICE_OF_THE_DAY = Rule(_price_may_be_kept, 'kept from an earlier run', 'not of the day in course')
 UNDER_THREE_HOURS = Rule(lambda name, entry, original, run_time: _under_max_age(original, run_time),
                          'kept from under 3 hours ago', 'last obtained 3 hours ago or more')
 
 RULES = {
-    'data/spot-prices.json': SAME_UTC_DAY,
+    'data/spot-prices.json': PRICE_OF_THE_DAY,
     'data/generation-mix.json': UNDER_THREE_HOURS,
     'data/cross-border-flows.json': UNDER_THREE_HOURS,
 }
@@ -157,7 +191,7 @@ def _entries(doc, key):
     return {name: entry for name, entry in entries.items() if isinstance(entry, dict)}
 
 
-def merge(fresh, previous, key, order, fetched_at, rule=SAME_UTC_DAY):
+def merge(fresh, previous, key, order, fetched_at, rule=PRICE_OF_THE_DAY):
     """Put this run's entries together with what the published file had.
 
     fresh       {name: entry} obtained in this run

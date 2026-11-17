@@ -7,17 +7,19 @@ One run makes about 150 requests (36 price zones, 36 generation zones, 76 flow
 corridors, plus OMIP). They are sent in parallel, under a total time budget,
 and each file is written as soon as its dataset is done — see "Run limits".
 
-Prices are asked for by delivery day (today, UTC). Generation and flows are
-asked for the last 24 hours, and each zone and corridor shows the last value
-ENTSO-E has published for it, with the time that value is for (data_time):
-just after midnight most countries have nothing for the new day yet, and a
-request "since midnight" came back empty for them — see "The last value".
+Prices are those of the delivery day in course on the market's clock (Central
+European Time), one value for each hour of that day — see "The prices of the
+day". Generation and flows are asked for the last 24 hours, and each zone and
+corridor shows the last value ENTSO-E has published for it, with the time that
+value is for (data_time): just after midnight most countries have nothing for
+the new day yet, and a request "since midnight" came back empty for them — see
+"The last value".
 
 A zone or a corridor that does not answer in a run keeps what was published
 for it before, with the time it was obtained (fetched_at) and a mark
-(carried_over): a price if it was obtained the same UTC day, generation and
-flows if they were obtained less than three hours before, and never with the
-time of the run that kept it — see carry_over.py and publish().
+(carried_over): a price while it is of the delivery day in course, generation
+and flows if they were obtained less than three hours before, and never with
+the time of the run that kept it — see carry_over.py and publish().
 """
 
 import os
@@ -34,10 +36,11 @@ import urllib.request
 import urllib.parse
 import ssl
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from xml.etree import ElementTree as ET
 
 import carry_over
-from carry_over import CARRIED_OVER, DATA_TIME, FETCHED_AT
+from carry_over import CARRIED_OVER, DATA_TIME, DELIVERY_DATE, FETCHED_AT, MARKET_TZ
 from feed_common import load_json
 
 API_KEY = os.environ.get('ENTSOE_API_KEY', '')
@@ -680,10 +683,13 @@ def read_series(xml_str):
 
         {'psr': 'B16' | None,        the technology (generation)
          'out': bool,                consumption (pumped storage), not generation
-         'periods': [{'start', 'end', 'step', 'variable', 'points': [(position, quantity)]}]}
+         'contract': 'A01' | None,   the kind of market a price is of (A01 day-ahead, A07 intraday)
+         'sequence': 1 | None,       which auction of that market, when a zone has more than one
+         'periods': [{'start', 'end', 'step', 'variable', 'points': [(position, value)]}]}
 
-    `variable` is curveType A03. An answer that is not such a document (an
-    error page, "no matching data") gives an empty list."""
+    The value of a point is its quantity (generation, flows) or its price
+    (prices). `variable` is curveType A03. An answer that is not such a
+    document (an error page, "no matching data") gives an empty list."""
     try:
         root = ET.fromstring(xml_str)
     except ET.ParseError:
@@ -703,9 +709,11 @@ def read_series(xml_str):
             resolution = period.find(f'{prefix}resolution')
             points = []
             for pt in period.iter(f'{prefix}Point'):
+                value = pt.find(f'{prefix}quantity')
+                if value is None:
+                    value = pt.find(f'{prefix}price.amount')
                 try:
-                    points.append((int(pt.find(f'{prefix}position').text),
-                                   float(pt.find(f'{prefix}quantity').text)))
+                    points.append((int(pt.find(f'{prefix}position').text), float(value.text)))
                 except (AttributeError, TypeError, ValueError):
                     continue
             periods.append({
@@ -715,9 +723,17 @@ def read_series(xml_str):
                 'variable': variable,
                 'points': sorted(points),
             })
+        contract = ts.find(f'{prefix}contract_MarketAgreement.type')
+        sequence = ts.find(f'{prefix}classificationSequence_AttributeInstanceComponent.position')
+        try:
+            sequence = int(sequence.text)
+        except (AttributeError, TypeError, ValueError):
+            sequence = None
         series.append({
             'psr': psr.text.strip() if psr is not None and psr.text else None,
             'out': ts.find(f'{prefix}outBiddingZone_Domain.mRID') is not None,
+            'contract': contract.text.strip() if contract is not None and contract.text else None,
+            'sequence': sequence,
             'periods': periods,
         })
     return series
@@ -943,6 +959,169 @@ def _data_of(parsed, now):
     return text
 
 
+# --- The prices of the day ---
+#
+# spot-prices.json has, for each zone, the day-ahead prices of the delivery day
+# in course on the market's clock (Central European Time, as in
+# omie-prices.json): one value for each hour of that day, 00:00 to 23:00.
+#
+# parse_prices_xml() above took every position for an hour, did not put back
+# the points curveType A03 leaves out and added up every series of the answer.
+# On 17 Nov 2026 that gave Portugal 86 "hours" and an average of 68.76 (64.56
+# with the 96 quarter-hours put back, OMIE's figure) and Spain 263 "hours" from
+# three series. What an A44 answer really has, as seen in the answers of that
+# day:
+#
+#   - Intervals of 15 minutes for most zones since October 2025 (60 for a
+#     few), in a Period that says how long they are. An hour's price is the
+#     mean of its intervals.
+#   - curveType A03: a point that repeats the price before it is left out.
+#   - More than one market. Spain's answer also has the prices of the intraday
+#     auctions (contract_MarketAgreement.type A07, one series for each
+#     auction); only A01, the day-ahead market, is read.
+#   - More than one day-ahead auction. Germany and Austria have two day-ahead
+#     series for the same day, told apart by
+#     classificationSequence_AttributeInstanceComponent.position. Position 1
+#     is the coupled European auction (it is the one Energy-Charts and SMARD
+#     publish: 211.58 and 245.77 on that day); position 2 is a second, local
+#     auction. The series with the lowest position is read, a series with no
+#     position counting as the first (western Denmark has one of each, equal).
+#   - Delivery days on other clocks. Moldova's day begins an hour earlier, at
+#     22:00 UTC in winter. Each hour is taken from the Period that covers it,
+#     whatever the day that Period belongs to.
+
+DAY_AHEAD = 'A01'                 # contract_MarketAgreement.type of the day-ahead market
+HOUR = timedelta(hours=1)
+
+
+def _cents(value):
+    """A price as the file has it: two decimals, halves rounded up."""
+    return float(Decimal(value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
+def _every_interval(period):
+    """(start, value) of every interval of a Period, with the points curveType
+    A03 leaves out put back: such a point repeats the one before it."""
+    points = dict(period['points'])
+    if not points:
+        return
+    count = max(points)
+    if period['variable'] and period['end'] is not None:
+        count = max(count, int((period['end'] - period['start']) / period['step']))
+    value = None
+    for position in range(1, min(count, 2000) + 1):
+        if position in points:
+            value = points[position]
+        elif not period['variable']:
+            value = None                  # a fixed curve with a point missing has a gap there
+        if value is not None:
+            yield period['start'] + period['step'] * (position - 1), value
+
+
+def read_prices(xml_str, day):
+    """The day-ahead prices an A44 answer has for the delivery day `day`:
+
+        [(hour, price)]    hour 0 to 23 on the market's clock, in order;
+                           price a Decimal, not rounded
+
+    or [] when it has none. An hour's price is the mean of the intervals of
+    that hour, and an hour with an interval missing is left out. On the day
+    the clocks go back the two hours called 02:00 are one entry, their mean;
+    on the day they go forward there is no 02:00."""
+    start, end = carry_over.day_bounds(day)
+    auctions = {}           # position of the auction -> {start of an hour: {interval length: {start: price}}}
+    for series in read_series(xml_str):
+        if series['contract'] not in (None, DAY_AHEAD):
+            continue
+        hours = auctions.setdefault(series['sequence'] or 0, {})
+        for period in series['periods']:
+            step = period['step']
+            if step > HOUR or HOUR % step:
+                continue                  # not a part of an hour: nothing an hourly price can be made of
+            for at, value in _every_interval(period):
+                if start <= at < end:
+                    hour = at.replace(minute=0, second=0, microsecond=0)
+                    hours.setdefault(hour, {}).setdefault(step, {})[at] = Decimal(repr(value))
+
+    for position in sorted(auctions):
+        by_label = {}                     # hour on the market's clock -> the mean of each hour so called
+        for hour in sorted(auctions[position]):
+            for step, values in sorted(auctions[position][hour].items()):      # the finest intervals first
+                if step * len(values) == HOUR:
+                    by_label.setdefault(hour.astimezone(MARKET_TZ).hour, []).append(
+                        sum(values.values()) / len(values))
+                    break
+        if by_label:
+            return [(label, sum(means) / len(means)) for label, means in sorted(by_label.items())]
+    return []
+
+
+def price_entry(eic, hours, day):
+    """A zone of spot-prices.json from its [(hour, price)] of the delivery day.
+
+    `avg` is the plain mean of the hourly values (taken before they are
+    rounded, so that on a day of 24 hours it is the mean of every interval of
+    the day, to the cent); `min` and `max` are the lowest and the highest of
+    the hourly values as published."""
+    prices = [{'time': f'{hour:02d}:00', 'hour': hour, 'price': _cents(value)} for hour, value in hours]
+    published = [p['price'] for p in prices]
+    return {
+        'eic': eic,
+        'prices': prices,
+        'latest': prices[-1],
+        'avg': _cents(sum(value for _hour, value in hours) / len(hours)),
+        'min': min(published),
+        'max': max(published),
+        DELIVERY_DATE: day.isoformat(),
+    }
+
+
+def price_request(base, eic, day):
+    """The address that asks ENTSO-E for a zone's prices of a delivery day:
+    from midnight to midnight on the market's clock."""
+    start, end = carry_over.day_bounds(day)
+    params = urllib.parse.urlencode({
+        'securityToken': API_KEY,
+        'documentType': 'A44',
+        'in_Domain': eic,
+        'out_Domain': eic,
+        'periodStart': start.strftime('%Y%m%d%H%M'),
+        'periodEnd': end.strftime('%Y%m%d%H%M'),
+    })
+    return f'{base}?{params}'
+
+
+def price_zones(found, day):
+    """The zones of spot-prices.json from {zone: [(hour, price)]}, with the
+    countries put together from several zones (CONSOLIDATE).
+
+    Such a country is made hour by hour over the corrected series of its
+    zones: an hour's price is the mean of the zones' prices for that hour, and
+    only the hours every one of its zones has are published."""
+    zones, hourly = {}, {}
+    for code, eic in ZONES.items():      # ZONES order, so the file keeps its zone order
+        if found.get(code):
+            zones[code] = price_entry(eic, found[code], day)
+            hourly[code] = dict(found[code])
+
+    for country, zone_codes in CONSOLIDATE.items():
+        if not any(zc in zones for zc in zone_codes):
+            continue
+        if _incomplete(country, zone_codes, zones):
+            continue
+        eic = ', '.join(zones[zc]['eic'] for zc in zone_codes)
+        shared = [hour for hour in sorted(hourly[zone_codes[0]]) if all(hour in hourly[zc] for zc in zone_codes)]
+        for zc in zone_codes:
+            zones.pop(zc, None)
+        if not shared:
+            print(f'  {country}: {"+".join(zone_codes)} have no hour in common — not put together')
+            continue
+        zones[country] = price_entry(
+            eic, [(hour, sum(hourly[zc][hour] for zc in zone_codes) / len(zone_codes)) for hour in shared], day)
+        print(f'  Consolidated {"+".join(zone_codes)} → {country}')
+    return zones
+
+
 # --- Fetchers ---
 
 def _incomplete(country, zone_codes, zones):
@@ -967,8 +1146,7 @@ def fetch_prices(base, deadline=None):
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
     now = utcnow()
-    start = now.strftime('%Y%m%d') + '0000'
-    end = (now + timedelta(days=1)).strftime('%Y%m%d') + '0000'
+    day = carry_over.delivery_day(now)   # the delivery day in course on the market's clock
 
     prices = {
         'updated': now.isoformat(),
@@ -977,62 +1155,10 @@ def fetch_prices(base, deadline=None):
         'zones': {},
     }
 
-    jobs = []
-    for code, eic in ZONES.items():
-        params = urllib.parse.urlencode({
-            'securityToken': API_KEY,
-            'documentType': 'A44',
-            'in_Domain': eic,
-            'out_Domain': eic,
-            'periodStart': start,
-            'periodEnd': end,
-        })
-        jobs.append((code, code, f'{base}?{params}'))
-    fetched = fetch_all('Prices', jobs, parse_prices_xml,
-                        lambda parsed: f'{len(parsed)} hours', deadline)
-
-    for code, eic in ZONES.items():      # ZONES order, so the file keeps its zone order
-        parsed = fetched.get(code)
-        if parsed:
-            price_vals = [p['price'] for p in parsed]
-            prices['zones'][code] = {
-                'eic': eic,
-                'prices': parsed,
-                'latest': parsed[-1],
-                'avg': round(sum(price_vals) / len(price_vals), 2),
-                'min': round(min(price_vals), 2),
-                'max': round(max(price_vals), 2),
-            }
-
-    for country, zone_codes in CONSOLIDATE.items():
-        zone_data = [prices['zones'].get(zc) for zc in zone_codes if zc in prices['zones']]
-        if not zone_data:
-            continue
-        if _incomplete(country, zone_codes, prices['zones']):
-            continue
-        all_avgs = [z['avg'] for z in zone_data if z.get('avg') is not None]
-        all_mins = [z['min'] for z in zone_data if z.get('min') is not None]
-        all_maxs = [z['max'] for z in zone_data if z.get('max') is not None]
-        merged_prices = []
-        max_hours = max(len(z.get('prices', [])) for z in zone_data)
-        for h in range(max_hours):
-            hour_prices = [z['prices'][h]['price'] for z in zone_data if h < len(z.get('prices', []))]
-            if hour_prices:
-                avg_p = round(sum(hour_prices) / len(hour_prices), 2)
-                ref = zone_data[0]['prices'][h] if h < len(zone_data[0].get('prices', [])) else {'time': f'{h:02d}:00', 'hour': h}
-                merged_prices.append({'time': ref['time'], 'hour': ref['hour'], 'price': avg_p})
-        prices['zones'][country] = {
-            'eic': ', '.join(z.get('eic', '') for z in zone_data),
-            'prices': merged_prices,
-            'latest': merged_prices[-1] if merged_prices else None,
-            'avg': round(sum(all_avgs) / len(all_avgs), 2) if all_avgs else 0,
-            'min': round(min(all_mins), 2) if all_mins else 0,
-            'max': round(max(all_maxs), 2) if all_maxs else 0,
-        }
-        for zc in zone_codes:
-            prices['zones'].pop(zc, None)
-        print(f'  Consolidated {"+".join(zone_codes)} → {country}')
-
+    jobs = [(code, code, price_request(base, eic, day)) for code, eic in ZONES.items()]
+    fetched = fetch_all('Prices', jobs, lambda text: read_prices(text, day),
+                        lambda hours: f'{len(hours)} hours of {day:%d %b}', deadline)
+    prices['zones'] = price_zones(fetched, day)
     return prices
 
 
@@ -1417,15 +1543,19 @@ def fetch_omip(deadline=None):
     }
 
 
-def archive_snapshot(dataset, payload):
+def archive_snapshot(dataset, payload, day=None):
     """Write today's snapshot to data/archive/<dataset>-YYYY-MM-DD.json.
 
     Rolling 5-year history for the date filters on the Overview map (prices;
     generation, from which the frontend derives carbon intensity and renewable
     share) and on the Grid Monitor map (flows). Overwritten on every fetch.
+
+    The date is the UTC day or, with `day`, that day: the snapshot of the
+    prices is named after the delivery day it has, which between 23:00 and
+    midnight UTC (22:00 in summer) is already the next day.
     """
     os.makedirs('data/archive', exist_ok=True)
-    today_str = utcnow().strftime('%Y-%m-%d')
+    today_str = (day or utcnow()).strftime('%Y-%m-%d')
     archive_path = f'data/archive/{dataset}-{today_str}.json'
     try:
         write_json(archive_path, payload, separators=(',', ':'))
@@ -1557,7 +1687,8 @@ def publish(doc, key, path, order, dataset):
     snapshot = doc
     if key == 'zones':
         snapshot = dict(doc, zones={n: e for n, e in entries.items() if n not in ELEXON_ZONES})
-    archive_snapshot(dataset, snapshot)
+    # The prices are filed under the delivery day they are of.
+    archive_snapshot(dataset, snapshot, carry_over.delivery_day(doc['updated']) if dataset == 'spot-prices' else None)
     return len(fresh)
 
 
