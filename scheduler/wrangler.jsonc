@@ -20,7 +20,10 @@
 	"vars": {
 		"GITHUB_REPOSITORY": "joaopasbento/eupowerdata-feed",
 		"WORKFLOW_FILE": "fetch.yml",
-		"GIT_REF": "main"
+		"GIT_REF": "main",
+		// How long after asking for a run the Worker looks at it and, if GitHub
+		// is holding it with nothing in its way, asks once more.
+		"CHECK_AFTER_SECONDS": "120"
 	},
 
 	// Keeps the Worker's log lines (one for each run it starts, or the reason
