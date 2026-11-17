@@ -1,9 +1,9 @@
-=== OMIP Debug — 2026-11-17T16:53:32.524860+00:00 ===
+=== OMIP Debug — 2026-11-17T17:08:19.517242+00:00 ===
 
 Status: SUCCESS
 Contracts found: 47
 
-HTML length: 153863
+HTML length: 153848
 Clean length: 32914
 Contains "Settlement": True
 Contains "FTB": True
