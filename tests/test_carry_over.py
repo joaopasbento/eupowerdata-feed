@@ -62,13 +62,16 @@ class Feed(unittest.TestCase):
         {(from, to): MW}. Returns (exit code, log).
 
         Generation and flows are hourly and ENTSO-E has them up to the hour
-        before the run; (MW, '2026-11-16 22:00') says up to when instead.
+        before the run; (MW, '2026-11-16 22:00') says up to when instead, and
+        a string is taken as ENTSO-E's answer itself, in XML.
         self.asked has the requests of the run, by dataset, and self.deadlines
         the time limit each dataset was given. `endpoint` is what the test of
         the endpoint comes back with: None ends the run at once. With `probe`,
         the real find_working_endpoint() runs instead and `probe(url)` is what
         ENTSO-E answers to its requests: (body, None) or (None, reason)."""
         def answer(build, spec):
+            if isinstance(spec, str):
+                return spec                          # the answer itself, as XML
             mw, last = spec if isinstance(spec, tuple) else (spec, None)
             return build(mw, when, last)
 
@@ -86,10 +89,12 @@ class Feed(unittest.TestCase):
             if label == 'Prices':
                 asked = {key for key, _name, _url in jobs}
                 return {key: value for key, value in answers[label].items() if key in asked}
-            read = {key: parser(answers[label][key]) for key, _name, _url in jobs if key in answers[label]}
-            for value in read.values():
-                if value:
-                    describe(value)          # the log line, as the real fetch_all() writes it
+            read = {}
+            for key, name, _url in jobs:
+                if key in answers[label]:
+                    read[key] = parser(answers[label][key])
+                    if read[key]:            # the log line, as the real fetch_all() writes it
+                        print(f'  {label}: {name}... OK ({describe(read[key])})')
             return {key: value for key, value in read.items() if value}
 
         log = io.StringIO()

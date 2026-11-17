@@ -18,6 +18,7 @@ from unittest import mock
 import fetch_entsoe as fe
 import fetch_gb
 from entsoe_xml import FLOW_NS, NO_DATA, at, document, iso, series
+from test_carry_over import GENERATION, Feed, read
 
 NOW = at('2026-11-16 10:20:00')
 
@@ -99,11 +100,25 @@ class Generation(unittest.TestCase):
                          'data of 16 Nov 06:00 to 09:00, 260 min before the run; '
                          'behind the rest: Wind Onshore 16 Nov 06:00 (300 MW)')
 
-    def test_generation_and_consumption_of_pumped_storage_are_added_as_before(self):
+    def test_consumption_is_not_added_to_the_generation_of_the_same_technology(self):
+        # Portugal at 06:00 UTC on 17 Nov 2026, in round numbers: its pumped
+        # storage plants generating and pumping at the same time.
         got = fe.latest_generation(document(
-            series('2026-11-16 00:00', [200] * 10, psr='B10'),
-            series('2026-11-16 00:00', [50] * 10, psr='B10', out=True)), NOW)
-        self.assertEqual(got['mix'], {'Hydro Pumped Storage': 250.0})
+            series('2026-11-16 00:00', [600] * 10, psr='B10'),
+            series('2026-11-16 00:00', [900] * 10, psr='B10', out=True),
+            series('2026-11-16 00:00', [3800] * 10, psr='B19')), NOW)
+        self.assertEqual(got['mix'], {'Hydro Pumped Storage': 600.0, 'Wind Onshore': 3800.0})    # not 1 500
+        self.assertEqual(got['consumption'], [('Hydro Pumped Storage', iso('2026-11-16 09:00:00'), 900.0)])
+        self.assertEqual(fe._data_of(got, NOW),
+                         'data of 16 Nov 09:00, 80 min before the run; '
+                         'consumption, not in the mix: Hydro Pumped Storage 900 MW (16 Nov 09:00)')
+
+    def test_a_technology_that_only_consumes_is_not_in_the_mix(self):
+        got = fe.latest_generation(document(
+            series('2026-11-16 00:00', [12] * 10, psr='B20', out=True),
+            series('2026-11-16 00:00', [100] * 10, psr='B16')), NOW)
+        self.assertEqual(got['mix'], {'Solar': 100.0})
+        self.assertEqual(got['consumption'], [('Other', iso('2026-11-16 09:00:00'), 12.0)])
 
     def test_a_consumption_series_that_stopped_does_not_date_the_mix(self):
         # Norway (NO2) on 16 Nov 2026: pumping was last published at 13:30 the
@@ -112,14 +127,14 @@ class Generation(unittest.TestCase):
             series('2026-11-15 10:00', [7000] * 88, minutes=15, psr='B12'),             # up to 07:45
             series('2026-11-15 10:00', [20] * 88, minutes=15, psr='B10'),
             series('2026-11-15 10:00', [13] * 15, minutes=15, psr='B10', out=True)), NOW)   # up to 13:30
-        self.assertEqual(got['mix'], {'Hydro Water Reservoir': 7000.0, 'Hydro Pumped Storage': 33.0})
+        self.assertEqual(got['mix'], {'Hydro Water Reservoir': 7000.0, 'Hydro Pumped Storage': 20.0})
         self.assertEqual(got['data_time'], iso('2026-11-16 07:45:00'))
-        self.assertEqual(got['behind'], [('Hydro Pumped Storage consumption', iso('2026-11-15 13:30:00'), 13.0)])
+        self.assertEqual(got['behind'], [])
+        self.assertEqual(got['consumption'], [('Hydro Pumped Storage', iso('2026-11-15 13:30:00'), 13.0)])
 
-    def test_with_consumption_only_the_time_is_its_own(self):
-        got = fe.latest_generation(document(
-            series('2026-11-16 00:00', [50] * 6, psr='B10', out=True)), NOW)
-        self.assertEqual((got['mix'], got['data_time']), ({'Hydro Pumped Storage': 50.0}, iso('2026-11-16 05:00:00')))
+    def test_a_country_with_consumption_only_has_no_mix(self):
+        self.assertIsNone(fe.latest_generation(document(
+            series('2026-11-16 00:00', [50] * 6, psr='B10', out=True)), NOW))
 
     def test_only_later_points_gives_the_earliest_of_them_as_before(self):
         got = fe.latest_generation(document(
@@ -136,17 +151,21 @@ class Generation(unittest.TestCase):
     def test_gives_what_the_whole_day_parser_gives_for_a_whole_day(self):
         # A day long past, so that parse_generation_xml(), which goes by the
         # real clock, sees every point as published.
-        answer = document(
+        generation = [
             series('2025-06-01 00:00', [float(v) for v in range(96)], minutes=15, psr='B16'),
             series('2025-06-01 00:00', [float(v) for v in range(500, 524)], psr='B04'),
-            series('2025-06-01 00:00', [30.5] * 48, minutes=30, psr='B10'),
-            series('2025-06-01 00:00', [9.5] * 48, minutes=30, psr='B10', out=True))
+            series('2025-06-01 00:00', [30.5] * 48, minutes=30, psr='B10')]
+        consumption = series('2025-06-01 00:00', [9.5] * 48, minutes=30, psr='B10', out=True)
         with contextlib.redirect_stdout(io.StringIO()):
-            before = fe.parse_generation_xml(answer)
-        got = fe.latest_generation(answer, at('2025-06-02 00:30:00'))
+            before = fe.parse_generation_xml(document(*generation))
+            with_consumption = fe.parse_generation_xml(document(*generation, consumption))
+        got = fe.latest_generation(document(*generation, consumption), at('2025-06-02 00:30:00'))
         self.assertEqual(got['mix'], before)
         self.assertEqual(list(got['mix']), list(before))
         self.assertEqual((got['data_time'], got['newest']), (iso('2025-06-01 23:00:00'), iso('2025-06-01 23:45:00')))
+        # The one difference: the whole-day parser, which backfill_archive.py
+        # still uses, adds the consumption to the technology.
+        self.assertEqual(with_consumption['Hydro Pumped Storage'], before['Hydro Pumped Storage'] + 9.5)
 
     def test_no_data(self):
         for answer in (NO_DATA, '<html><body>Service unavailable</body></html>', 'not xml at all', '',
@@ -157,6 +176,29 @@ class Generation(unittest.TestCase):
         answer = document(series('2026-11-16 08:00', [10, 20], psr='B16')).replace(
             '<quantity>20</quantity>', '<quantity>n/a</quantity>')
         self.assertEqual(fe.latest_generation(answer, NOW)['mix'], {'Solar': 10.0})
+
+
+class GenerationInTheFile(Feed):
+    """What a run publishes in generation-mix.json."""
+
+    def test_the_total_and_the_renewable_share_leave_consumption_out(self):
+        self.entsoe(NOW, generation={'PT': document(
+            series('2026-11-16 00:00', [1000] * 10, psr='B04'),              # gas
+            series('2026-11-16 00:00', [400] * 10, psr='B12'),               # reservoir hydro, renewable
+            series('2026-11-16 00:00', [600] * 10, psr='B10'),               # pumped storage, generating
+            series('2026-11-16 00:00', [900] * 10, psr='B10', out=True))})   # and pumping
+        zone = read(GENERATION)['zones']['PT']
+        self.assertEqual(zone['mix'], {'Fossil Gas': 1000.0, 'Hydro Water Reservoir': 400.0,
+                                       'Hydro Pumped Storage': 600.0})
+        self.assertEqual(zone['total_mw'], 2000.0)                           # not 2 900
+        self.assertEqual(zone['renewable_pct'], 20.0)                        # 400 of 2 000, not of 2 900
+        self.assertEqual(list(zone), ['mix', 'total_mw', 'renewable_pct', 'data_time', 'fetched_at'])
+
+    def test_the_run_log_still_says_what_was_consumed(self):
+        _code, log = self.entsoe(NOW, generation={'PT': document(
+            series('2026-11-16 00:00', [600] * 10, psr='B10'),
+            series('2026-11-16 00:00', [900] * 10, psr='B10', out=True))})
+        self.assertIn('consumption, not in the mix: Hydro Pumped Storage 900 MW (16 Nov 09:00)', log)
 
 
 class Flows(unittest.TestCase):

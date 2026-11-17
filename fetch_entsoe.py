@@ -751,29 +751,19 @@ def _first_after(period, now):
     return None
 
 
-def latest_generation(xml_str, now):
-    """The generation mix an A75 answer has for `now`:
+def _values_at(all_series, now, ahead=True):
+    """The value each series of an A75 answer has for `now`, one for each
+    technology and direction, in document order:
 
-        {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time,
-         'behind': [(technology, ISO time, MW)]}
+        [(technology code, consumption?, time, MW)]
 
-    or None when it has no data. Each technology has the last value ENTSO-E
-    published for it (as in parse_generation_xml(): the latest point up to
-    `now` or, when it only has later ones, the earliest of those).
-
-    `data_time` is the time of the oldest of those values and `newest` of the
-    most recent: they differ when a country publishes some technologies later
-    than others, and `behind` says which ones, for the run log.
-
-    Generation and consumption of the same technology (pumped storage) are
-    added together, as they always were. A consumption series is only
-    published while there is consumption, so its last value can be many hours
-    old (Norway's on 16 Nov 2026: 13 MW, from 13:30 the day before): it is
-    listed in `behind` but does not date the mix, or a country generating
-    8 900 MW as of 07:45 would read as 19 hours late."""
+    A series is the latest point up to `now` or, with `ahead`, when it only
+    has later ones, the earliest of those (as in parse_generation_xml()). A
+    technology that comes in pieces, as several TimeSeries, counts once: by
+    the piece with the latest value."""
     order = []                 # (technology code, consumption?) in document order
-    current, ahead = {}, {}    # -> [(time, MW)], one for each TimeSeries
-    for series in read_series(xml_str):
+    current, later = {}, {}    # -> [(time, MW)], one for each TimeSeries
+    for series in all_series:
         if series['psr'] is None:
             continue
         key = (series['psr'], series['out'])
@@ -783,34 +773,64 @@ def latest_generation(xml_str, now):
         if found:
             current.setdefault(key, []).append(max(found, key=lambda v: v[0]))
             continue
-        found = [v for v in (_first_after(p, now) for p in series['periods']) if v]
+        found = [v for v in (_first_after(p, now) for p in series['periods']) if v] if ahead else []
         if found:
-            ahead.setdefault(key, []).append(min(found, key=lambda v: v[0]))
+            later.setdefault(key, []).append(min(found, key=lambda v: v[0]))
 
-    mix, parts = {}, []
+    values = []
     for key in order:
         if key in current:
             at = max(t for t, _mw in current[key])       # the piece with the latest value
             pieces = current[key]
-        elif key in ahead:
-            at = min(t for t, _mw in ahead[key])
-            pieces = ahead[key]
+        elif key in later:
+            at = min(t for t, _mw in later[key])
+            pieces = later[key]
         else:
             continue
-        name = PSR_MAP.get(key[0], 'Other')
-        value = sum(mw for t, mw in pieces if t == at)
-        mix[name] = mix.get(name, 0) + value
-        parts.append((name + (' consumption' if key[1] else ''), at, value, key[1]))
-    if not mix:
+        values.append((key[0], key[1], at, sum(mw for t, mw in pieces if t == at)))
+    return values
+
+
+def latest_generation(xml_str, now):
+    """The generation mix an A75 answer has for `now`:
+
+        {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time,
+         'behind': [(technology, ISO time, MW)],
+         'consumption': [(technology, ISO time, MW)]}
+
+    or None when it has no data. Each technology has the last value ENTSO-E
+    published for it (as in parse_generation_xml(): the latest point up to
+    `now` or, when it only has later ones, the earliest of those).
+
+    `data_time` is the time of the oldest of those values and `newest` of the
+    most recent: they differ when a country publishes some technologies later
+    than others, and `behind` says which ones, for the run log.
+
+    Consumption is not generation. ENTSO-E sends what a technology takes from
+    the grid (the pumps of pumped storage, mostly) as series of their own, the
+    ones with outBiddingZone_Domain instead of inBiddingZone_Domain. They used
+    to be added to the generation of the same technology, so a country that
+    was pumping 1 000 MW showed 1 000 MW more generation, all of it "hydro".
+    They are left out of the mix, and so of the total and of the renewable
+    share; `consumption` lists them for the run log. A country with nothing
+    but consumption series has no mix: None."""
+    values = _values_at(read_series(xml_str), now)
+    generation = [value for value in values if not value[1]]
+    if not generation:
         return None
-    generation = [at for _name, at, _mw, consumption in parts if not consumption]
-    dated_by = generation or [at for _name, at, _mw, _consumption in parts]
-    newest = max(dated_by)
+    mix = {}
+    for code, _consumption, _at, mw in generation:
+        name = PSR_MAP.get(code, 'Other')
+        mix[name] = mix.get(name, 0) + mw
+    newest = max(at for _code, _consumption, at, _mw in generation)
     return {
         'mix': mix,
-        DATA_TIME: min(dated_by).isoformat(),
+        DATA_TIME: min(at for _code, _consumption, at, _mw in generation).isoformat(),
         'newest': newest.isoformat(),
-        'behind': [(name, at.isoformat(), value) for name, at, value, _consumption in parts if at < newest],
+        'behind': [(PSR_MAP.get(code, 'Other'), at.isoformat(), mw)
+                   for code, _consumption, at, mw in generation if at < newest],
+        'consumption': [(PSR_MAP.get(code, 'Other'), at.isoformat(), mw)
+                        for code, consumption, at, mw in values if consumption],
     }
 
 
@@ -871,6 +891,9 @@ def _data_of(parsed, now):
     if parsed.get('behind'):
         text += '; behind the rest: ' + ', '.join(
             f'{name} {carry_over.parse_time(at):%d %b %H:%M} ({mw:.0f} MW)' for name, at, mw in parsed['behind'])
+    if parsed.get('consumption'):
+        text += '; consumption, not in the mix: ' + ', '.join(
+            f'{name} {mw:.0f} MW ({carry_over.parse_time(at):%d %b %H:%M})' for name, at, mw in parsed['consumption'])
     return text
 
 
