@@ -40,7 +40,9 @@ When Elexon does not answer. fetch_entsoe.py, which rewrites the two files
 just before this script runs, keeps the GB zone that was published before, for
 as long as each file allows (a price obtained the same UTC day, a mix obtained
 less than three hours before), with the time it was obtained (fetched_at) and
-the mark carried_over (see carry_over.py). So this script only has two things
+the mark carried_over (see carry_over.py). The price of the day before is also
+kept for the first hour after midnight UTC, when Elexon has nothing of the new
+day yet (AFTER_MIDNIGHT in carry_over.py). So this script only has two things
 to do: when Elexon answers, GB gets the new data, the time of this fetch and
 no mark; when it does not, GB is left as fetch_entsoe.py left it. Either way
 the counts in data/status.json are worked out again at the end, so that they

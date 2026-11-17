@@ -609,19 +609,66 @@ class TheUnitedKingdom(Feed):
         self.assertEqual((status['generation_zones'], status['generation_zones_fetched'],
                           status['generation_zones_carried_over']), (2, 2, 0))
 
-    def test_across_midnight_keeps_the_mix_but_not_the_price(self):
+    def test_across_midnight_keeps_the_mix_and_the_price_while_elexon_has_nothing_of_the_new_day(self):
+        # 17 Nov 2026: 31 zones at 00:10, because Elexon has no half-hour of
+        # the new day yet and yesterday's price was not allowed to stay.
         self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50}, generation={'PT': 4000})
         self.elexon(at('2026-11-16 23:53:00'))
-        self.entsoe(at('2026-11-17 00:05:00'), prices={'PT': 55}, generation={'PT': 4400})
-        self.elexon(at('2026-11-17 00:08:00'), answers=False)
-        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
+        self.entsoe(at('2026-11-17 00:07:00'), prices={'PT': 55}, generation={'PT': 4400})
+        self.elexon(at('2026-11-17 00:10:00'), answers=False)
+
+        prices = read(PRICES)
+        self.assertEqual(list(prices['zones']), ['PT', 'GB'])
+        gb = prices['zones']['GB']
+        self.assertEqual((gb['fetched_at'], gb['carried_over'], gb['avg']), (iso('2026-11-16 23:53:00'), True, 250.0))
+        self.assertEqual(prices['updated'], iso('2026-11-17 00:07:00'))
         gb = read(GENERATION)['zones']['GB']
         self.assertEqual((gb['fetched_at'], gb['carried_over']), (iso('2026-11-16 23:53:00'), True))
         status = read(STATUS)
         self.assertEqual((status['prices_zones'], status['prices_zones_fetched'],
-                          status['prices_zones_carried_over']), (1, 1, 0))
+                          status['prices_zones_carried_over']), (2, 1, 1))
         self.assertEqual((status['generation_zones'], status['generation_zones_fetched'],
                           status['generation_zones_carried_over']), (2, 1, 1))
+
+    def test_the_price_of_the_day_before_gives_way_as_soon_as_elexon_answers(self):
+        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50})
+        self.elexon(at('2026-11-16 23:53:00'))
+        self.entsoe(at('2026-11-17 00:07:00'), prices={'PT': 55})
+        self.elexon(at('2026-11-17 00:10:00'), answers=False)
+        self.entsoe(at('2026-11-17 00:22:00'), prices={'PT': 56})
+        gb = read(PRICES)['zones']['GB']                                    # still kept, with its first time
+        self.assertEqual((gb['fetched_at'], gb['carried_over']), (iso('2026-11-16 23:53:00'), True))
+
+        self.elexon(at('2026-11-17 00:25:00'))                              # the first half-hour is out
+        gb = read(PRICES)['zones']['GB']
+        self.assertEqual(gb['fetched_at'], iso('2026-11-17 00:25:00'))
+        self.assertNotIn('carried_over', gb)
+        self.assertEqual(read(STATUS)['prices_zones_carried_over'], 0)
+
+    def test_the_price_of_the_day_before_is_kept_for_an_hour_after_midnight_and_no_longer(self):
+        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50})
+        self.elexon(at('2026-11-16 23:53:00'))
+        for run, kept in (('2026-11-17 00:07:00', True), ('2026-11-17 00:52:00', True),
+                          ('2026-11-17 00:59:59', True), ('2026-11-17 01:00:00', False)):
+            _code, log = self.entsoe(at(run), prices={'PT': 55})
+            self.assertEqual('GB' in read(PRICES)['zones'], kept, run)
+        self.assertIn('Left out, last obtained on an earlier day: GB', log)
+        # And once it is out it does not come back by itself.
+        self.entsoe(at('2026-11-17 01:07:00'), prices={'PT': 55})
+        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
+
+    def test_only_the_price_of_the_day_that_has_just_ended_is_kept_after_midnight(self):
+        # The feed stood still for a day: the United Kingdom's price is of two days ago.
+        self.entsoe(at('2026-11-15 23:50:00'), prices={'PT': 50})
+        self.elexon(at('2026-11-15 23:53:00'))
+        self.entsoe(at('2026-11-17 00:07:00'), prices={'PT': 55})
+        self.assertEqual(list(read(PRICES)['zones']), ['PT'])
+
+    def test_the_hour_after_midnight_is_for_the_united_kingdom_only(self):
+        self.entsoe(at('2026-11-16 23:50:00'), prices={'PT': 50, 'FR': 70})
+        self.elexon(at('2026-11-16 23:53:00'))
+        self.entsoe(at('2026-11-17 00:07:00'), prices={'PT': 55})
+        self.assertEqual(list(read(PRICES)['zones']), ['PT', 'GB'])         # FR's is of yesterday: out
 
     def test_a_mix_obtained_three_hours_before_is_not_kept(self):
         self.entsoe(at('2026-11-16 10:00:00'), generation={'PT': 4000})
