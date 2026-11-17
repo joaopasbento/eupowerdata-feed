@@ -10,6 +10,17 @@
  *   POST /repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches
  *   https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event
  *
+ * Asking again. GitHub creates the run at once but now and then leaves it for
+ * a long time before starting it, with no other run in its way: 14 to 65
+ * minutes, in 5 of the 85 runs of 16 and 17 Nov 2026. A request made while a
+ * run is held like that starts at once all the same. So, two minutes after
+ * asking, the Worker looks at the run and, if it is still where it was, asks
+ * once more (see held() and scheduled() below). It does that inside the same
+ * invocation, which simply waits the two minutes: nothing to store, no second
+ * trigger, and the run to look at is the one GitHub named in its answer. An
+ * invocation may wait up to 15 minutes and waiting takes no CPU time; if one
+ * is ever cut short, all that is lost is that one second request.
+ *
  * It has no address of its own (no fetch handler, no workers.dev route): the
  * only thing that starts it is its Cron Trigger.
  *
@@ -24,6 +35,7 @@ const USER_AGENT = 'EUPowerData-Feed-Scheduler/1.0 (+https://eupowerdata.com)';
 const ATTEMPTS = 2;           // one retry, after a network error or an HTTP 5xx
 const RETRY_AFTER_MS = 3000;
 const WARN_DAYS = 14;         // how long before the token expires the log starts warning
+const CHECK_AFTER_S = 120;    // how long after asking for a run the Worker looks at it (CHECK_AFTER_SECONDS)
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -50,6 +62,64 @@ async function post(env) {
 		body: (await response.text()).slice(0, 500),
 		expires: response.headers.get('github-authentication-token-expiration'),
 	};
+}
+
+/** One read from GitHub's API: the parsed answer. Throws when it is not a 200 with JSON. */
+async function read(env, path) {
+	const response = await fetch(`${API}/repos/${env.GITHUB_REPOSITORY}/${path}`, {
+		headers: {
+			Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+			Accept: 'application/vnd.github+json',
+			'X-GitHub-Api-Version': API_VERSION,
+			'User-Agent': USER_AGENT,
+		},
+	});
+	if (response.status !== 200) {
+		throw new Error(`GitHub answered HTTP ${response.status} to ${path}`);
+	}
+	return response.json();
+}
+
+/** The id of the run GitHub says it created, from the answer to a dispatch; null when it does not say. */
+export function runId(body) {
+	try {
+		const answer = JSON.parse(body);
+		const found = /\/actions\/runs\/(\d+)/.exec(answer.html_url || answer.run_url || '');
+		return String(answer.workflow_run_id || (found && found[1]) || '') || null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Is this run being held by GitHub with nothing in its way?
+ *
+ * Returns {held, why}. A held run is one GitHub has not got to yet: its status
+ * is still "queued", as when it was created. That alone is not enough to ask
+ * again, because a run may be waiting for its turn behind another run of the
+ * workflow (the concurrency group in fetch.yml), and a second request would
+ * only join that queue. Such a run reads "pending"; to be sure, a run that
+ * reads "queued" while another run of the workflow is going is taken to be in
+ * the queue too.
+ *
+ * Throws when GitHub cannot be asked: the caller then leaves things as they are.
+ */
+export async function held(env, id) {
+	const run = await read(env, `actions/runs/${id}`);
+	if (run.status === 'in_progress' || run.status === 'completed') {
+		return { held: false, why: `it has started (${run.status})` };
+	}
+	if (run.status === 'pending') {
+		return { held: false, why: 'it is waiting for its turn behind another run (pending)' };
+	}
+	if (run.status !== 'queued') {
+		return { held: false, why: `its state reads "${run.status}", which is not one this knows as held` };
+	}
+	const going = await read(env, `actions/workflows/${env.WORKFLOW_FILE}/runs?status=in_progress&per_page=1`);
+	if (going.total_count > 0) {
+		return { held: false, why: 'another run is going, so it is waiting for its turn' };
+	}
+	return { held: true, why: 'it has not started and no other run is going' };
 }
 
 /** What to say in the log about the token's expiration date, and whether it is near. */
@@ -110,6 +180,7 @@ export default {
 	async scheduled(controller, env, ctx) {
 		const due = new Date(controller.scheduledTime).toISOString();
 		const what = `${env.WORKFLOW_FILE} on ${env.GIT_REF} of ${env.GITHUB_REPOSITORY}`;
+		let id = null;
 		try {
 			const answer = await dispatch(env);
 			let run = '';
@@ -118,6 +189,7 @@ export default {
 			} catch {
 				// An empty answer (HTTP 204): GitHub started the run without saying which.
 			}
+			id = runId(answer.body);
 			const token = expiry(answer.expires);
 			console.log(`Started ${what} (due ${due}, HTTP ${answer.status}) ${run}; ${token.text}`);
 			if (token.soon) {
@@ -127,5 +199,48 @@ export default {
 			console.error(`${error.message} (${what}, due ${due})`);
 			throw error;          // so that the invocation shows as failed in the dashboard
 		}
+		await again(env, id, due);
 	},
 };
+
+/**
+ * Two minutes after a run was asked for, look at it and ask once more if
+ * GitHub is holding it. Once only: this is called once for each run the
+ * schedule asks for, and the second run is not looked at.
+ *
+ * The second request cannot put two runs side by side: the workflow's
+ * concurrency group lets one run at a time. Nor does it cost requests to
+ * ENTSO-E for nothing: when the held run is let go at last, it finds the data
+ * the second one published and, if they are under 7 minutes old, skips
+ * (skip_if_fresh.py). Whatever goes wrong here is logged and goes no further:
+ * the run the schedule asked for was asked for.
+ */
+export async function again(env, id, due, wait = sleep) {
+	if (!id) {
+		console.warn(`GitHub did not say which run it created (due ${due}): it cannot be looked at, so it is not asked for again`);
+		return 'unknown';
+	}
+	const seconds = Number(env.CHECK_AFTER_SECONDS);
+	await wait((Number.isFinite(seconds) && seconds >= 0 && env.CHECK_AFTER_SECONDS !== '' ? seconds : CHECK_AFTER_S) * 1000);
+	let state;
+	try {
+		state = await held(env, id);
+	} catch (error) {
+		console.error(`Could not look at run ${id} (due ${due}): ${error.message} - not asking again`);
+		return 'not checked';
+	}
+	if (!state.held) {
+		console.log(`Run ${id} (due ${due}) two minutes on: ${state.why} - not asking again`);
+		return 'not held';
+	}
+	try {
+		const answer = await dispatch(env, wait);
+		const second = runId(answer.body);
+		console.warn(`Run ${id} (due ${due}) two minutes on: ${state.why} - asked again`
+			+ (second ? `: https://github.com/${env.GITHUB_REPOSITORY}/actions/runs/${second}` : ''));
+		return 'asked again';
+	} catch (error) {
+		console.error(`Run ${id} (due ${due}) is held and asking again failed: ${error.message}`);
+		return 'failed';
+	}
+}

@@ -78,6 +78,30 @@ class Fresh(Feed):
         self.assertEqual(read('data/status.json')['status'], 'error')
         self.assertFalse(self.decide(later + timedelta(minutes=1))[0])
 
+    def test_a_held_run_let_go_after_the_one_asked_for_again_is_skipped(self):
+        # 10:37:54: the scheduler asks for a run and GitHub holds it. Two
+        # minutes on it asks again; that second run starts at once.
+        second = at('2026-11-17 10:40:05')
+        self.entsoe(second, **EVERYTHING)
+        # The held run is let go while the second is still going, waits for
+        # its turn, and starts when the second has published, at 10:43:35.
+        skip, line = self.decide(second + timedelta(minutes=3, seconds=30))
+        self.assertTrue(skip)
+        self.assertIn('Skipped: the published data are 3 min 30 s old', line)
+
+    def test_a_held_run_let_go_much_later_runs_and_it_is_the_next_one_that_is_skipped(self):
+        # The shortest hold seen was 14 minutes: asked for at 10:37:54, let go
+        # at 10:51:54, when the second run's data are 11 min 49 s old.
+        second = at('2026-11-17 10:40:05')
+        self.entsoe(second, **EVERYTHING)
+        let_go = at('2026-11-17 10:51:54')
+        self.assertFalse(self.decide(let_go)[0])
+        self.entsoe(let_go + timedelta(seconds=10), **EVERYTHING)          # so it runs, in place of...
+        # ...the run of 10:52:54, which waits behind it and starts when it ends.
+        skip, line = self.decide(let_go + timedelta(minutes=4))
+        self.assertTrue(skip)
+        self.assertIn('3 min 50 s old', line)
+
     def test_forced_it_runs_whatever_the_age(self):
         self.entsoe(RUN, **EVERYTHING)
         skip, line = self.decide(RUN + timedelta(minutes=2), force=True)
