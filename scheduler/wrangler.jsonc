@@ -20,10 +20,7 @@
 	"vars": {
 		"GITHUB_REPOSITORY": "joaopasbento/eupowerdata-feed",
 		"WORKFLOW_FILE": "fetch.yml",
-		"GIT_REF": "main",
-		// The experiment on what makes GitHub hold some runs (see variant() in
-		// src/index.js). Anything but "on" and every run is asked for the same way.
-		"EXPERIMENT": "on"
+		"GIT_REF": "main"
 	},
 
 	// Keeps the Worker's log lines (one for each run it starts, or the reason
