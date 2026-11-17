@@ -1091,13 +1091,21 @@ def net_flows(corridors):
     A pair is as old as the older of its two corridors, in the time its data
     are for (data_time) and in the time they were obtained (fetched_at), and is
     marked carried_over when either of them was kept from an earlier run, so
-    the number never looks fresher than what it was worked out from."""
+    the number never looks fresher than what it was worked out from.
+
+    A pair with neither of its corridors in the file is left out: it used to
+    be written as a net flow of 0 MW, with no time, and the site showed that
+    as a measurement (NO-SE, LT-SE, IT-ME and AL-MK, for which ENTSO-E has no
+    data between the zones the feed asks for). A pair with one corridor is
+    worked out from it, as before: the other direction counts as zero."""
     net = {}
     for frm, to in FLOW_CORRIDORS:
         pair = '-'.join(sorted([frm, to]))
         if pair in net:
             continue
         both = [corridors.get(f'{frm}→{to}'), corridors.get(f'{to}→{frm}')]
+        if not any(both):
+            continue
         fwd, rev = [(c or {}).get('latest', {}).get('mw', 0) for c in both]
         balance = fwd - rev
         entry = {

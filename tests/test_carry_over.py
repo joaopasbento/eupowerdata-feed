@@ -505,12 +505,12 @@ class TheNetBlock(Feed):
         self.assertEqual(flows['net']['ES-FR'],
                          {'from': 'ES', 'to': 'FR', 'net_mw': 400, 'data_time': NINE,
                           'fetched_at': LATER.isoformat()})
-        # A pair with no corridor in the file is as it always was.
-        self.assertEqual(flows['net']['DE-FR'], {'from': 'FR', 'to': 'DE', 'net_mw': 0})
+        # A pair with no corridor in the file is not in the net block at all.
+        self.assertNotIn('DE-FR', flows['net'])
+        self.assertEqual(list(flows['net']), ['ES-PT', 'ES-FR'])
 
         # Every pair adds up with the corridors of the same file.
         corridors = flows['corridors']
-        self.assertEqual(len(flows['net']), 47)
         for pair, net in flows['net'].items():
             a, b = net['from'], net['to']
             forward = corridors.get(f'{a}→{b}', {}).get('latest', {}).get('mw', 0)
@@ -525,6 +525,28 @@ class TheNetBlock(Feed):
         self.assertEqual(flows['net']['ES-PT'],
                          {'from': 'PT', 'to': 'ES', 'net_mw': 1500, 'data_time': iso('2026-11-16 23:00:00'),
                           'fetched_at': iso('2026-11-17 00:05:00')})
+
+    def test_a_pair_with_neither_corridor_is_left_out_and_one_with_a_single_corridor_stays(self):
+        # ENTSO-E has nothing for NO-SE; for ES-FR only one direction answered.
+        self.entsoe(MORNING, flows={('PT', 'ES'): 1000, ('ES', 'PT'): 200, ('ES', 'FR'): 500})
+        flows = read(FLOWS)
+        self.assertEqual(list(flows['net']), ['ES-PT', 'ES-FR'])
+        for missing in ('NO-SE', 'LT-SE', 'IT-ME', 'AL-MK', 'DE-FR'):
+            self.assertNotIn(missing, flows['net'])
+        self.assertEqual(flows['net']['ES-FR'],
+                         {'from': 'ES', 'to': 'FR', 'net_mw': 500, 'data_time': NINE,
+                          'fetched_at': MORNING.isoformat()})
+        # No entry of the block is without the times of its data.
+        for pair, net in flows['net'].items():
+            self.assertIn('data_time', net, pair)
+            self.assertIn('fetched_at', net, pair)
+
+    def test_a_pair_comes_back_when_one_of_its_corridors_does(self):
+        self.entsoe(MORNING, flows={('PT', 'ES'): 1000})
+        self.assertEqual(list(read(FLOWS)['net']), ['ES-PT'])
+        self.entsoe(LATER, flows={('PT', 'ES'): 1000, ('NO', 'SE'): 300})
+        self.assertEqual(read(FLOWS)['net']['NO-SE']['net_mw'], 300)
+        self.assertEqual(list(read(FLOWS)['net']), ['ES-PT', 'NO-SE'])      # in the order of the corridors
 
     def test_a_pair_is_as_old_as_the_older_of_its_two_corridors(self):
         self.entsoe(MORNING, flows={('PT', 'ES'): (1000, '2026-11-16 09:00'), ('ES', 'PT'): (200, '2026-11-16 06:00')})
