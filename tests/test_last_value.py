@@ -178,8 +178,95 @@ class Generation(unittest.TestCase):
         self.assertEqual(fe.latest_generation(answer, NOW)['mix'], {'Solar': 10.0})
 
 
+class ALatestIntervalAtZero(unittest.TestCase):
+    """Montenegro now and then publishes its newest interval with every
+    technology at 0 and fills it in later."""
+
+    def montenegro(self, lignite, hydro, wind, **more):
+        return document(series('2026-11-16 00:00', lignite, psr='B02', **more),
+                        series('2026-11-16 00:00', hydro, psr='B12', **more),
+                        series('2026-11-16 00:00', wind, psr='B19', **more))
+
+    def test_is_read_from_the_last_interval_with_generation(self):
+        # Hourly, up to 09:00; the 09:00 interval is all zero.
+        got = fe.latest_generation(self.montenegro([195] * 9 + [0], [0] * 10, [20] * 8 + [25, 0]), NOW)
+        self.assertEqual(got['mix'], {'Fossil Brown coal/Lignite': 195.0, 'Hydro Water Reservoir': 0.0,
+                                      'Wind Onshore': 25.0})
+        self.assertEqual(got['data_time'], iso('2026-11-16 08:00:00'))       # the interval it was read from
+        self.assertEqual(got['newest'], iso('2026-11-16 08:00:00'))
+        self.assertEqual(got['zero_at'], iso('2026-11-16 09:00:00'))
+        self.assertEqual(fe._data_of(got, NOW),
+                         'data of 16 Nov 08:00, 140 min before the run; '
+                         'the interval of 16 Nov 09:00 adds up to zero: read from the last one with generation')
+
+    def test_goes_back_over_several_intervals_at_zero(self):
+        got = fe.latest_generation(self.montenegro([195] * 7 + [0] * 3, [0] * 10, [20] * 6 + [30] + [0] * 3), NOW)
+        self.assertEqual(got['mix']['Wind Onshore'], 30.0)
+        self.assertEqual(got['data_time'], iso('2026-11-16 06:00:00'))
+
+    def test_with_nothing_but_zeros_in_the_answer_the_country_is_not_obtained(self):
+        self.assertIsNone(fe.latest_generation(self.montenegro([0] * 10, [0] * 10, [0] * 10), NOW))
+
+    def test_one_technology_at_zero_changes_nothing(self):
+        got = fe.latest_generation(self.montenegro([195] * 10, [0] * 10, [20] * 9 + [0]), NOW)
+        self.assertEqual(got['mix'], {'Fossil Brown coal/Lignite': 195.0, 'Hydro Water Reservoir': 0.0,
+                                      'Wind Onshore': 0.0})
+        self.assertEqual(got['data_time'], iso('2026-11-16 09:00:00'))
+        self.assertNotIn('zero_at', got)
+
+    def test_with_points_left_out_the_last_interval_with_generation_is_the_one_before_the_zero(self):
+        # curveType A03: 195 written at 00:00 and not again, then 0 at 09:00.
+        # The last interval with generation is 08:00, not 00:00.
+        got = fe.latest_generation(document(
+            series('2026-11-16 00:00', [195] + [None] * 8 + [0], psr='B02', curve='A03')), NOW)
+        self.assertEqual(got['mix'], {'Fossil Brown coal/Lignite': 195.0})
+        self.assertEqual(got['data_time'], iso('2026-11-16 08:00:00'))
+
+    def test_a_technology_behind_the_others_is_taken_as_it_was_then(self):
+        # Wind only goes up to 07:00; at 08:00, the last interval with
+        # generation, its value is still the 07:00 one.
+        got = fe.latest_generation(document(
+            series('2026-11-16 00:00', [195] * 9 + [0], psr='B02'),
+            series('2026-11-16 00:00', [20] * 7 + [22], psr='B19')), at('2026-11-16 09:20:00'))
+        self.assertEqual(got['mix'], {'Fossil Brown coal/Lignite': 0.0, 'Wind Onshore': 22.0})
+        self.assertNotIn('zero_at', got)                 # 22 MW: the latest values do not add up to zero
+
+    def test_consumption_does_not_count_as_generation(self):
+        # Every generation series at zero, the pumps running: still zero.
+        got = fe.latest_generation(document(
+            series('2026-11-16 00:00', [300] * 9 + [0], psr='B12'),
+            series('2026-11-16 00:00', [50] * 10, psr='B10', out=True)), NOW)
+        self.assertEqual(got['mix'], {'Hydro Water Reservoir': 300.0})
+        self.assertEqual(got['data_time'], iso('2026-11-16 08:00:00'))
+        self.assertEqual(got['consumption'], [('Hydro Pumped Storage', iso('2026-11-16 08:00:00'), 50.0)])
+
+
 class GenerationInTheFile(Feed):
     """What a run publishes in generation-mix.json."""
+
+    ZEROS = document(series('2026-11-16 00:00', [0] * 10, psr='B02'), series('2026-11-16 00:00', [0] * 10, psr='B19'))
+
+    def test_a_latest_interval_at_zero_is_published_from_the_one_before_with_its_time(self):
+        self.entsoe(NOW, generation={'ME': document(
+            series('2026-11-16 00:00', [195] * 9 + [0], psr='B02'),
+            series('2026-11-16 00:00', [20] * 9 + [0], psr='B19'))})
+        zone = read(GENERATION)['zones']['ME']
+        self.assertEqual((zone['total_mw'], zone['data_time']), (215.0, iso('2026-11-16 08:00:00')))
+        self.assertEqual(zone['fetched_at'], NOW.isoformat())
+        self.assertNotIn('carried_over', zone)
+        self.assertEqual(list(zone), ['mix', 'total_mw', 'renewable_pct', 'data_time', 'fetched_at'])
+
+    def test_a_country_with_nothing_but_zeros_counts_as_not_obtained(self):
+        self.entsoe(at('2026-11-16 09:20:00'), generation={'ME': 215, 'PT': 4000})
+        _code, log = self.entsoe(NOW, generation={'ME': self.ZEROS, 'PT': 4400})
+        zone = read(GENERATION)['zones']['ME']
+        self.assertEqual((zone['total_mw'], zone['fetched_at'], zone['carried_over']),
+                         (215, iso('2026-11-16 09:20:00'), True))
+        self.assertIn('Kept, not obtained in this run: ME', log)
+
+    def test_and_is_left_out_when_there_is_nothing_to_keep(self):
+        self.entsoe(NOW, generation={'ME': self.ZEROS, 'PT': 4400})
+        self.assertEqual(list(read(GENERATION)['zones']), ['PT'])
 
     def test_the_total_and_the_renewable_share_leave_consumption_out(self):
         self.entsoe(NOW, generation={'PT': document(
