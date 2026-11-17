@@ -9,7 +9,9 @@ for it, for as long as the file's rule allows:
 
     spot-prices.json           while the value was obtained on the same UTC
                                day as the run. Prices are per delivery day:
-                               yesterday's must never pass for today's.
+                               yesterday's must never pass for today's. One
+                               exception, the United Kingdom's, for the first
+                               hour of the day: see AFTER_MIDNIGHT.
     generation-mix.json        while the value was obtained less than three
     cross-border-flows.json    hours before the run, whatever the day.
 
@@ -96,11 +98,42 @@ def _under_max_age(original, run_time):
     return then is not None and now is not None and now - then < MAX_AGE
 
 
-# allows(original fetched_at, time of the run) -> whether the entry may be kept;
-# `kept` and `dropped` are how the run log puts it.
+# Zones whose price of the day before is kept for a while after midnight UTC.
+#
+# The United Kingdom's price comes from Elexon (fetch_gb.py), one half-hour at
+# a time, and is the price of the UTC day. Elexon publishes each half-hour
+# some 10 to 25 minutes after it begins, so in the first run after midnight it
+# has nothing of the new day yet: on 17 Nov 2026 the file had 31 zones at 00:10
+# and 32 at 00:24. Until Elexon has the first half-hour of the new day, and
+# for an hour after midnight at most, the zone keeps the price of the day
+# before, marked carried_over and with the fetched_at it had. fetch_gb.py
+# replaces it as soon as Elexon answers.
+AFTER_MIDNIGHT = {'GB': timedelta(hours=1)}
+
+
+def _just_after_midnight(original, run_time, grace):
+    """True when the run is within `grace` of midnight UTC and the value was
+    obtained on the UTC day that has just ended."""
+    then, now = parse_time(original), parse_time(run_time)
+    if then is None or now is None:
+        return False
+    now = now.astimezone(timezone.utc)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return now - midnight < grace and then.astimezone(timezone.utc).date() == (midnight - timedelta(days=1)).date()
+
+
+def _price_may_be_kept(name, entry, original, run_time):
+    if _same_utc_day(original, run_time):
+        return True
+    return name in AFTER_MIDNIGHT and _just_after_midnight(original, run_time, AFTER_MIDNIGHT[name])
+
+
+# allows(name, entry, original fetched_at, time of the run) -> whether the
+# entry may be kept; `kept` and `dropped` are how the run log puts it.
 Rule = namedtuple('Rule', 'allows kept dropped')
-SAME_UTC_DAY = Rule(_same_utc_day, 'kept from earlier today', 'last obtained on an earlier day')
-UNDER_THREE_HOURS = Rule(_under_max_age, 'kept from under 3 hours ago', 'last obtained 3 hours ago or more')
+SAME_UTC_DAY = Rule(_price_may_be_kept, 'kept from an earlier run', 'last obtained on an earlier day')
+UNDER_THREE_HOURS = Rule(lambda name, entry, original, run_time: _under_max_age(original, run_time),
+                         'kept from under 3 hours ago', 'last obtained 3 hours ago or more')
 
 RULES = {
     'data/spot-prices.json': SAME_UTC_DAY,
@@ -156,7 +189,7 @@ def merge(fresh, previous, key, order, fetched_at, rule=SAME_UTC_DAY):
             entries[name] = entry
         elif name in before:
             original = entry_time(before[name], previous)
-            if rule.allows(original, fetched_at):
+            if rule.allows(name, before[name], original, fetched_at):
                 entry = dict(before[name])
                 entry[FETCHED_AT] = original          # never the time of this run
                 entry[CARRIED_OVER] = True
