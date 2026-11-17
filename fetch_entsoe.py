@@ -500,32 +500,6 @@ def get_ns(root):
         return tag[1:tag.index('}')]
     return ''
 
-def parse_prices_xml(xml_str):
-    prices = []
-    try:
-        root = ET.fromstring(xml_str)
-        ns = get_ns(root)
-        prefix = f'{{{ns}}}' if ns else ''
-        for ts in root.iter(f'{prefix}TimeSeries'):
-            for period in ts.iter(f'{prefix}Period'):
-                start_el = period.find(f'{prefix}timeInterval/{prefix}start')
-                if start_el is None:
-                    continue
-                start_dt = datetime.fromisoformat(start_el.text.replace('Z', '+00:00'))
-                for pt in period.iter(f'{prefix}Point'):
-                    pos = int(pt.find(f'{prefix}position').text)
-                    price = float(pt.find(f'{prefix}price.amount').text)
-                    hour_dt = start_dt + timedelta(hours=pos - 1)
-                    prices.append({
-                        'time': hour_dt.strftime('%H:%M'),
-                        'hour': pos - 1,
-                        'price': round(price, 2),
-                    })
-    except Exception as e:
-        print(f'  XML parse error: {e}')
-    return prices
-
-
 def parse_generation_xml(xml_str):
     """Parse ENTSO-E A75 (Aggregated Generation per Type) response.
 
@@ -639,9 +613,9 @@ def parse_flow_xml(xml_str):
 #
 # Generation and flows are asked for the last 24 hours and each zone and
 # corridor shows the last value ENTSO-E has published for it, with the time
-# that value is for. The three parsers above are left as they are for the
-# prices and for backfill_archive.py, which reads one whole day at a time; the
-# functions below read the same documents with what a rolling window needs:
+# that value is for. The two parsers above are left as they are for
+# backfill_archive.py, which reads one whole day at a time; the functions
+# below read the same documents with what a rolling window needs:
 #
 #   - the real time of every point. A Period says how long its intervals are
 #     (PT15M, PT30M, PT60M); parse_flow_xml() counts every position as an hour.
@@ -965,8 +939,9 @@ def _data_of(parsed, now):
 # in course on the market's clock (Central European Time, as in
 # omie-prices.json): one value for each hour of that day, 00:00 to 23:00.
 #
-# parse_prices_xml() above took every position for an hour, did not put back
-# the points curveType A03 leaves out and added up every series of the answer.
+# The reading that was here before (parse_prices_xml, now gone) took every
+# position for an hour, did not put back the points curveType A03 leaves out
+# and added up every series of the answer.
 # On 17 Nov 2026 that gave Portugal 86 "hours" and an average of 68.76 (64.56
 # with the 96 quarter-hours put back, OMIE's figure) and Spain 263 "hours" from
 # three series. What an A44 answer really has, as seen in the answers of that

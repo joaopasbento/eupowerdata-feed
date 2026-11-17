@@ -40,17 +40,17 @@ import fetch_entsoe as fe
 # ---------------------------------------------------------------------------
 
 def fetch_prices_for_date(base, target_date):
-    """Fetch ENTSO-E day-ahead prices for a specific UTC date.
+    """Fetch ENTSO-E day-ahead prices for one delivery day.
 
     Returns the same dict shape as fetch_entsoe.fetch_prices() so the
-    archived file is interchangeable with files produced by the regular cron.
+    archived file is interchangeable with files produced by the regular cron:
+    one value for each hour of the delivery day on the market's clock (Central
+    European Time), read by the same code (fetch_entsoe.read_prices and
+    price_zones), which knows the length of the intervals, puts back the
+    points curveType A03 leaves out and reads the day-ahead market only.
 
-    target_date: a datetime.date object (UTC date).
+    target_date: a datetime.date object, the delivery day.
     """
-    start = target_date.strftime('%Y%m%d') + '0000'
-    end_dt = target_date + timedelta(days=1)
-    end = end_dt.strftime('%Y%m%d') + '0000'
-
     prices = {
         'updated': datetime.now(timezone.utc).isoformat(),
         'date': target_date.strftime('%Y-%m-%d'),
@@ -59,61 +59,18 @@ def fetch_prices_for_date(base, target_date):
         'zones': {},
     }
 
+    found = {}
     for code, eic in fe.ZONES.items():
-        params = urllib.parse.urlencode({
-            'securityToken': fe.API_KEY,
-            'documentType': 'A44',
-            'in_Domain': eic,
-            'out_Domain': eic,
-            'periodStart': start,
-            'periodEnd': end,
-        })
-        xml = fe.http_get(f'{base}?{params}')
-        if not xml:
-            continue
-        parsed = fe.parse_prices_xml(xml)
-        if parsed:
-            price_vals = [p['price'] for p in parsed]
-            prices['zones'][code] = {
-                'eic': eic,
-                'prices': parsed,
-                'latest': parsed[-1],
-                'avg': round(sum(price_vals) / len(price_vals), 2),
-                'min': round(min(price_vals), 2),
-                'max': round(max(price_vals), 2),
-            }
+        xml = fe.http_get(fe.price_request(base, eic, target_date))
+        if xml:
+            hours = fe.read_prices(xml, target_date)
+            if hours:
+                found[code] = hours
         time.sleep(0.15)   # gentle on the ENTSO-E API
 
-    # Apply the same Nordic zone consolidation as the regular fetcher
-    # (NO1+NO2 -> NO, SE1+SE3 -> SE, DK1+DK2 -> DK).
-    for country, zone_codes in fe.CONSOLIDATE.items():
-        zone_data = [prices['zones'].get(zc) for zc in zone_codes if zc in prices['zones']]
-        if not zone_data:
-            continue
-        all_avgs = [z['avg'] for z in zone_data if z.get('avg') is not None]
-        all_mins = [z['min'] for z in zone_data if z.get('min') is not None]
-        all_maxs = [z['max'] for z in zone_data if z.get('max') is not None]
-        merged_prices = []
-        max_hours = max(len(z.get('prices', [])) for z in zone_data)
-        for h in range(max_hours):
-            hour_prices = [z['prices'][h]['price'] for z in zone_data if h < len(z.get('prices', []))]
-            if hour_prices:
-                avg_p = round(sum(hour_prices) / len(hour_prices), 2)
-                ref = (zone_data[0]['prices'][h]
-                       if h < len(zone_data[0].get('prices', []))
-                       else {'time': f'{h:02d}:00', 'hour': h})
-                merged_prices.append({'time': ref['time'], 'hour': ref['hour'], 'price': avg_p})
-        prices['zones'][country] = {
-            'eic': ', '.join(z.get('eic', '') for z in zone_data),
-            'prices': merged_prices,
-            'latest': merged_prices[-1] if merged_prices else None,
-            'avg': round(sum(all_avgs) / len(all_avgs), 2) if all_avgs else 0,
-            'min': round(min(all_mins), 2) if all_mins else 0,
-            'max': round(max(all_maxs), 2) if all_maxs else 0,
-        }
-        for zc in zone_codes:
-            prices['zones'].pop(zc, None)
-
+    # The zones in the feed's order, with the same Nordic consolidation as the
+    # regular fetcher (NO1+NO2 -> NO, SE1+SE3 -> SE, DK1+DK2 -> DK).
+    prices['zones'] = fe.price_zones(found, target_date)
     return prices
 
 
