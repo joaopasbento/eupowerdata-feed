@@ -99,7 +99,7 @@ import fetch_entsoe as fe
 import fetch_omie
 import price_intervals
 from feed_common import (HOURLY, OMIE_TERMS, SOURCE_TERMS, Budget, asked_recently, http_get, iso, latest, load_json,
-                         write_json)
+                         parse_time, write_json)
 
 OUT_PATH = 'data/low-prices.json'
 ARCHIVE_PATH = 'data/archive/low-prices-{day}.json'
@@ -584,5 +584,139 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
     return 0
 
 
+# --- Counting a year again, at the market's resolution ---
+#
+# The records of the days before 18 Nov 2026 were counted from the archive of
+# the hourly prices, which was all there was: an hour counted as negative only
+# when its mean was, and the 31 days the archive lacked were not counted at
+# all. Over the same 291 days Portugal came to 11.46 % of the time at zero or
+# below, against 12.58 % by OMIE's quarter-hours.
+#
+# `python fetch_low_prices.py --refill-entsoe [year]` (started by hand through
+# rewrite-archive.yml, where the key is) counts the year again from ENTSO-E
+# itself: one request for each zone for the whole year, about 35, each day of
+# the answer read as the regular runs read the day in course (the same
+# auction, the same hours, converted to euros: fetch_entsoe._complete_hours)
+# and counted at the resolution the market publishes. Only the `entsoe` part
+# of each record is written; every day ENTSO-E has prices for gets
+# "market-resolution", and a day it has none for a zone leaves the zone out.
+#
+# The proof is Portugal and Spain, which OMIE's files count too: over the
+# same days the two blocks must agree (compare_blocks). Where they do not,
+# the days are listed and neither count is changed to fit the other.
+
+def intervals_of_span(base, code, first, last, expected, ask, sleep):
+    """{day: [(start, step, price)]} of a zone for the delivery days `first` to `last`."""
+    import backfill_archive
+
+    def read(text, first, last):
+        return {day: [(at, step, value) for _hour, step, values in hours for at, value in sorted(values.items())]
+                for day, hours in fe._complete_hours(fe.read_series(text)).items() if first <= day <= last}
+
+    return backfill_archive.ask_span(
+        base, {'documentType': 'A44', 'in_Domain': fe.ZONES[code], 'out_Domain': fe.ZONES[code]},
+        code, first, last, read, expected, ask, sleep)
+
+
+def compare_blocks(records, days, zones=ZONES):
+    """Where the count of the feed's own prices (the `entsoe` part of the
+    records) and OMIE's day-ahead count differ, for Portugal and Spain:
+    ({zone: {'omie': totals, 'entsoe': totals}}, [(day, zone, omie, entsoe)]),
+    the totals being (negative, zero, low) hours over the days that have both."""
+    totals = {zone: {'omie': [0, 0, 0], 'entsoe': [0, 0, 0], 'days': 0} for zone in zones}
+    differ = []
+    for day in days:
+        record = records.get(day) or {}
+        ahead = (record.get(OMIE) or {}).get('day_ahead') or {}
+        for zone in zones:
+            ours = ((record.get(ENTSOE) or {}).get('zones') or {}).get(zone)
+            theirs = ahead.get(zone)
+            if not ours or not theirs:
+                continue
+            a, b = [theirs[name] for name in COUNTED], [ours[name] for name in COUNTED]
+            totals[zone]['days'] += 1
+            for i in range(3):
+                totals[zone]['omie'][i] += a[i]
+                totals[zone]['entsoe'][i] += b[i]
+            if a != b:
+                differ.append((day, zone, a, b))
+    return totals, differ
+
+
+def refill_entsoe(base, year=None, now=None, ask=None, sleep=time.sleep, commit=None):
+    """Count a year again at the market's resolution (see above). Returns the
+    exit code: 0, or 1 when a zone could not be had and nothing was written."""
+    import backfill_archive
+    ask = ask or backfill_archive._ask
+    now = now or datetime.now(timezone.utc)
+    today = carry_over.delivery_day(now)
+    year = year or today.year
+    first = date(year, 1, 1)
+    last = min(today - timedelta(days=1), date(year, 12, 31))
+    days = [first + timedelta(days=n) for n in range((last - first).days + 1)]
+    records = {day: load_record(day) or {'date': day.isoformat()} for day in days}
+    had = {zone for record in records.values() for zone in ((record.get(ENTSOE) or {}).get('zones') or {})}
+    parent = {zone: country for country, zones in fe.CONSOLIDATE.items() for zone in zones}
+    print(f'Counting {year} again at the market\'s resolution: {first} to {last}, {len(days)} days')
+
+    found = {}
+    try:
+        for code in fe.ZONES:
+            if code in fe.ELEXON_ZONES:
+                continue
+            started = time.monotonic()
+            found[code] = intervals_of_span(base, code, first, last, parent.get(code, code) in had, ask, sleep)
+            print(f'  {code}: {len(found[code])} days with prices [{time.monotonic() - started:.0f}s]')
+    except backfill_archive.RewriteFailed as e:
+        print(f'{year} NOT counted again: {e}')
+        return 1
+
+    written, bases, without = 0, {}, []
+    for day in days:
+        kept = {}
+        for code, by_day in found.items():
+            entry = price_intervals.zone_entry(by_day[day], day) if by_day.get(day) else None
+            if entry:
+                kept[code] = (parse_time(entry['start']), timedelta(minutes=entry['step_minutes']), entry['prices'])
+        counts = counts_from_intervals(kept)
+        ordered = {zone: counts[zone] for zone in fe.PRICE_ORDER if zone in counts and is_counted(zone, day, counts[zone])}
+        record = records[day]
+        before = (record.get(ENTSOE) or {}).get('zones') or {}
+        for zone, count in before.items():
+            bases[count.get('basis')] = bases.get(count.get('basis'), 0) + 1
+        if not ordered:
+            without.append(day)
+        if ordered != before:
+            _block(record, ENTSOE, SOURCE_TERMS, ENTSOE_SOURCE)['zones'] = ordered
+            ordered_record = {'date': day.isoformat(), **{name: record[name] for name in (OMIE, ENTSOE) if name in record}}
+            os.makedirs(os.path.dirname(ARCHIVE_PATH), exist_ok=True)
+            write_json(ARCHIVE_PATH.format(day=day.isoformat()), ordered_record, separators=(',', ':'))
+            written += 1
+    print(f'{written} records written; zone-days before, by basis: {bases}')
+    if without:
+        print(f'Days ENTSO-E has no prices for any zone: {len(without)} ({", ".join(str(day) for day in without[:20])})')
+    totals, differ = compare_blocks(records, days)
+    for zone, total in totals.items():
+        agree = total['omie'] == total['entsoe']
+        print(f"  {zone}, {total['days']} days: OMIE {[_hours(v) for v in total['omie']]} hours negative, zero and low; "
+              f"from ENTSO-E {[_hours(v) for v in total['entsoe']]} - {'the same' if agree else 'NOT the same'}")
+    for day, zone, omie, entsoe in differ[:60]:
+        print(f'    {day} {zone}: OMIE {omie}, ENTSO-E {entsoe}')
+    if len(differ) > 60:
+        print(f'    ... and {len(differ) - 60} more')
+    if commit and written:
+        commit(f"Count the low prices of {year} again at the market's resolution ({written} records)")
+    return 0
+
+
 if __name__ == '__main__':
+    if '--refill-entsoe' in sys.argv:
+        import backfill_archive
+        if not fe.API_KEY:
+            sys.exit('ERROR: ENTSOE_API_KEY environment variable is not set')
+        wanted = [int(arg) for arg in sys.argv[1:] if arg.isdigit()]
+        backfill_archive._run_git(['config', 'user.name', 'github-actions[bot]'])
+        backfill_archive._run_git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
+        sys.exit(max(refill_entsoe(fe.ALT_URLS[0], year, commit=backfill_archive._commit_and_push)
+                     for year in (wanted or [None])))
     sys.exit(main())
