@@ -336,6 +336,53 @@ class TheNextRuns(Feed):
         self.assertEqual((border['fetched_at'], border.get('carried_over'), len(border['outages'])),
                          ('2026-11-18T18:07:42+00:00', True, 38))
 
+    def test_on_a_slow_day_portugal_and_spain_are_whole_before_anything_else_is_asked_for(self):
+        # Every request costs 6 of the 90 seconds: there is time for 15.
+        clock = [0.0]
+
+        class Slow(Entsoe):
+            def __call__(self, url, **limits):
+                clock[0] += 6
+                return super().__call__(url, **limits)
+
+        entsoe = Slow(self.ANSWERS)
+        log = io.StringIO()
+        with mock.patch.dict('os.environ', {'ENTSOE_API_KEY': KEY}), contextlib.redirect_stdout(log):
+            code = fo.main(now=ASKED_AT, get=entsoe, budget=fc.Budget(90, clock=lambda: clock[0]), interval=0)
+        doc = self.doc()
+        self.assertEqual(code, 0)
+        self.assertEqual(list(doc['generation']['zones']), ['PT', 'ES'])
+        self.assertEqual(len(doc['generation']['zones']['PT']['outages']), 119)      # the withdrawn ones included
+        self.assertEqual(list(doc['transmission']['borders']), ['ES-PT'])
+        self.assertIn('left for the next run', log.getvalue())
+        # The 14 requests of Portugal, Spain and their borders went first; then one batch of the rest began.
+        first = [(p['documentType'], p.get('biddingZone_Domain') or f"{p['out_Domain']}>{p['in_Domain']}")
+                 for p in entsoe.asked[:14]]
+        self.assertEqual(set(first), {('A80', PT), ('A77', PT), ('A80', ES), ('A77', ES), ('A78', f'{PT}>{ES}'),
+                                      ('A78', f'{ES}>{PT}'), ('A78', f'{ES}>{FR}'), ('A78', f'{FR}>{ES}')})
+
+    def test_what_a_run_does_not_get_to_is_first_in_line_in_the_next(self):
+        clock = [0.0]
+
+        class Slow(Entsoe):
+            def __call__(self, url, **limits):
+                clock[0] += 3
+                return super().__call__(url, **limits)
+
+        def run(when):
+            clock[0] = 0.0
+            entsoe = Slow(self.ANSWERS)
+            with mock.patch.dict('os.environ', {'ENTSOE_API_KEY': KEY}), contextlib.redirect_stdout(io.StringIO()):
+                fo.main(now=when, get=entsoe, budget=fc.Budget(90, clock=lambda: clock[0]), interval=0)
+            return [p.get('biddingZone_Domain') for p in entsoe.asked if p['documentType'] == 'A80']
+
+        first = run(ASKED_AT)
+        second = run(ASKED_AT + timedelta(minutes=15))
+        self.assertIn(FR, first)                                   # France was reached in the first run...
+        self.assertNotIn(FR, second)                               # ...and is not asked for again within the hour
+        reached = set(first) - {PT, ES}
+        self.assertTrue(reached and set(second) - {PT, ES} and not (set(second) - {PT, ES}) & reached)
+
     def test_with_nothing_obtained_the_file_is_not_touched(self):
         self.run_at(ASKED_AT)
         with open(PATH, 'rb') as f:
