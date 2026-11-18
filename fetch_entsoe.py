@@ -106,7 +106,7 @@ GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI
 # price shown as Italy's and for its northern borders, but its generation is
 # that of the North alone: 17 110 MW on 18 Nov 2026, when the country was
 # generating 31 866. The generation of Italy is asked for by the country's own
-# code. backfill_archive.py still goes by ZONES: the archive has the North.
+# code, in the regular runs and in backfill_archive.py.
 GEN_ZONES = {
     **ZONES,
     'IT': '10YIT-GRTN-----B',
@@ -1290,12 +1290,16 @@ def fetch_prices(base, deadline=None, intervals=None):
     return prices
 
 
-def fetch_generation(base, deadline=None, wind_solar=None):
+def fetch_generation(base, deadline=None, wind_solar=None, now=None):
     """The generation mix of each zone. With `wind_solar` (a dict), the series
-    of solar and wind each answer had are put in it, by zone as asked for."""
+    of solar and wind each answer had are put in it, by zone as asked for.
+
+    `now` is the instant the mix is of: the time of the run or, for
+    backfill_archive.py, the end of a past day. The 24 hours before it are
+    asked for and each technology has its last value up to it."""
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
-    now = utcnow()
+    now = now or utcnow()
     start, end = last_day(now)
 
     gen = {
@@ -1364,10 +1368,13 @@ def fetch_generation(base, deadline=None, wind_solar=None):
     return gen
 
 
-def fetch_flows(base, deadline=None):
+def fetch_flows(base, deadline=None, now=None):
+    """The flow of each corridor and the net flow of each pair. `now` is the
+    instant they are of: the time of the run or, for backfill_archive.py, the
+    end of a past day."""
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
-    now = utcnow()
+    now = now or utcnow()
     start, end = last_day(now)
 
     flows = {

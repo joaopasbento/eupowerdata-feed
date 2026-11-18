@@ -78,146 +78,69 @@ def fetch_prices_for_date(base, target_date):
 
 
 # ---------------------------------------------------------------------------
-# Generation mix for one past date
+# Generation mix and cross-border flows for one past date
 # ---------------------------------------------------------------------------
+#
+# Both are read by the code of the regular runs (fetch_entsoe.fetch_generation
+# and fetch_flows), given the end of the day as the instant they are of: the
+# last second of the UTC day, which is what a file of the backfill has always
+# had (the last value of the day). That code asks for the 24 hours before the
+# instant, reads the real length of the intervals, puts back the points
+# curveType A03 leaves out, leaves consumption out of the mix, asks for
+# Italy's generation by the country and for three borders between the zones
+# that touch, and makes the `net` block only from the pairs that have a
+# corridor. The readers that were here before (fetch_entsoe.parse_generation_xml
+# and parse_flow_xml, one whole day at a time) did none of that.
+#
+# The regular runs send their requests in parallel, up to 240 a minute. A
+# backfill runs beside them, on the same API key, and ENTSO-E suspends a key
+# that goes over 400 a minute: here they go out 100 a minute at most.
+
+DAY_BUDGET_S = 300            # the most one dataset of one day may take
+BACKFILL_INTERVAL_S = 0.6     # between request starts: 100 requests a minute
+BACKFILL_WORKERS = 6
+
+
+def end_of_day(target_date):
+    """The instant a backfilled file is of: the last second of the UTC day."""
+    return datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59, tzinfo=timezone.utc)
+
+
+def _gently():
+    """Slow the requests of fetch_entsoe down to what a backfill may send."""
+    if fe.MIN_INTERVAL_S < BACKFILL_INTERVAL_S:
+        fe.MIN_INTERVAL_S = BACKFILL_INTERVAL_S
+        fe._throttle = fe._Throttle(BACKFILL_INTERVAL_S)
+        fe.MAX_WORKERS = BACKFILL_WORKERS
+
 
 def fetch_gen_for_date(base, target_date):
-    """Fetch ENTSO-E generation mix (Actual Generation per Production Type,
-    documentType A75 / processType A16) for a specific UTC date.
-
-    Matches the shape of fetch_entsoe.fetch_generation() so Overview-map JS
-    can treat historical and live snapshots interchangeably.
-    """
-    start = target_date.strftime('%Y%m%d') + '0000'
-    end_dt = target_date + timedelta(days=1)
-    end = end_dt.strftime('%Y%m%d') + '0000'
-
-    gen = {
+    """The generation mix of each zone at the end of a past UTC day, in the
+    shape of generation-mix.json, with `date` and the source marked as
+    backfilled."""
+    _gently()
+    got = fe.fetch_generation(base, time.monotonic() + DAY_BUDGET_S, now=end_of_day(target_date))
+    return {
         'updated': datetime.now(timezone.utc).isoformat(),
         'date': target_date.strftime('%Y-%m-%d'),
         'source': 'ENTSO-E Transparency Platform (backfilled)',
-        'zones': {},
+        'zones': got['zones'],
     }
 
-    # Same zone list as live fetcher: main countries + Nordic/Baltic sub-zones
-    zone_list = list(fe.GEN_COUNTRIES) + ['NO1', 'NO2', 'SE1', 'SE3', 'DK1', 'DK2']
-
-    for code in zone_list:
-        eic = fe.ZONES.get(code, '')
-        if not eic:
-            continue
-        params = urllib.parse.urlencode({
-            'securityToken': fe.API_KEY,
-            'documentType': 'A75',
-            'processType': 'A16',
-            'in_Domain': eic,
-            'periodStart': start,
-            'periodEnd': end,
-        })
-        xml = fe.http_get(f'{base}?{params}')
-        if not xml:
-            continue
-        mix = fe.parse_generation_xml(xml)
-        if mix:
-            total = sum(mix.values())
-            renewable = sum(mix.get(rt, 0) for rt in fe.RENEWABLE_TYPES)
-            gen['zones'][code] = {
-                'mix': mix,
-                'total_mw': total,
-                'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
-            }
-        time.sleep(0.2)
-
-    # Nordic consolidation (same as live fetcher)
-    for country, zone_codes in fe.CONSOLIDATE.items():
-        zone_data = [gen['zones'].get(zc) for zc in zone_codes if zc in gen['zones']]
-        if not zone_data:
-            continue
-        merged_mix = {}
-        for z in zone_data:
-            for k, v in z.get('mix', {}).items():
-                merged_mix[k] = merged_mix.get(k, 0) + v
-        total = sum(merged_mix.values())
-        renewable = sum(merged_mix.get(rt, 0) for rt in fe.RENEWABLE_TYPES)
-        gen['zones'][country] = {
-            'mix': merged_mix,
-            'total_mw': total,
-            'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
-        }
-        for zc in zone_codes:
-            gen['zones'].pop(zc, None)
-
-    return gen
-
-
-# ---------------------------------------------------------------------------
-# Cross-border flows for one past date
-# ---------------------------------------------------------------------------
 
 def fetch_flows_for_date(base, target_date):
-    """Fetch ENTSO-E physical flows (documentType A11) for a specific UTC date.
-
-    Returns the same dict shape as fetch_entsoe.fetch_flows() so the archived
-    file is interchangeable with files produced by the regular cron. Feeds
-    the Grid Monitor map historical date filter.
-
-    target_date: a datetime.date object (UTC date).
-    """
-    start = target_date.strftime('%Y%m%d') + '0000'
-    end_dt = target_date + timedelta(days=1)
-    end = end_dt.strftime('%Y%m%d') + '0000'
-
-    flows = {
+    """The flows of each corridor at the end of a past UTC day and the net
+    flow of each pair, in the shape of cross-border-flows.json, with `date`
+    and the source marked as backfilled."""
+    _gently()
+    got = fe.fetch_flows(base, time.monotonic() + DAY_BUDGET_S, now=end_of_day(target_date))
+    return {
         'updated': datetime.now(timezone.utc).isoformat(),
         'date': target_date.strftime('%Y-%m-%d'),
         'source': 'ENTSO-E Transparency Platform (backfilled)',
-        'corridors': {},
-        'net': {},
+        'corridors': got['corridors'],
+        'net': got['net'],
     }
-
-    for frm, to in fe.FLOW_CORRIDORS:
-        from_eic = fe.FLOW_ZONES.get(frm, '')
-        to_eic   = fe.FLOW_ZONES.get(to, '')
-        if not from_eic or not to_eic:
-            continue
-        params = urllib.parse.urlencode({
-            'securityToken': fe.API_KEY,
-            'documentType':  'A11',
-            'in_Domain':     to_eic,
-            'out_Domain':    from_eic,
-            'periodStart':   start,
-            'periodEnd':     end,
-        })
-        xml = fe.http_get(f'{base}?{params}')
-        if not xml:
-            continue
-        values = fe.parse_flow_xml(xml)
-        if values:
-            flows['corridors'][f'{frm}→{to}'] = {
-                'from':   frm,
-                'to':     to,
-                'latest': values[-1],
-                'values': values,
-            }
-        time.sleep(0.15)   # gentle on the ENTSO-E API
-
-    # Derive net flow per unordered pair — matches fetch_entsoe.fetch_flows()
-    processed = set()
-    for frm, to in fe.FLOW_CORRIDORS:
-        pair = '-'.join(sorted([frm, to]))
-        if pair in processed:
-            continue
-        processed.add(pair)
-        fwd = flows['corridors'].get(f'{frm}→{to}', {}).get('latest', {}).get('mw', 0)
-        rev = flows['corridors'].get(f'{to}→{frm}', {}).get('latest', {}).get('mw', 0)
-        net = fwd - rev
-        flows['net'][pair] = {
-            'from':   frm if net >= 0 else to,
-            'to':     to  if net >= 0 else frm,
-            'net_mw': abs(round(net)),
-        }
-
-    return flows
 
 
 # ---------------------------------------------------------------------------
