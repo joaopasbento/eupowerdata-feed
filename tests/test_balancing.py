@@ -196,7 +196,8 @@ class Feed(unittest.TestCase):
         entsoe = Entsoe(self.ANSWERS if answers is None else answers)
         log = io.StringIO()
         with mock.patch.dict('os.environ', {'ENTSOE_API_KEY': KEY}), contextlib.redirect_stdout(log):
-            code = fb.main(now=when, get=entsoe, budget=fc.Budget(budget), interval=0)
+            code = fb.main(now=when, get=entsoe, budget=fc.Budget(budget), interval=0,
+                           update_rates=lambda now: False)          # the ECB is not asked in the tests
         return code, entsoe, log.getvalue()
 
     def doc(self):
@@ -252,7 +253,108 @@ class ARun(Feed):
         asked = {params['controlArea_Domain'] for params in entsoe.asked}
         self.assertNotIn(fb.fe.ZONES['MD'], asked)
         self.assertNotIn(fb.fe.ZONES['GB'], asked)
-        self.assertEqual(len(entsoe.asked), 3 * len(fb.AREAS))
+        # Three requests for each zone (the two processes of 17.1.F and PICASSO), and two more for Italy,
+        # which is asked for 17.1.F by two areas.
+        self.assertEqual(len(entsoe.asked), 3 * len(fb.AREAS) + 2)
+
+
+class NotInEuros(Feed):
+
+    POLAND = '10YPL-AREA-----S'
+
+    def rates(self, table):
+        with open('data/fx-rates.json', 'w') as f:
+            json.dump({'updated': 'u', 'rates': table}, f)
+
+    def test_a_zone_in_another_currency_has_its_prices_in_euros_too_with_the_rate_and_its_day(self):
+        self.rates({'PLN': {'2026-11-13': 4.4, '2026-11-17': 4.5, '2026-11-18': 4.4118}})
+        self.run_at(ASKED_AT)
+        poland = self.doc()['afrr_activated']['zones']['PL']
+        day = poland['days']['2026-11-17']
+        self.assertEqual((poland['currency'], day['fx_rate'], day['fx_date']), ('PLN', 4.5, '2026-11-17'))
+        # The first upward period of 17 Nov: 1 568.62 zloty, 348.58 euros at 4.5.
+        self.assertEqual((day['up'][0], day['up_eur'][0]), (1568.62, 348.58))
+        self.assertEqual([value is None for value in day['down_eur']], [value is None for value in day['down']])
+        self.assertEqual(poland['days']['2026-11-18']['fx_rate'], 4.4118)
+
+    def test_while_the_days_rate_is_not_out_the_last_one_published_is_used(self):
+        self.rates({'PLN': {'2026-11-13': 4.4}})
+        self.run_at(ASKED_AT)
+        day = self.doc()['afrr_activated']['zones']['PL']['days']['2026-11-18']
+        self.assertEqual((day['fx_rate'], day['fx_date']), (4.4, '2026-11-13'))
+
+    def test_with_no_rate_the_prices_stay_as_published_and_there_are_none_in_euros(self):
+        self.run_at(ASKED_AT)
+        day = self.doc()['afrr_activated']['zones']['PL']['days']['2026-11-18']
+        self.assertEqual(sorted(day), ['down', 'periods', 'start', 'up'])
+
+    def test_the_bosnian_mark_is_at_its_fixed_rate(self):
+        read = dict(fb.read_activated(sample('balancing_A16_PL.xml')), currency='BAM')
+        entry = fb.activated_entry('x', 'A16', read, date(2026, 11, 18), fb.fx_rates.Rates({}))
+        day = entry['days']['2026-11-17']
+        self.assertEqual((day['fx_rate'], day['fx_date'], day['up_eur'][0]), (1.95583, None, 802.02))
+
+    def test_a_zone_in_euros_has_nothing_added(self):
+        self.rates({'PLN': {'2026-11-18': 4.4118}})
+        self.run_at(ASKED_AT)
+        self.assertEqual(sorted(self.doc()['afrr_activated']['zones']['ES']['days']['2026-11-18']),
+                         ['down', 'periods', 'start', 'up'])
+
+    def test_the_rates_are_brought_up_to_date_before_they_are_used(self):
+        called = []
+        entsoe = Entsoe(self.ANSWERS)
+        with mock.patch.dict('os.environ', {'ENTSOE_API_KEY': KEY}), contextlib.redirect_stdout(io.StringIO()):
+            fb.main(now=ASKED_AT, get=entsoe, budget=fc.Budget(60), interval=0, update_rates=called.append)
+        self.assertEqual(called, [ASKED_AT])
+
+    def test_the_ecb_failing_does_not_stop_the_step(self):
+        def broken(now):
+            raise OSError('no network')
+        entsoe = Entsoe(self.ANSWERS)
+        log = io.StringIO()
+        with mock.patch.dict('os.environ', {'ENTSOE_API_KEY': KEY}), contextlib.redirect_stdout(log):
+            code = fb.main(now=ASKED_AT, get=entsoe, budget=fc.Budget(60), interval=0, update_rates=broken)
+        self.assertEqual(code, 0)
+        self.assertIn('Exchange rates not brought up to date: OSError: no network', log.getvalue())
+
+
+class ItalyByTwoAreas(Feed):
+
+    COUNTRY, NORTH = '10YIT-GRTN-----B', fb.fe.ZONES['IT']
+
+    def italy(self, answers):
+        _code, entsoe, _log = self.run_at(ASKED_AT, answers + self.ANSWERS)
+        return self.doc()['afrr_activated']['zones'].get('IT'), entsoe
+
+    def test_is_asked_for_by_the_country_and_by_the_north_zone_in_both_processes(self):
+        _entry, entsoe = self.italy([])
+        asked = {(p['processType'], p['controlArea_Domain']) for p in entsoe.asked if p['processType'] in ('A16', 'A68')
+                 and p['controlArea_Domain'] in (self.COUNTRY, self.NORTH)}
+        self.assertEqual(asked, {('A16', self.COUNTRY), ('A16', self.NORTH), ('A68', self.COUNTRY), ('A68', self.NORTH)})
+
+    def test_the_area_that_has_prices_stays_and_the_file_says_which(self):
+        entry, _entsoe = self.italy([({'processType': 'A16', 'controlArea_Domain': self.NORTH}, 'balancing_A16_IT.xml')])
+        self.assertEqual((entry['eic'], entry['area'], entry['process']), (self.NORTH, 'North bidding zone', 'A16'))
+
+    def test_the_country_stays_when_it_is_the_one_with_prices(self):
+        entry, _entsoe = self.italy([({'processType': 'A68', 'controlArea_Domain': self.COUNTRY}, 'balancing_A68_ES.xml')])
+        self.assertEqual((entry['eic'], entry['area'], entry['process']),
+                         (self.COUNTRY, 'control area of the country', 'A68'))
+
+    def test_with_both_the_one_whose_prices_go_furthest_stays(self):
+        entry, _entsoe = self.italy([
+            ({'processType': 'A16', 'controlArea_Domain': self.NORTH}, 'balancing_A16_IT.xml'),         # up to 17 Nov 13:00
+            ({'processType': 'A68', 'controlArea_Domain': self.COUNTRY}, 'balancing_A68_ES.xml')])      # up to 18 Nov 17:15
+        self.assertEqual((entry['eic'], entry['data_time']), (self.COUNTRY, '2026-11-18T17:15:00+00:00'))
+
+    def test_with_neither_italy_is_listed_as_not_published(self):
+        entry, _entsoe = self.italy([])
+        self.assertIsNone(entry)
+        self.assertIn('IT', self.doc()['afrr_activated']['not_published']['A16'])
+
+    def test_the_other_zones_have_no_area(self):
+        self.run_at(ASKED_AT)
+        self.assertNotIn('area', self.doc()['afrr_activated']['zones']['PT'])
 
 
 class TheNextRuns(Feed):
