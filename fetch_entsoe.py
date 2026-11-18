@@ -1374,6 +1374,19 @@ def fetch_prices(base, deadline=None, intervals=None):
     return prices
 
 
+def generation_entry(got):
+    """A zone of generation-mix.json from what latest_generation() read."""
+    mix = got['mix']
+    total = sum(mix.values())
+    renewable = sum(mix.get(rt, 0) for rt in RENEWABLE_TYPES)
+    return {
+        'mix': mix,
+        'total_mw': total,
+        'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
+        DATA_TIME: got[DATA_TIME],
+    }
+
+
 def fetch_generation(base, deadline=None, wind_solar=None, now=None):
     """The generation mix of each zone. With `wind_solar` (a dict), the series
     of solar and wind each answer had are put in it, by zone as asked for.
@@ -1415,15 +1428,7 @@ def fetch_generation(base, deadline=None, wind_solar=None, now=None):
     for code in codes:                   # same order as before, so the file keeps its zone order
         got = fetched.get(code)
         if got:
-            mix = got['mix']
-            total = sum(mix.values())
-            renewable = sum(mix.get(rt, 0) for rt in RENEWABLE_TYPES)
-            gen['zones'][code] = {
-                'mix': mix,
-                'total_mw': total,
-                'renewable_pct': round((renewable / total) * 100, 1) if total > 0 else 0,
-                DATA_TIME: got[DATA_TIME],
-            }
+            gen['zones'][code] = generation_entry(got)
 
     for country, zone_codes in CONSOLIDATE.items():
         zone_data = [gen['zones'].get(zc) for zc in zone_codes if zc in gen['zones']]
