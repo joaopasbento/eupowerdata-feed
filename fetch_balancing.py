@@ -36,7 +36,17 @@ What ENTSO-E has, as its answers of 18 Nov 2026 showed:
     (the series comes in pieces) and is null here. Zero is a price.
   - Prices are in the currency the operator publishes them in: zloty for
     Poland, lei for Romania, convertible marks for Bosnia. `currency` says
-    which; nothing is converted.
+    which, and `up` and `down` are as published. Such a zone also has the
+    prices in euros, `up_eur` and `down_eur`, with the rate they were
+    converted at and the day that rate is of (`fx_rate`, `fx_date`) in each
+    day: the ECB's reference rate of the delivery day or the last one
+    published before it, and a fixed 1.95583 for the Bosnian mark, for which
+    `fx_date` is null (fx_rates.py, which this step brings up to date).
+  - Italy is asked for twice: by the control area of the country, which is
+    what its PICASSO series is published under, and by the North bidding zone
+    the feed shows its prices for, which had three periods in two days when
+    it was the only one asked. The one that has prices stays (the most recent
+    when both do), and `eic` and `area` say which.
   - The PICASSO series (processType A67) has one value every 4 seconds, with
     curveType A03: a position left out repeats the one before, and a point
     written without a price means "no price from here on". It is published in
@@ -60,7 +70,8 @@ run that obtains nothing leaves the file exactly as it was.
     {updated, data_time, timezone,
      afrr_activated: {license, source, zones: {PT: {eic, process, currency,
          resolution_minutes, price_category, days: {"2026-11-16": {start,
-         periods, up: [...], down: [...]}}, data_time, fetched_at}},
+         periods, up: [...], down: [...][, up_eur, down_eur, fx_rate,
+         fx_date]}}, data_time, fetched_at[, area]}},
          not_published: {A16: {zone: time}, A68: {zone: time}}},
      afrr_cbmp: {license, source, zones: {ES: {eic, currency,
          resolution_seconds, days: {"2026-11-18": {start, quarters,
@@ -76,10 +87,12 @@ import collections
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 import carry_over
 import fetch_entsoe as fe
+import fx_rates
 from feed_common import (CC_BY, DAILY, DATA_TIME, HOURLY, SOURCE_TERMS, Budget, asked_recently, carry, due,
                          entsoe_answer, entsoe_ask, http_get, iso, latest, load_json, parse_time, period_intervals,
                          step_of, write_json)
@@ -107,6 +120,13 @@ DIRECTIONS = {'A01': 'up', 'A02': 'down'}
 AREAS = {code: eic for code, eic in fe.ZONES.items() if code not in fe.ELEXON_ZONES and code != 'MD'}
 AREAS['DE'] = '10YDE-EON------1'
 CBMP_AREAS = dict(AREAS, IT='10YIT-GRTN-----B')
+# Zones whose 17.1.F prices are asked for by more than one area: [(EIC, what it is)], the first preferred.
+ALTERNATIVES = {'IT': [(CBMP_AREAS['IT'], 'control area of the country'), (AREAS['IT'], 'North bidding zone')]}
+
+
+def areas_of(zone):
+    """[(EIC, what it is or None)] of the areas a zone's 17.1.F prices are asked for."""
+    return ALTERNATIVES.get(zone) or [(AREAS[zone], None)]
 ORDER = list(ALWAYS) + [code for code in AREAS if code not in ALWAYS]
 
 
@@ -179,10 +199,16 @@ def day_series(prices, day, step):
     return values
 
 
-def activated_entry(eic, process, read, today):
+def in_euros(values, rate):
+    return [None if value is None else _cents(float(Decimal(str(value)) / rate)) for value in values]
+
+
+def activated_entry(eic, process, read, today, rates=None, area=None):
     """A zone of the afrr_activated block from what read_activated() gave: the
     two most recent delivery days that have a price, of the day in course and
-    the DAYS_BACK before it. None when none of them has."""
+    the DAYS_BACK before it. None when none of them has. A zone that is not
+    in euros has each day in euros too, when `rates` (fx_rates.Rates) has a
+    rate for its currency."""
     days = {}
     last = None
     for back in range(DAYS_BACK + 1):
@@ -191,7 +217,14 @@ def activated_entry(eic, process, read, today):
         up, down = day_series(read['up'], day, read['step']), day_series(read['down'], day, read['step'])
         if all(v is None for v in up) and all(v is None for v in down):
             continue
-        days[day.isoformat()] = {'start': iso(start), 'periods': len(up), 'up': up, 'down': down}
+        block = {'start': iso(start), 'periods': len(up), 'up': up, 'down': down}
+        if read['currency'] not in (None, 'EUR') and rates is not None:
+            found = rates.rate(read['currency'], day)
+            if found:
+                rate, rate_day = found
+                block.update(up_eur=in_euros(up, rate), down_eur=in_euros(down, rate),
+                             fx_rate=float(rate), fx_date=rate_day)
+        days[day.isoformat()] = block
         priced = [at for prices in (read['up'], read['down']) for at in prices if start <= at < end]
         last = max([last] + priced) if last else max(priced)
         if len(days) == DAYS_SHOWN:
@@ -200,6 +233,7 @@ def activated_entry(eic, process, read, today):
         return None
     return {
         'eic': eic,
+        **({'area': area} if area else {}),
         'process': process,
         'currency': read['currency'],
         'resolution_minutes': int(read['step'].total_seconds() // 60),
@@ -360,9 +394,11 @@ def plan(previous, now):
             for process in PROCESSES:
                 if asked_recently((no_price.get(process) or {}).get(zone), now, again):
                     continue
-                jobs.append(((ACTIVATED, zone, process), f'{zone} 17.1.F {process}',
-                             dict(documentType='A84', processType=process, businessType='A96',
-                                  controlArea_Domain=AREAS[zone], **window)))
+                for eic, what in areas_of(zone):
+                    jobs.append(((ACTIVATED, zone, (process, eic)),
+                                 f'{zone} 17.1.F {process}' + (f' ({what})' if what else ''),
+                                 dict(documentType='A84', processType=process, businessType='A96',
+                                      controlArea_Domain=eic, **window)))
         entry = summaries.get(zone)
         start, end = cbmp_window(entry, now, today)
         behind = now - start > timedelta(hours=3)
@@ -376,11 +412,16 @@ def plan(previous, now):
     return first + rest
 
 
-def main(now=None, get=http_get, budget=None, interval=0.25):
+def main(now=None, get=http_get, budget=None, interval=0.25, update_rates=fx_rates.update):
     now = now or datetime.now(timezone.utc)
     today = carry_over.delivery_day(now)
     stamp = iso(now)
     previous = load_json(OUT_PATH)
+    try:
+        update_rates(now)                      # the ECB's rates of the day, when they may be out
+    except Exception as e:  # noqa: BLE001 - the rates the file has are used
+        print(f'  Exchange rates not brought up to date: {type(e).__name__}: {e}')
+    rates = fx_rates.load()
     jobs = plan(previous, now)
     print(f'Balancing prices: {len(jobs)} requests for delivery day {today} and the {DAYS_BACK} before')
     if not jobs:
@@ -389,7 +430,7 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
     answers = {key: entsoe_answer(response)
                for key, response in entsoe_ask(jobs, budget or Budget(BUDGET_S), get=get, interval=interval,
                                                 label='Balancing').items()}
-    asked = collections.defaultdict(dict)                     # (block, zone) -> {process: Answer}
+    asked = collections.defaultdict(dict)                     # (block, zone) -> {process or (process, area): Answer}
     for (block, zone, process), answer in answers.items():
         asked[(block, zone)][process] = answer
 
@@ -403,22 +444,28 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
         given = asked.get((ACTIVATED, zone))
         if not given:
             continue
-        entry = None
+        # Of each area, the first process that has prices; of the areas, the one whose prices go furthest.
+        entries = []
+        for eic, what in areas_of(zone):
+            for process in PROCESSES:
+                answer = given.get((process, eic))
+                read = read_activated(answer.documents[0]) if answer is not None and answer.documents else None
+                entry = activated_entry(eic, process, read, today, rates, what) if read else None
+                if entry:
+                    entries.append(entry)
+                    break
         for process in PROCESSES:
-            answer = given.get(process)
-            if answer is None:
-                continue
-            if answer.problem is None and not answer.documents:
-                no_price[process][zone] = stamp
-                continue
-            no_price[process].pop(zone, None)
-            read = read_activated(answer.documents[0]) if answer.documents else None
-            if read and entry is None:
-                entry = activated_entry(AREAS[zone], process, read, today)
-        if entry:
+            answers_of = [given[(process, eic)] for eic, _what in areas_of(zone) if (process, eic) in given]
+            if answers_of and all(a.problem is None and not a.documents for a in answers_of):
+                no_price[process][zone] = stamp             # ENTSO-E has no such prices for the zone
+            elif any(a.documents for a in answers_of):
+                no_price[process].pop(zone, None)
+        if entries:
+            entry = max(entries, key=lambda e: parse_time(e[DATA_TIME]))       # the first of them, when they tie
             obtained[zone] = entry
-            print(f"  {zone}: 17.1.F {entry['process']}, {', '.join(sorted(entry['days']))}, "
-                  f"up to {entry[DATA_TIME]}, {entry['currency']}")
+            euros = next((f", in euros at {day['fx_rate']}" for day in entry['days'].values() if 'fx_rate' in day), '')
+            print(f"  {zone}: 17.1.F {entry['process']}" + (f" by the {entry['area']}" if entry.get('area') else '')
+                  + f", {', '.join(sorted(entry['days']))}, up to {entry[DATA_TIME]}, {entry['currency']}{euros}")
         else:
             failed.add(zone)
     activated, kept, dropped = carry(before, obtained, failed, stamp, lambda zone, entry: True)
