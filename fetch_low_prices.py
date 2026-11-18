@@ -126,6 +126,17 @@ OMIE_SOURCE = ('OMIE: day-ahead market (marginalpdbc) and European intraday auct
 ENTSOE_SOURCE = 'ENTSO-E Transparency Platform, item 12.1.D: day-ahead prices'
 THRESHOLDS = {'negative': 'price < 0', 'zero': 'price = 0', 'low': '0 < price <= 5', 'unit': 'EUR/MWh'}
 COUNTED = ('negative_h', 'zero_h', 'low_h')
+# Moldova's exchange opened on 10 Dec 2025 and until June 2026 published the prices of a market with
+# hardly any trade (2.5 to 6 times Romania's): it is counted from 1 July 2026 on. And never on a day it
+# has one hour only, which is a day it has no prices for (see ONE_HOUR_IS_NO_DAY in fetch_entsoe.py).
+COUNTED_FROM = {'MD': date(2026, 7, 1)}
+
+
+def is_counted(zone, day, count):
+    """Whether a zone's count of a day goes into the records and the totals."""
+    if zone in COUNTED_FROM and day < COUNTED_FROM[zone]:
+        return False
+    return not (zone in fe.ONE_HOUR_IS_NO_DAY and count.get('hours', 0) <= 1)
 
 
 # --- Counting ---
@@ -407,7 +418,8 @@ def update_entsoe(records, today, year_start):
         elif not isinstance(block, dict) or not block.get('zones'):
             counts = counts_from_archive(day)
         if counts:
-            ordered = {zone: counts[zone] for zone in fe.PRICE_ORDER if zone in counts}
+            ordered = {zone: counts[zone] for zone in fe.PRICE_ORDER
+                       if zone in counts and is_counted(zone, day, counts[zone])}
             record = records.setdefault(day, {'date': day.isoformat()})
             block = _block(record, ENTSOE, SOURCE_TERMS, ENTSOE_SOURCE)
             if block.get('zones') != ordered:
@@ -462,6 +474,8 @@ def entsoe_totals(records, days):
     for day in days:
         zones = ((records.get(day) or {}).get(ENTSOE) or {}).get('zones') or {}
         for zone, count in zones.items():
+            if not is_counted(zone, day, count):
+                continue                      # a record written before the zone's rule
             total = sums.setdefault(zone, {'days': 0, 'hours': 0, 'market_resolution_days': 0, 'hourly_days': 0,
                                            **{name: 0 for name in COUNTED}})
             total['days'] += 1

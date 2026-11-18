@@ -19,6 +19,14 @@ and the currency was the same). Each price of those days is divided by
 `max`, and the zone gains `converted_from`: "BGN", by which a day already
 converted is known and left alone. (The reading of the prices converts by
 itself from now on: see fetch_entsoe.py and fx_rates.py.)
+
+moldova. Moldova's exchange opened on 10 Dec 2025 and until June 2026 it
+published prices of a market with hardly any trade: on 79 of the 85 days the
+zone has in the archive up to 30 Jun 2026 its daily mean is 2.5 to 6 times
+Romania's. The zone MD is taken out of the price files up to 30 Jun 2026,
+that day included, and out of the later days on which it has one hour only
+(its delivery day begins an hour before the market's: see ONE_HOUR_IS_NO_DAY
+in fetch_entsoe.py, which keeps such days out of the archive from now on).
 """
 
 import glob
@@ -85,6 +93,29 @@ def convert_bgn():
     return converted, left
 
 
+MOLDOVA_FROM = date(2026, 7, 1)          # the first day Moldova's prices are kept
+
+
+def remove_moldova():
+    """Returns (days Moldova left for being before MOLDOVA_FROM, later days it left for having one hour)."""
+    early, thin = [], []
+    for day, path in price_files():
+        doc = _load(path)
+        zones = doc.get('zones') or {}
+        moldova = zones.get('MD')
+        if moldova is None:
+            continue
+        if day < MOLDOVA_FROM:
+            early.append(day)
+        elif len(moldova.get('prices') or []) <= 1:
+            thin.append(day)
+        else:
+            continue
+        del zones['MD']
+        write_json(path, doc, separators=(',', ':'))
+    return early, thin
+
+
 def main(argv):
     if argv[1:] == ['bgn']:
         converted, left = convert_bgn()
@@ -92,6 +123,13 @@ def main(argv):
               + (f', {converted[0]} to {converted[-1]}' if converted else ''))
         for day, why in left:
             print(f'  {day}: left alone - {why}')
+        return 0
+    if argv[1:] == ['moldova']:
+        early, thin = remove_moldova()
+        print(f'Moldova: taken out of {len(early)} files up to 30 Jun 2026'
+              + (f' ({early[0]} to {early[-1]})' if early else '')
+              + f' and of {len(thin)} later files in which it had one hour'
+              + (f' ({", ".join(str(day) for day in thin)})' if thin else ''))
         return 0
     print(__doc__)
     return 2
