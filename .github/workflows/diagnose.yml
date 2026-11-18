@@ -1,0 +1,33 @@
+name: Probe ENTSO-E answers for the new datasets (temporary)
+# TEMPORARY, 18 Nov 2026: started by hand only, before the feed starts to
+# publish balancing prices, outages and the wind and solar forecast. It writes
+# to the log the structure of ENTSO-E's answers (see probe_new_data.py), never
+# the API key nor an address with it, writes no file and commits nothing. To be
+# removed when that work is done.
+on:
+  workflow_dispatch:
+    inputs:
+      parts:
+        description: balancing, picasso, forecast, outages, generation (separated by commas), or all
+        type: string
+        default: all
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Ask ENTSO-E and print the structure of its answers
+        timeout-minutes: 22
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          PROBE: ${{ inputs.parts }}
+        run: python probe_new_data.py
