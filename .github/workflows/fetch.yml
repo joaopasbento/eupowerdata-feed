@@ -148,6 +148,13 @@ jobs:
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_balancing.py
+      - name: Outages of power plants and lines (ENTSO-E 15.1 and 10.1)
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_outages.py
       - name: Commit and push the newer datasets
         if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
@@ -168,7 +175,7 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Update balancing data $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git commit -m "Update balancing, outage, forecast and low-price data $(date -u '+%Y-%m-%d %H:%M UTC')"
           for attempt in 1 2 3; do
             if git pull --rebase origin main && git push; then
               exit 0
