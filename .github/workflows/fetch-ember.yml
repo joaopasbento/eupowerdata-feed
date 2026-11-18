@@ -1,0 +1,48 @@
+name: Fetch Ember yearly data
+
+# Ember's Yearly Electricity Data (CC BY 4.0) changes a few times a year. Once
+# a week the script asks whether the file has changed since the edition kept,
+# and only then downloads it (16 MB) and rewrites data/ember-yearly.json, which
+# merge_capacity.py reads in the 15-minute fetch.
+on:
+  schedule:
+    - cron: '23 5 * * 1'   # Mondays at 05:23 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Download the file even if Ember has not changed it'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-ember:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Fetch Ember's yearly figures
+        env:
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: python fetch_ember.py $FORCE
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ember-yearly.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update Ember yearly data $(date -u +'%Y-%m-%d %H:%M UTC')"
+            # The 15-minute fetch pushes to main too: rebase on top of it, then push.
+            git pull --rebase origin main
+            git push
+          fi

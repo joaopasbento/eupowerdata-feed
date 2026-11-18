@@ -87,7 +87,8 @@ jobs:
         timeout-minutes: 3
         run: python fetch_omie.py
       # Runs every time but only does something when the file is over 12 hours old.
-      - name: Installed capacity (ENTSO-E + RenewableNodes)
+      # No request: it reads data/capacity-installed.json and data/ember-yearly.json.
+      - name: Installed capacity (ENTSO-E + Ember)
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2

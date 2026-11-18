@@ -1,11 +1,11 @@
 {
-  "updated": "2026-11-18T10:24:26+00:00",
-  "source": "RenewableNodes.com",
+  "updated": "2026-11-18T20:49:56+00:00",
+  "source": "ENTSO-E Transparency Platform, installed capacity per production type (capacity); Ember, Yearly Electricity Data, edition of 2026-11-17, CC BY 4.0 (shares of the generation and their trend, and the capacity of a country ENTSO-E publishes none for)",
   "countries": {
     "PT": {
       "name": "Portugal",
       "capacity_mw": 13311,
-      "renewable_pct": 80.8,
+      "renewable_pct": 80.9,
       "solar_pct": 19.5,
       "wind_pct": 40.5,
       "hydro_pct": 34.9,
@@ -129,7 +129,7 @@
         42.2,
         40.7,
         35.9,
-        44.5,
+        44.6,
         50.2,
         48.7
       ],
@@ -225,7 +225,7 @@
       "solar_pct": 0,
       "wind_pct": 0,
       "hydro_pct": 100,
-      "bio_pct": 1.7,
+      "bio_pct": 1.6,
       "nuclear_pct": 29.9,
       "solar_mw": 0,
       "wind_mw": 0,
@@ -238,7 +238,7 @@
         66.6,
         58.3,
         63.2,
-        67.4,
+        67.5,
         67.8
       ],
       "population_m": 8.7,
@@ -287,7 +287,7 @@
       "target": 100,
       "target_year": 2030,
       "trend": [
-        78.5,
+        78.6,
         82.1,
         79.3,
         80.9,
@@ -302,7 +302,7 @@
     "SE": {
       "name": "Sweden",
       "capacity_mw": 39400,
-      "renewable_pct": 71.4,
+      "renewable_pct": 71.3,
       "solar_pct": 12.7,
       "wind_pct": 45.7,
       "hydro_pct": 41.6,
@@ -320,7 +320,7 @@
         68.3,
         69.4,
         69.4,
-        71.4
+        71.3
       ],
       "population_m": 10.5,
       "cap_source": "entsoe",
@@ -333,7 +333,7 @@
       "solar_pct": 0,
       "wind_pct": 13.1,
       "hydro_pct": 86.6,
-      "bio_pct": 0.2,
+      "bio_pct": 0.1,
       "nuclear_pct": 0,
       "solar_mw": 17,
       "wind_mw": 5139,
@@ -383,7 +383,7 @@
     "GR": {
       "name": "Greece",
       "capacity_mw": 17211,
-      "renewable_pct": 47.8,
+      "renewable_pct": 47.7,
       "solar_pct": 52.3,
       "wind_pct": 30.4,
       "hydro_pct": 15.7,
@@ -401,7 +401,7 @@
         43.4,
         49.8,
         49.2,
-        47.8
+        47.7
       ],
       "population_m": 10.4,
       "cap_source": "entsoe",
@@ -410,7 +410,7 @@
     "IE": {
       "name": "Ireland",
       "capacity_mw": 3000,
-      "renewable_pct": 47.2,
+      "renewable_pct": 47.8,
       "solar_pct": 0,
       "wind_pct": 100,
       "hydro_pct": 0,
@@ -428,7 +428,7 @@
         39.2,
         45.3,
         46.5,
-        47.2
+        47.8
       ],
       "population_m": 5.1,
       "cap_source": "entsoe",
@@ -436,16 +436,16 @@
     },
     "GB": {
       "name": "United Kingdom",
-      "capacity_mw": 23400,
+      "capacity_mw": 64260,
       "renewable_pct": 51.8,
-      "solar_pct": 6.6,
-      "wind_pct": 29.4,
-      "hydro_pct": 1.8,
+      "solar_pct": 33.7,
+      "wind_pct": 52,
+      "hydro_pct": 3.4,
       "bio_pct": 13.9,
       "nuclear_pct": 12.4,
-      "solar_mw": 1544,
-      "wind_mw": 6880,
-      "hydro_mw": 421,
+      "solar_mw": 21660,
+      "wind_mw": 33400,
+      "hydro_mw": 2190,
       "target": 100,
       "target_year": 2035,
       "trend": [
@@ -458,13 +458,13 @@
         51.8
       ],
       "population_m": 67.3,
-      "cap_source": "rn",
-      "cap_year": null
+      "cap_source": "ember",
+      "cap_year": 2025
     },
     "RO": {
       "name": "Romania",
       "capacity_mw": 10866,
-      "renewable_pct": 47.2,
+      "renewable_pct": 47.1,
       "solar_pct": 14.6,
       "wind_pct": 27.9,
       "hydro_pct": 56.4,
@@ -482,7 +482,7 @@
         43.1,
         49.8,
         46.5,
-        47.2
+        47.1
       ],
       "population_m": 19,
       "cap_source": "entsoe",
@@ -491,7 +491,7 @@
     "BG": {
       "name": "Bulgaria",
       "capacity_mw": 9230,
-      "renewable_pct": 32.8,
+      "renewable_pct": 32.9,
       "solar_pct": 66.1,
       "wind_pct": 7.7,
       "hydro_pct": 25.5,
@@ -626,7 +626,7 @@
     "LT": {
       "name": "Lithuania",
       "capacity_mw": 3795,
-      "renewable_pct": 77.6,
+      "renewable_pct": 77.7,
       "solar_pct": 47.1,
       "wind_pct": 44.3,
       "hydro_pct": 3.4,
@@ -644,7 +644,7 @@
         74.8,
         83.8,
         84.3,
-        77.6
+        77.7
       ],
       "population_m": 2.8,
       "cap_source": "entsoe",
@@ -653,7 +653,7 @@
     "SI": {
       "name": "Slovenia",
       "capacity_mw": 2593,
-      "renewable_pct": 39.5,
+      "renewable_pct": 39.6,
       "solar_pct": 54.4,
       "wind_pct": 0.1,
       "hydro_pct": 44.2,
@@ -680,7 +680,7 @@
     "HR": {
       "name": "Croatia",
       "capacity_mw": 3803,
-      "renewable_pct": 76.2,
+      "renewable_pct": 76.3,
       "solar_pct": 11.8,
       "wind_pct": 32.6,
       "hydro_pct": 49.3,
@@ -698,7 +698,7 @@
         63.5,
         70.1,
         73.4,
-        76.4
+        76.3
       ],
       "population_m": 3.9,
       "cap_source": "entsoe",
@@ -707,7 +707,7 @@
     "RS": {
       "name": "Serbia",
       "capacity_mw": 3354,
-      "renewable_pct": 28.3,
+      "renewable_pct": 28.5,
       "solar_pct": 2.2,
       "wind_pct": 22.1,
       "hydro_pct": 75.7,
@@ -719,13 +719,13 @@
       "target": 40,
       "target_year": 2030,
       "trend": [
-        28.5,
-        27.3,
-        33.5,
-        28.2,
-        35,
-        32,
-        28.3
+        28.6,
+        27.4,
+        33.6,
+        28.4,
+        35.2,
+        32.3,
+        28.5
       ],
       "population_m": 6.6,
       "cap_source": "entsoe",
@@ -734,7 +734,7 @@
     "ME": {
       "name": "Montenegro",
       "capacity_mw": 767,
-      "renewable_pct": 74.9,
+      "renewable_pct": 74.6,
       "solar_pct": 0,
       "wind_pct": 15.4,
       "hydro_pct": 84.6,
@@ -752,7 +752,7 @@
         53.2,
         60.9,
         59.7,
-        74.5
+        74.6
       ],
       "population_m": 0.62,
       "cap_source": "entsoe",
@@ -761,7 +761,7 @@
     "MK": {
       "name": "North Macedonia",
       "capacity_mw": 928,
-      "renewable_pct": 50.8,
+      "renewable_pct": 45.4,
       "solar_pct": 16.7,
       "wind_pct": 13.1,
       "hydro_pct": 69.4,
@@ -773,13 +773,13 @@
       "target": 38,
       "target_year": 2030,
       "trend": [
-        22.8,
-        27.7,
-        29.8,
-        27.1,
-        32.2,
-        39.5,
-        50.8
+        22.9,
+        27.9,
+        29.9,
+        27.6,
+        33.2,
+        40.5,
+        45.4
       ],
       "population_m": 2.1,
       "cap_source": "entsoe",
@@ -800,7 +800,7 @@
       "target": 100,
       "target_year": 2030,
       "trend": [
-        null,
+        100,
         100,
         100,
         100,
@@ -815,7 +815,7 @@
     "BA": {
       "name": "Bosnia Herzegovina",
       "capacity_mw": 2260,
-      "renewable_pct": 43.3,
+      "renewable_pct": 43.6,
       "solar_pct": 10.8,
       "wind_pct": 13.6,
       "hydro_pct": 75.6,
@@ -828,12 +828,12 @@
       "target_year": 2030,
       "trend": [
         36.7,
-        29.2,
-        39,
+        29.1,
+        38.9,
         32,
-        43.1,
+        42.8,
         40.3,
-        43.3
+        43.6
       ],
       "population_m": 3.2,
       "cap_source": "entsoe",
@@ -842,7 +842,7 @@
     "XK": {
       "name": "Kosovo",
       "capacity_mw": 204,
-      "renewable_pct": 10.6,
+      "renewable_pct": 10.8,
       "solar_pct": 0,
       "wind_pct": 66.7,
       "hydro_pct": 33.3,
@@ -858,9 +858,9 @@
         5.4,
         6.5,
         6.5,
-        12.6,
-        8.6,
-        10.6
+        12.8,
+        8.8,
+        10.8
       ],
       "population_m": 1.8,
       "cap_source": "entsoe",
