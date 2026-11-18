@@ -853,7 +853,7 @@ def _last_with_generation(all_series, before):
     return None
 
 
-def latest_generation(xml_str, now):
+def latest_generation(xml_str, now, all_series=None):
     """The generation mix an A75 answer has for `now`:
 
         {'mix': {technology: MW}, 'data_time': ISO time, 'newest': ISO time,
@@ -883,8 +883,12 @@ def latest_generation(xml_str, now):
     last values add up to zero the mix is read from the last interval before
     it in which they do not, with the time of that interval (`zero_at` says
     which interval was passed over); with no such interval in the answer, the
-    country has no mix: None, and counts as not obtained in the run."""
-    all_series = read_series(xml_str)
+    country has no mix: None, and counts as not obtained in the run.
+
+    `all_series` is the answer as read_series() gives it, for a caller that
+    has read it already."""
+    if all_series is None:
+        all_series = read_series(xml_str)
     values = _values_at(all_series, now)
     generation = [value for value in values if not value[1]]
     if not generation:
@@ -912,6 +916,22 @@ def latest_generation(xml_str, now):
         'consumption': [(PSR_MAP.get(code, 'Other'), at.isoformat(), mw)
                         for code, consumption, at, mw in values if consumption],
     }
+
+
+def read_generation(xml_str, now):
+    """latest_generation() and, under 'wind_solar', the series the answer has
+    for solar and wind, for wind_solar_actual.py to keep (the forecast error
+    is worked out from them: see fetch_forecast.py). They are not published
+    in generation-mix.json, and failing to read them changes nothing else."""
+    all_series = read_series(xml_str)
+    got = latest_generation(xml_str, now, all_series)
+    if got:
+        try:
+            import wind_solar_actual
+            got['wind_solar'] = wind_solar_actual.series_of(all_series, now, _every_interval)
+        except Exception as e:  # noqa: BLE001 - never the reason a zone has no mix
+            log(f'  Wind and solar series not read: {type(e).__name__}: {e}')
+    return got
 
 
 def latest_flow(xml_str, now):
@@ -1225,7 +1245,9 @@ def fetch_prices(base, deadline=None):
     return prices
 
 
-def fetch_generation(base, deadline=None):
+def fetch_generation(base, deadline=None, wind_solar=None):
+    """The generation mix of each zone. With `wind_solar` (a dict), the series
+    of solar and wind each answer had are put in it, by zone as asked for."""
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
     now = utcnow()
@@ -1250,9 +1272,12 @@ def fetch_generation(base, deadline=None):
             'periodEnd': end,
         })
         jobs.append((code, code, f'{base}?{params}'))
-    fetched = fetch_all('Generation', jobs, lambda text: latest_generation(text, now),
+    fetched = fetch_all('Generation', jobs, lambda text: read_generation(text, now),
                         lambda got: (f"{len(got['mix'])} types, {sum(got['mix'].values()):.0f} MW, "
                                      f"{_data_of(got, now)}"), deadline)
+    if wind_solar is not None:
+        wind_solar.update({code: fetched[code]['wind_solar'] for code in codes
+                           if fetched.get(code) and fetched[code].get('wind_solar')})
 
     for code in codes:                   # same order as before, so the file keeps its zone order
         got = fetched.get(code)
@@ -1762,6 +1787,19 @@ def publish(doc, key, path, order, dataset):
     return len(fresh)
 
 
+def keep_wind_solar(found):
+    """Keep the day's series of solar and wind that the generation answers had
+    (wind_solar_actual.py). After the generation mix is published, and never
+    the reason a run fails."""
+    try:
+        import wind_solar_actual
+        count = wind_solar_actual.save(found, utcnow())
+        if count:
+            print(f'Kept the wind and solar series of the day for {count} zones ({wind_solar_actual.PATH})')
+    except Exception as e:  # noqa: BLE001
+        print(f'  Wind and solar series not kept: {type(e).__name__}: {e}')
+
+
 def write_status(status, run_started):
     """status.json: the run's outcome plus, for each of the three files as they
     are published now, how many entries it has, how many of them this run
@@ -1830,11 +1868,13 @@ def main():
         refresh_archive_index()
 
     print('\nFetching generation mix...')
-    gen = fetch_generation(base, next_deadline())
+    wind_solar = {}
+    gen = fetch_generation(base, next_deadline(), wind_solar)
     print(f"  → {len(gen['zones'])} zones\n")
     gen_count = publish(gen, 'zones', 'data/generation-mix.json', GEN_ORDER, 'generation-mix')
     if gen_count > 0:
         refresh_archive_index()
+    keep_wind_solar(wind_solar)
 
     print('\nFetching cross-border flows...')
     flows = fetch_flows(base, next_deadline())
