@@ -255,6 +255,16 @@ class ARun(InADirectory):
         _code, omie, _log = self.run_at(at('2026-02-02 12:30:00'))          # 13:30 in Madrid
         self.assertIn('marginalpdbc_20260203.1', omie.asked)
 
+    def test_the_time_omie_was_last_read_stays_when_a_run_reads_nothing_of_it(self):
+        self.run_at(MORNING)
+        os.makedirs('data', exist_ok=True)
+        pi.save({'ES': [(at('2026-02-01 23:00'), timedelta(hours=1), Decimal('40'))]}, date(2026, 2, 2),
+                MORNING + timedelta(minutes=15))                    # new prices of the day: the file is written again
+        _code, omie, _log = self.run_at(MORNING + timedelta(minutes=15))
+        self.assertEqual(omie.asked, [])
+        self.assertEqual((self.doc()['updated'], self.doc()['omie']['fetched_at']),
+                         ('2026-02-02T09:15:00+00:00', '2026-02-02T09:00:00+00:00'))
+
     def test_the_auctions_of_the_day_in_course_are_not_asked_for(self):
         _code, omie, _log = self.run_at(MORNING)
         self.assertFalse([name for name in omie.asked if name.startswith('marginalpibc_20260202')])
