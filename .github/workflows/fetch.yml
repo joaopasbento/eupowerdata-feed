@@ -163,6 +163,12 @@ jobs:
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_forecast.py
+      # Reads data/spot-prices-intervals.json, which the ENTSO-E step above keeps, and OMIE's files.
+      - name: Negative, zero and low prices (OMIE and ENTSO-E)
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        run: python fetch_low_prices.py
       - name: Commit and push the newer datasets
         if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
