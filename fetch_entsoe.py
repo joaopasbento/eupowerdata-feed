@@ -101,6 +101,17 @@ CONSOLIDATE = {
 
 GEN_COUNTRIES = ['PT', 'ES', 'DE', 'FR', 'IT', 'NL', 'BE', 'AT', 'CH', 'PL', 'FI', 'GR', 'IE', 'RO', 'BG', 'HU', 'CZ', 'EE', 'LV', 'LT', 'GB', 'SI', 'HR', 'RS', 'BA', 'ME', 'MK', 'AL', 'MD', 'XK']
 
+# The zone each country's generation is asked for, where it is not the one of
+# ZONES. ZONES['IT'] is Italy's North bidding zone, which is right for the
+# price shown as Italy's and for its northern borders, but its generation is
+# that of the North alone: 17 110 MW on 18 Nov 2026, when the country was
+# generating 31 866. The generation of Italy is asked for by the country's own
+# code. backfill_archive.py still goes by ZONES: the archive has the North.
+GEN_ZONES = {
+    **ZONES,
+    'IT': '10YIT-GRTN-----B',
+}
+
 CORRIDORS = [
     ('PT', 'ES'), ('ES', 'PT'), ('ES', 'FR'), ('FR', 'ES'),
     ('FR', 'DE'), ('DE', 'FR'), ('FR', 'GB'), ('GB', 'FR'),
@@ -1234,7 +1245,7 @@ def fetch_generation(base, deadline=None):
             'securityToken': API_KEY,
             'documentType': 'A75',
             'processType': 'A16',
-            'in_Domain': ZONES[code],
+            'in_Domain': GEN_ZONES[code],
             'periodStart': start,
             'periodEnd': end,
         })
