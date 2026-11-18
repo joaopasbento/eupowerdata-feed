@@ -82,7 +82,10 @@ file is only rewritten when a run brings something new.
          market_resolution_days, hourly_days}}}}}
 
 `omie.days` has the day in course, the day before and, once published, the
-day after. `data_time` is the start of the last period that has a price.
+day after. `updated` is the time of the run that last brought something new;
+`omie.fetched_at` the time a file of OMIE was last read and `entsoe.fetched_at`
+the time the prices of the day were obtained. `data_time` is the start of the
+last period that has a price.
 """
 
 import os
@@ -526,6 +529,9 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
                                if isinstance(records[day][OMIE].get(market), dict)}
              for day in (tomorrow, today, today - timedelta(days=1)) if isinstance((records.get(day) or {}).get(OMIE), dict)}
     today_zones = ((records.get(today) or {}).get(ENTSOE) or {}).get('zones') or {}
+    # When a file of OMIE was last read: in this run, or as the file had it. Not there until one is
+    # (the records of the year were filled in once, before this file existed).
+    omie_read = stamp if read else (previous.get(OMIE) or {}).get('fetched_at')
     year_zones = entsoe_totals(records, days)
     last = [at for day in (tomorrow, today) if (at := _last_period(records.get(day), day))]
     doc = {
@@ -538,7 +544,7 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
             'license': OMIE_TERMS,
             'source': OMIE_SOURCE,
             'spread': 'price of Portugal minus price of Spain, EUR/MWh',
-            'fetched_at': stamp if read else (previous.get(OMIE) or {}).get('fetched_at'),
+            **({'fetched_at': omie_read} if omie_read else {}),
             'days': shown,
             'year': {'year': today.year, 'from': year_start.isoformat(), 'to': today.isoformat(),
                      **omie_totals(records, days)},
