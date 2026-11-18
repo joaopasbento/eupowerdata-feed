@@ -27,6 +27,7 @@ import fetch_low_prices as lp
 import fetch_omie
 import price_intervals as pi
 from entsoe_real import sample
+from entsoe_xml import NO_DATA, price_document, price_series
 from test_carry_over import Feed as EntsoeFeed
 
 FIXTURES = os.path.join(os.path.dirname(__file__), 'fixtures', 'omie')
@@ -362,6 +363,91 @@ class TheOtherZones(InADirectory):
         # 00:00: (-10 + 4) / 2 = -3, negative. 01:00: (30 - 30) / 2 = 0, zero.
         self.assertEqual((counts['NO']['negative_h'], counts['NO']['zero_h'], counts['NO']['min']), (1, 1, -3))
         self.assertNotIn('NO1', counts)
+
+
+class CountingAYearAgain(InADirectory):
+    """--refill-entsoe: one request for each zone for the year, counted at the market's resolution."""
+
+    NOW = at('2026-01-04 10:00:00')                   # the year so far: 1 to 3 January
+
+    def answer(self, quarters_by_day):
+        """A44 for a zone: a list of 96 quarter-hourly prices for each day from 1 January."""
+        prices = [price for day in quarters_by_day for price in day]
+        return price_document(price_series('2025-12-31 23:00', prices, minutes=15))
+
+    def refill(self, answers):
+        asked = []
+
+        def ask(url):
+            params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+            asked.append(params)
+            return answers.get(params['in_Domain'], NO_DATA), None
+
+        log = io.StringIO()
+        with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), contextlib.redirect_stdout(log):
+            code = lp.refill_entsoe('https://entsoe.test/api', now=self.NOW, ask=ask, sleep=lambda seconds: None)
+        return code, asked, log.getvalue()
+
+    def record(self, day, zones, omie=None):
+        with open(lp.ARCHIVE_PATH.format(day=day), 'w') as f:
+            json.dump({'date': day, **({'omie': omie} if omie else {}),
+                       'entsoe': {'license': 'source-terms', 'source': 's', 'zones': zones}}, f)
+
+    HOURLY = {'resolution_minutes': 60, 'periods': 24, 'hours': 24, 'negative_h': 0, 'zero_h': 0, 'low_h': 0,
+              'min': 9.25, 'basis': 'hourly-means'}
+
+    def test_every_day_is_counted_at_the_markets_resolution(self):
+        # 1 Jan: three quarter-hours below zero in an hour whose mean is not. 2 Jan: nothing low. 3 Jan: no data.
+        first = [-1.0] * 3 + [40.0] * 93
+        self.record('2026-01-01', {'ES': self.HOURLY, 'FR': self.HOURLY})
+        self.record('2026-01-02', {'ES': self.HOURLY})
+        code, asked, log = self.refill({fe.ZONES['ES']: self.answer([first, [40.0] * 96])})
+        saved = self.doc(lp.ARCHIVE_PATH.format(day='2026-01-01'))['entsoe']['zones']
+        self.assertEqual(code, 0)
+        self.assertEqual(saved, {'ES': {'resolution_minutes': 15, 'periods': 96, 'hours': 24, 'negative_h': 0.75,
+                                        'zero_h': 0, 'low_h': 0, 'min': -1, 'basis': 'market-resolution'}})
+        self.assertEqual(self.doc(lp.ARCHIVE_PATH.format(day='2026-01-02'))['entsoe']['zones']['ES']['basis'],
+                         'market-resolution')
+        self.assertIn("zone-days before, by basis: {'hourly-means': 3}", log)
+
+    def test_one_request_for_each_zone_for_the_year(self):
+        self.record('2026-01-01', {'ES': self.HOURLY})
+        _code, asked, _log = self.refill({fe.ZONES['ES']: self.answer([[40.0] * 96] * 3)})
+        self.assertEqual(len(asked), len(fe.ZONES) - 1)                       # every zone but the United Kingdom
+        spain = [p for p in asked if p['in_Domain'] == fe.ZONES['ES']]
+        self.assertEqual((spain[0]['documentType'], spain[0]['periodStart'], spain[0]['periodEnd']),
+                         ('A44', '202512302300', '202601042300'))
+
+    def test_the_omie_part_of_a_record_is_not_touched(self):
+        omie = {'license': 'omie', 'day_ahead': {'periods': 96}}
+        self.record('2026-01-01', {'ES': self.HOURLY}, omie)
+        self.refill({fe.ZONES['ES']: self.answer([[40.0] * 96] * 3)})
+        self.assertEqual(self.doc(lp.ARCHIVE_PATH.format(day='2026-01-01'))['omie'], omie)
+
+    def test_a_zone_that_cannot_be_had_stops_it_and_nothing_is_written(self):
+        self.record('2026-01-01', {'ES': self.HOURLY})
+
+        def ask(url):
+            return None, 'timed out'
+
+        with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), contextlib.redirect_stdout(io.StringIO()):
+            code = lp.refill_entsoe('https://entsoe.test/api', now=self.NOW, ask=ask, sleep=lambda seconds: None)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.doc(lp.ARCHIVE_PATH.format(day='2026-01-01'))['entsoe']['zones'], {'ES': self.HOURLY})
+
+    def test_portugal_and_spain_are_set_against_omies_count_and_the_days_that_differ_are_named(self):
+        def omie(negative):
+            count = {'negative_h': negative, 'zero_h': 0, 'low_h': 0}
+            return {'license': 'omie', 'day_ahead': {'periods': 96, 'hours': 24, 'PT': count, 'ES': count}}
+        self.record('2026-01-01', {}, omie(0.75))
+        self.record('2026-01-02', {}, omie(1))
+        answer = self.answer([[-1.0] * 3 + [40.0] * 93, [40.0] * 96])
+        _code, _asked, log = self.refill({fe.ZONES['ES']: answer, fe.ZONES['PT']: answer})
+        self.assertIn('ES, 2 days: OMIE [1.75, 0, 0] hours negative, zero and low; from ENTSO-E [0.75, 0, 0] - NOT the same', log)
+        self.assertIn('2026-01-02 ES: OMIE [1, 0, 0], ENTSO-E [0, 0, 0]', log)
+        self.assertNotIn('2026-01-01 ES', log)
+        # Neither count is changed to fit the other.
+        self.assertEqual(self.doc(lp.ARCHIVE_PATH.format(day='2026-01-02'))['omie']['day_ahead']['ES']['negative_h'], 1)
 
 
 class ThePricesOfTheDayAsTheMarketPublishesThem(unittest.TestCase):

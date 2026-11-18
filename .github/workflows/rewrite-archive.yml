@@ -5,6 +5,10 @@ name: Rewrite parts of the archive
 #   italy-generation   Italy's generation by the country, not the North zone,
 #                      in the days before 18 Nov 2026: see "Italy's generation
 #                      in the archive" in backfill_archive.py.
+#   low-prices         The count of negative, zero and low prices of the
+#                      feed's zones at the market's resolution, in the records
+#                      of the year: see "Counting a year again" in
+#                      fetch_low_prices.py.
 #
 # It does not get in the way of the runs of fetch.yml: it asks ENTSO-E for one
 # thing at a time, it only writes files of the archive those runs do not
@@ -17,10 +21,10 @@ on:
       what:
         description: Which part to rewrite
         type: choice
-        options: [italy-generation]
+        options: [italy-generation, low-prices]
         required: true
       years:
-        description: Years, separated by spaces. Empty for every year there is something to do in
+        description: Years, separated by spaces. Empty for every year there is something to do in (low-prices - the year in course)
         required: false
         default: ''
 permissions:
@@ -49,3 +53,9 @@ jobs:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
           YEARS: ${{ inputs.years }}
         run: python backfill_archive.py --rewrite-italy-generation $YEARS
+      - name: Low prices at the market's resolution
+        if: ${{ inputs.what == 'low-prices' }}
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          YEARS: ${{ inputs.years }}
+        run: python fetch_low_prices.py --refill-entsoe $YEARS
