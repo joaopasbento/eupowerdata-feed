@@ -3,8 +3,8 @@ EU Power Data — ENTSO-E data fetcher
 Runs via GitHub Actions every 15 minutes.
 Outputs JSON files consumed by eupowerdata.com
 
-One run makes about 150 requests (36 price zones, 36 generation zones, 76 flow
-corridors, plus OMIP). They are sent in parallel, under a total time budget,
+One run makes about 170 requests (36 price zones, 36 generation zones, 100 flow
+links, plus OMIP). They are sent in parallel, under a total time budget,
 and each file is written as soon as its dataset is done — see "Run limits".
 
 Prices are those of the delivery day in course on the market's clock (Central
@@ -160,6 +160,42 @@ FLOW_CORRIDORS = [
     ('ME', 'AL'), ('AL', 'ME'), ('MK', 'AL'), ('AL', 'MK'),
     ('MK', 'XK'), ('XK', 'MK'), ('AL', 'XK'), ('XK', 'AL'),
 ]
+
+# Corridors that are asked for between other zones than those of FLOW_ZONES.
+#
+# A corridor of the file is between two countries, and FLOW_ZONES picks one
+# zone for each. For three borders that pair of zones does not touch, so
+# ENTSO-E has no flow for it, while it has for the zones that do (seen in its
+# answers of 17 Nov 2026):
+#
+#   - Lithuania-Sweden is the NordBalt cable, which lands in SE4;
+#   - Italy-Montenegro is the cable that lands in Italy's Centre-South zone;
+#   - Norway-Sweden is four borders between zones, NO1-SE3, NO3-SE2, NO4-SE1
+#     and NO4-SE2. The corridor is their sum, the whole border: the flow of
+#     NO1-SE3 alone would leave out what crosses further north.
+#
+# Each link is one request. A corridor of several links is published only
+# when every one of them answered: part of a border is not the border.
+LINK_ZONES = {
+    **FLOW_ZONES,
+    'NO3': '10YNO-3--------J', 'NO4': '10YNO-4--------9',
+    'SE2': '10Y1001A1001A45N', 'SE4': '10Y1001A1001A47J',
+    'IT-CSUD': '10Y1001A1001A71M',
+}
+FLOW_LINKS = {
+    ('NO', 'SE'): [('NO1', 'SE3'), ('NO3', 'SE2'), ('NO4', 'SE1'), ('NO4', 'SE2')],
+    ('SE', 'NO'): [('SE3', 'NO1'), ('SE2', 'NO3'), ('SE1', 'NO4'), ('SE2', 'NO4')],
+    ('LT', 'SE'): [('LT', 'SE4')],
+    ('SE', 'LT'): [('SE4', 'LT')],
+    ('IT', 'ME'): [('IT-CSUD', 'ME')],
+    ('ME', 'IT'): [('ME', 'IT-CSUD')],
+}
+
+
+def flow_links(frm, to):
+    """The (from, to) zones a corridor is asked for: itself, but for those of FLOW_LINKS."""
+    return FLOW_LINKS.get((frm, to), [(frm, to)])
+
 
 PSR_MAP = {
     'B01': 'Biomass', 'B02': 'Fossil Brown coal/Lignite',
@@ -885,6 +921,7 @@ def latest_flow(xml_str, now):
     last interval the answer has a value for."""
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     points = {}          # time -> MW, as published
+    intervals = {}       # time -> MW of every interval, the points left out put back
     covered = None
     for series in read_series(xml_str):
         for period in series['periods']:
@@ -894,6 +931,7 @@ def latest_flow(xml_str, now):
             in_force = _in_force(period, now)
             if in_force is None:
                 continue
+            intervals.update((at, value) for at, value in _every_interval(period) if at <= in_force[0])
             covered = in_force[0] if covered is None else max(covered, in_force[0])
             if period['variable'] and start < day <= in_force[0] and day not in points:
                 points[day] = _in_force(period, day)[1]     # the day before's last point
@@ -908,6 +946,31 @@ def latest_flow(xml_str, now):
         'latest': values[-1] if values else point(max(points)),
         'values': values,
         DATA_TIME: covered.isoformat(),
+        'intervals': intervals,           # for sum_flows(); not published
+    }
+
+
+def sum_flows(parts, now):
+    """A corridor made of several links, from what latest_flow() read of each:
+    in every interval all of them have a value for, their sum. Same shape as a
+    corridor of one link: `values` are the intervals of the current UTC day,
+    `latest` the last of them (or of the day before, when the day has none
+    yet) and `data_time` the last interval every link has, so that the sum is
+    as old as the oldest of its parts. None when they have no interval in
+    common."""
+    shared = sorted(set.intersection(*(set(part['intervals']) for part in parts)))
+    if not shared:
+        return None
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def point(at):
+        return {'time': at.strftime('%H:%M'), 'mw': round(sum(part['intervals'][at] for part in parts))}
+
+    values = [point(at) for at in shared if at >= day]
+    return {
+        'latest': values[-1] if values else point(shared[-1]),
+        'values': values,
+        DATA_TIME: shared[-1].isoformat(),
     }
 
 
@@ -1235,25 +1298,32 @@ def fetch_flows(base, deadline=None):
 
     jobs = []
     for frm, to in FLOW_CORRIDORS:
-        from_eic = FLOW_ZONES.get(frm, '')
-        to_eic = FLOW_ZONES.get(to, '')
-        if not from_eic or not to_eic:
-            continue
-        params = urllib.parse.urlencode({
-            'securityToken': API_KEY,
-            'documentType': 'A11',
-            'in_Domain': to_eic,
-            'out_Domain': from_eic,
-            'periodStart': start,
-            'periodEnd': end,
-        })
-        jobs.append(((frm, to), f'{frm}→{to}', f'{base}?{params}'))
+        for link in flow_links(frm, to):
+            from_eic = LINK_ZONES.get(link[0], '')
+            to_eic = LINK_ZONES.get(link[1], '')
+            if not from_eic or not to_eic:
+                continue
+            params = urllib.parse.urlencode({
+                'securityToken': API_KEY,
+                'documentType': 'A11',
+                'in_Domain': to_eic,
+                'out_Domain': from_eic,
+                'periodStart': start,
+                'periodEnd': end,
+            })
+            name = f'{frm}→{to}' + ('' if link == (frm, to) else f' ({link[0]}→{link[1]})')
+            jobs.append((((frm, to), link), name, f'{base}?{params}'))
     fetched = fetch_all('Flow', jobs, lambda text: latest_flow(text, now),
                         lambda got: (f"{got['latest']['mw']} MW, {len(got['values'])} points today, "
                                      f"{_data_of(got, now)}"), deadline)
 
     for frm, to in FLOW_CORRIDORS:       # same order as before, so the file keeps its corridor order
-        got = fetched.get((frm, to))
+        parts = [fetched.get(((frm, to), link)) for link in flow_links(frm, to)]
+        if not all(parts):
+            if any(parts):
+                print(f'  {frm}→{to}: only some of its links answered — not put together from part of the border')
+            continue
+        got = parts[0] if len(parts) == 1 else sum_flows(parts, now)
         if got:
             key = f'{frm}→{to}'
             flows['corridors'][key] = {
@@ -1730,7 +1800,7 @@ def main():
 
     # Each dataset gets a share of the time still left, in proportion to its
     # number of requests. One that finishes early leaves its time to the next.
-    requests_left = [len(ZONES), len(GEN_COUNTRIES) + 6, len(FLOW_CORRIDORS)]
+    requests_left = [len(ZONES), len(GEN_COUNTRIES) + 6, sum(len(flow_links(*pair)) for pair in FLOW_CORRIDORS)]
 
     def next_deadline():
         now = time.monotonic()
