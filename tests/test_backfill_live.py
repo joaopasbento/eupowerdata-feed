@@ -36,8 +36,10 @@ class APastDay(unittest.TestCase):
                     read[key] = parser(answers[given])
             return {key: value for key, value in read.items() if value}
 
+        # The slowing down of the requests changes fetch_entsoe for the rest of the process: put it back after.
         with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), mock.patch.object(fe, 'fetch_all', fetch_all), \
-                contextlib.redirect_stdout(io.StringIO()):
+                mock.patch.object(fe, 'MIN_INTERVAL_S', fe.MIN_INTERVAL_S), mock.patch.object(fe, '_throttle', fe._throttle), \
+                mock.patch.object(fe, 'MAX_WORKERS', fe.MAX_WORKERS), contextlib.redirect_stdout(io.StringIO()):
             return call('https://entsoe.test/api', DAY), asked
 
     def generation(self, mw_at_23, psr='B04', out=False):
@@ -98,7 +100,7 @@ class APastDay(unittest.TestCase):
     def test_the_requests_go_out_slower_than_those_of_the_regular_runs(self):
         with mock.patch.object(fe, 'MIN_INTERVAL_S', fe.MIN_INTERVAL_S), mock.patch.object(fe, '_throttle', fe._throttle), \
                 mock.patch.object(fe, 'MAX_WORKERS', fe.MAX_WORKERS):
-            self.run_with(backfill_archive.fetch_gen_for_date, {})
+            backfill_archive._gently()
             self.assertEqual((fe.MIN_INTERVAL_S, fe.MAX_WORKERS), (0.6, 6))
 
 

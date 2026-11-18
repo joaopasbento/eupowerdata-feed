@@ -706,6 +706,8 @@ def read_series(xml_str):
          'out': bool,                consumption (pumped storage), not generation
          'contract': 'A01' | None,   the kind of market a price is of (A01 day-ahead, A07 intraday)
          'sequence': 1 | None,       which auction of that market, when a zone has more than one
+         'currency': 'EUR' | None,   the currency of a price series
+         'domain': EIC | None,       the zone a price series is of
          'periods': [{'start', 'end', 'step', 'variable', 'points': [(position, value)]}]}
 
     The value of a point is its quantity (generation, flows) or its price
@@ -750,11 +752,15 @@ def read_series(xml_str):
             sequence = int(sequence.text)
         except (AttributeError, TypeError, ValueError):
             sequence = None
+        currency = ts.find(f'{prefix}currency_Unit.name')
+        domain = ts.find(f'{prefix}in_Domain.mRID')
         series.append({
             'psr': psr.text.strip() if psr is not None and psr.text else None,
             'out': ts.find(f'{prefix}outBiddingZone_Domain.mRID') is not None,
             'contract': contract.text.strip() if contract is not None and contract.text else None,
             'sequence': sequence,
+            'currency': currency.text.strip() if currency is not None and currency.text else None,
+            'domain': domain.text.strip() if domain is not None and domain.text else None,
             'periods': periods,
         })
     return series
@@ -1059,8 +1065,42 @@ def _data_of(parsed, now):
 #     22:00 UTC in winter. Each hour is taken from the Period that covers it,
 #     whatever the day that Period belongs to.
 
+#   - Not always in euros. Each series says its currency. Bulgaria's prices
+#     came in levs until January 2022 and were taken for euros (389 "EUR/MWh"
+#     on 1 Dec 2021, with Romania at 199). A price that is not in euros is
+#     converted with the rate of its delivery day (fx_rates.py: a fixed rate
+#     for the lev and the Bosnian mark, the ECB's reference rate for the
+#     others, the last one published while the day's own is not out). With no
+#     rate at all for a currency the zone has no prices for that day, and the
+#     log says so.
+
 DAY_AHEAD = 'A01'                 # contract_MarketAgreement.type of the day-ahead market
 HOUR = timedelta(hours=1)
+
+_rates = None                     # fx_rates.Rates, read from the repository's file when first needed
+_no_rate = set()                  # (zone, currency, day) already said to have no rate
+
+
+def euro_rate(currency, day):
+    """How many units of `currency` one euro is on a delivery day, as a
+    Decimal, or None when there is no rate for it (see fx_rates.py)."""
+    global _rates
+    if currency in (None, 'EUR'):
+        return Decimal(1)
+    if _rates is None:
+        import fx_rates
+        _rates = fx_rates.load()
+    found = _rates.rate(currency, day)
+    return found[0] if found else None
+
+
+def _say_no_rate(domain, currency, day):
+    """Once for each zone, currency and day: why a zone has no prices."""
+    zone = next((code for code, eic in ZONES.items() if eic == domain), domain or 'a zone')
+    if (zone, currency, day) not in _no_rate:
+        _no_rate.add((zone, currency, day))
+        log(f'  {zone}: its prices of {day} are in {currency} and there is no exchange rate for it - '
+            f'left out of that day')
 
 
 def _cents(value):
@@ -1093,7 +1133,9 @@ def _complete_hours(all_series):
 
         {day: [(start of the hour, length of its intervals, {start of an interval: price})]}
 
-    in order, the prices as Decimals, not rounded. Each day is read from one
+    in order, the prices as Decimals in euros, not rounded (a series in
+    another currency is converted with the rate of the delivery day, and has
+    no prices for a day there is no rate for). Each day is read from one
     auction only (the first that has a complete hour of it) and each hour from
     the finest intervals that cover it whole; an hour with an interval missing
     is left out. The hourly prices (prices_by_day) and the prices at the
@@ -1103,14 +1145,23 @@ def _complete_hours(all_series):
         if series['contract'] not in (None, DAY_AHEAD):
             continue
         position = series['sequence'] or 0
+        currency = series.get('currency') or 'EUR'
         for period in series['periods']:
             step = period['step']
             if step > HOUR or HOUR % step:
                 continue                  # not a part of an hour: nothing an hourly price can be made of
             for at, value in _every_interval(period):
                 hour = at.replace(minute=0, second=0, microsecond=0)
-                days.setdefault(at.astimezone(MARKET_TZ).date(), {}).setdefault(position, {}) \
-                    .setdefault(hour, {}).setdefault(step, {})[at] = Decimal(repr(value))
+                day = at.astimezone(MARKET_TZ).date()
+                price = Decimal(repr(value))
+                if currency != 'EUR':
+                    rate = euro_rate(currency, day)
+                    if rate is None:
+                        _say_no_rate(series.get('domain'), currency, day)
+                        continue
+                    price = price / rate
+                days.setdefault(day, {}).setdefault(position, {}) \
+                    .setdefault(hour, {}).setdefault(step, {})[at] = price
 
     found = {}
     for day, auctions in days.items():
