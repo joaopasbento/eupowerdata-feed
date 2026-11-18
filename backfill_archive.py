@@ -73,7 +73,7 @@ def fetch_prices_for_date(base, target_date):
 
     # The zones in the feed's order, with the same Nordic consolidation as the
     # regular fetcher (NO1+NO2 -> NO, SE1+SE3 -> SE, DK1+DK2 -> DK).
-    prices['zones'] = fe.price_zones(found, target_date)
+    prices['zones'] = fe.for_the_archive(fe.price_zones(found, target_date))
     return prices
 
 
@@ -250,7 +250,8 @@ def prices_of_span(base, code, first, last, expected, ask=_ask, sleep=time.sleep
 def rewrite_day(day, old, found, base, now):
     """Write the file of one day over. Returns (zones that left, zones that came)."""
     with contextlib.redirect_stdout(io.StringIO()):          # one "Consolidated" line a day is too many
-        new = fe.price_zones({code: by_day[day] for code, by_day in found.items() if day in by_day}, day)
+        new = fe.for_the_archive(
+            fe.price_zones({code: by_day[day] for code, by_day in found.items() if day in by_day}, day))
     for entry in new.values():
         entry[fe.FETCHED_AT] = now
     before = old.get('zones') or {}

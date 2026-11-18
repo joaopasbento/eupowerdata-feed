@@ -11,6 +11,9 @@ import tempfile
 import unittest
 
 import archive_fixes
+import fetch_entsoe as fe
+from entsoe_xml import at, price_document, price_series
+from test_carry_over import Feed as EntsoeFeed
 
 
 def zone(prices, **more):
@@ -62,6 +65,52 @@ class BulgariaInLevs(InADirectory):
         self.write('2022-01-22', {'BG': zone([195.583, 391.166])})
         self.assertEqual(archive_fixes.convert_bgn(), ([], []))
         self.assertEqual(self.read('2022-01-22')['BG'], zone([195.583, 391.166]))
+
+
+class MoldovaOutOfTheArchive(InADirectory):
+
+    def test_leaves_every_day_up_to_30_jun_2026_and_the_later_days_of_one_hour(self):
+        whole, one_hour = zone([200.0] * 24), zone([757.11])
+        self.write('2025-12-11', {'MD': whole, 'RO': zone([100.0] * 24)})
+        self.write('2026-06-30', {'MD': whole})
+        self.write('2026-07-01', {'MD': whole, 'RO': zone([100.0] * 24)})
+        self.write('2026-08-26', {'MD': one_hour, 'RO': zone([100.0] * 24)})
+        early, thin = archive_fixes.remove_moldova()
+        self.assertEqual(([str(day) for day in early], [str(day) for day in thin]),
+                         (['2025-12-11', '2026-06-30'], ['2026-08-26']))
+        self.assertEqual(list(self.read('2025-12-11')), ['RO'])
+        self.assertEqual(self.read('2026-06-30'), {})
+        self.assertEqual(self.read('2026-07-01')['MD'], whole)
+        self.assertEqual(list(self.read('2026-08-26')), ['RO'])
+        self.assertEqual(archive_fixes.remove_moldova(), ([], []))          # done once, nothing left to do
+
+
+class TheArchiveFromNowOn(EntsoeFeed):
+    """fetch_entsoe.py itself: a day Moldova has one hour of is not written to the archive for it."""
+
+    def moldova(self, hours):
+        # Moldova's day begins at 22:00 UTC: of the market's day of 16 Nov it then has the last hours.
+        return price_document(price_series('2026-11-16 22:00:00', [180.0] * hours))
+
+    def run_with(self, hours):
+        self.entsoe(at('2026-11-16 23:30:05'), prices={'MD': self.moldova(hours), 'RO': 100})
+        with open('data/spot-prices.json', encoding='utf-8') as f:
+            live = json.load(f)['zones']
+        with open('data/archive/spot-prices-2026-11-17.json', encoding='utf-8') as f:
+            return live, json.load(f)['zones']
+
+    def test_with_one_hour_it_is_in_the_file_of_the_day_and_not_in_the_archive(self):
+        live, archived = self.run_with(2)             # 22:00 is of the day before: one hour of the 17th
+        self.assertEqual(len(live['MD']['prices']), 1)
+        self.assertEqual(list(archived), ['RO'])
+
+    def test_with_more_it_is_in_both(self):
+        live, archived = self.run_with(5)
+        self.assertEqual((len(live['MD']['prices']), len(archived['MD']['prices'])), (4, 4))
+
+    def test_the_rule_is_moldovas_alone(self):
+        zones = {'MD': {'prices': [1]}, 'RO': {'prices': [1]}}
+        self.assertEqual(list(fe.for_the_archive(zones)), ['RO'])
 
 
 if __name__ == '__main__':

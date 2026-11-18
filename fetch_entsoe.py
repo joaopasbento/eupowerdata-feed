@@ -1250,6 +1250,23 @@ def price_entry(eic, hours, day):
     }
 
 
+# Zones for which a day of one hour is not written to the archive.
+#
+# Moldova's delivery day begins an hour before the market's (at 23:00 Central
+# European Time), so a day Moldova has no prices for still has, on the
+# market's clock, the first hour of the Moldovan day after: 13 days of the
+# archive had Moldova with the price of 23:00 and nothing else. spot-prices.json
+# shows what there is; the archive, which is what a day is looked up in
+# afterwards, does not keep such a day for the zone.
+ONE_HOUR_IS_NO_DAY = ('MD',)
+
+
+def for_the_archive(zones):
+    """The zones of a day's prices that go to the archive."""
+    return {name: entry for name, entry in zones.items()
+            if not (name in ONE_HOUR_IS_NO_DAY and len(entry.get('prices') or []) <= 1)}
+
+
 def price_request(base, eic, day):
     """The address that asks ENTSO-E for a zone's prices of a delivery day:
     from midnight to midnight on the market's clock."""
@@ -1885,6 +1902,8 @@ def publish(doc, key, path, order, dataset):
     snapshot = doc
     if key == 'zones':
         snapshot = dict(doc, zones={n: e for n, e in entries.items() if n not in ELEXON_ZONES})
+        if dataset == 'spot-prices':
+            snapshot['zones'] = for_the_archive(snapshot['zones'])
     # The prices are filed under the delivery day they are of.
     archive_snapshot(dataset, snapshot, carry_over.delivery_day(doc['updated']) if dataset == 'spot-prices' else None)
     return len(fresh)

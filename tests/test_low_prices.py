@@ -334,6 +334,24 @@ class TheOtherZones(InADirectory):
         self.assertEqual((self.doc()['entsoe']['delivery_date'], self.doc()['entsoe']['fetched_at']),
                          ('2026-02-02', '2026-02-02T09:00:00+00:00'))
 
+    def test_moldova_is_counted_from_1_july_2026_and_never_on_a_day_of_one_hour(self):
+        hours = [(h, -5) for h in range(24)]
+        for day in ('2026-06-30', '2026-07-01', '2026-07-02'):
+            self.archive(day, {'MD': self.prices('MD', hours if day != '2026-07-02' else [(23, -5)], day),
+                               'RO': self.prices('RO', hours, day)})
+        self.run_at(at('2026-07-03 09:00:00'))
+        saved = {day: list(self.doc(lp.ARCHIVE_PATH.format(day=day))['entsoe']['zones'])
+                 for day in ('2026-06-30', '2026-07-01', '2026-07-02')}
+        self.assertEqual(saved, {'2026-06-30': ['RO'], '2026-07-01': ['RO', 'MD'], '2026-07-02': ['RO']})
+        zones = self.doc()['entsoe']['zones']
+        self.assertEqual((zones['MD']['year']['days'], zones['RO']['year']['days']), (1, 3))
+
+    def test_a_record_written_before_that_rule_does_not_count_for_the_total(self):
+        count = {'resolution_minutes': 60, 'periods': 24, 'hours': 24, 'negative_h': 24, 'zero_h': 0, 'low_h': 0,
+                 'min': -5, 'basis': 'hourly-means'}
+        totals = lp.entsoe_totals({date(2026, 3, 1): {'entsoe': {'zones': {'MD': count, 'RO': count}}}}, [date(2026, 3, 1)])
+        self.assertEqual(list(totals), ['RO'])
+
     def test_a_country_of_two_zones_is_their_mean_interval_by_interval(self):
         today = date(2026, 2, 2)
         start, hour = at('2026-02-01 23:00'), timedelta(hours=1)
