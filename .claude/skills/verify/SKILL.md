@@ -14,6 +14,8 @@ description: Confirm that a change to the feed works - the offline tests and val
 | `scheduler/` (the Cloudflare Worker) | Part 1 with `--scheduler` |
 | What the feed publishes in `data/`: a file's shape or values, or the steps of `fetch.yml` | Part 1, then part 2 after the push |
 | The newer datasets: `fetch_balancing.py`, `fetch_outages.py`, `fetch_forecast.py`, `fetch_low_prices.py`, `wind_solar_actual.py`, `price_intervals.py`, or what `feed_common.py` gives them | Part 1, then part 2 after the push |
+| The exchange rates or what is converted with them (`fx_rates.py`), Ember's figures and the capacity file (`fetch_ember.py`, `merge_capacity.py`) | Part 1, then part 2 after the push |
+| How the negative, zero and low prices are counted, or a rewrite of their daily records | Part 1, part 2 after the push, and the proof of part 3 |
 | Documentation only (`*.md`, comments) | Nothing here |
 
 ## Part 1: offline, under two minutes
@@ -56,13 +58,21 @@ A run has two halves. The steps that make the three files above come first and a
 
 | File | Made by | What must hold |
 | --- | --- | --- |
-| `data/balancing-prices.json` | `fetch_balancing.py` | blocks `afrr_activated` (`cc-by-4.0`) and `afrr_cbmp` (`source-terms`); each day of a zone has one value for each period |
+| `data/balancing-prices.json` | `fetch_balancing.py` | blocks `afrr_activated` (`cc-by-4.0`) and `afrr_cbmp` (`source-terms`); each day of a zone has one value for each period; a zone not in euros has, in each day, `up_eur` and `down_eur` of the same length, with `fx_rate` and `fx_date` (a day with no rate is a note); a zone asked for by more than one area says which in `area` |
 | `data/outages.json` | `fetch_outages.py` | blocks `generation` (`source-terms`) and `transmission` (`cc-by-4.0`); every outage has its fields |
 | `data/wind-solar-forecast.json` | `fetch_forecast.py` | block `wind_solar` (`source-terms`); each day has forecast, actual and error for each hour |
-| `data/low-prices.json` | `fetch_low_prices.py` | blocks `omie` (`omie`) and `entsoe` (`source-terms`); the total of the year for Portugal and Spain |
+| `data/low-prices.json` | `fetch_low_prices.py` | blocks `omie` (`omie`) and `entsoe` (`source-terms`); the total of the year for Portugal and Spain; the note says when OMIE's later versions were last looked for (`omie.version_check`) and which zones still have days of the year counted on hourly means |
 | `data/wind-solar-actual.json`, `data/spot-prices-intervals.json` | `fetch_entsoe.py`, for the two above | one block each, `source-terms` |
 
 Every one of them must have `updated`, `data_time` and the licence of each block: a file that lost one of these, or its shape, is `REAL RUN BROKEN`. A file that was not written in the run is only a note ("not written in this run"): its step found nothing new or its source did not answer, and the file stays as it was by the rule above. A file that is not there at all is a note too, the first time its step runs.
+
+Three files are read by a run, or rewritten by it only now and then, so their time says nothing and only their shape is checked. A missing or misshapen one is `REAL RUN BROKEN`:
+
+| File | Made by | What must hold |
+| --- | --- | --- |
+| `data/fx-rates.json` | `fx_rates.py`, called by the balancing step | `rates` with a day for each currency (the zloty and the leu among them), `fixed` with the lev and the Bosnian mark |
+| `data/ember-yearly.json` | `fetch_ember.py`, in `fetch-ember.yml` (weekly) | `license` `cc-by-4.0`, `source`, `edition`, and the 32 countries, each with its share of renewables and a trend of seven years |
+| `data/renewablenodes-capacity.json` | `merge_capacity.py`, which makes no request | the four top-level keys and, in each country, the 17 fields the site reads, in their order; `cap_source` is `entsoe` or `ember`; `source` names Ember |
 
 Two more things are read off the run itself: the result of each of the newer steps, and how long the whole job took. The job must fit in the cadence of 15 minutes; over 13 it is `REAL RUN BROKEN`, whatever the files say.
 
@@ -75,3 +85,15 @@ git fetch -q && git show origin/main:data/cross-border-flows.json | python3 -c "
 ```
 
 Say in the report which run was read and what was seen in it.
+
+## Part 3: the proof of the low prices
+
+Portugal and Spain are counted twice in the daily records of the archive (`data/archive/low-prices-YYYY-MM-DD.json`): from OMIE's own files (block `omie`, day-ahead) and from the feed's prices of ENTSO-E (block `entsoe`). It is the same market at the same resolution, so the negative, zero and low hours must be equal day by day. After a change to how either is counted, and after a run of `rewrite-archive.yml` with `what: low-prices`, pull and run, with no network:
+
+```bash
+python3 .claude/skills/verify/low_prices_proof.py
+```
+
+It prints, for each of the two zones, the totals of each block over the days that have both, and every day that differs; it ends `PROOF OK` (exit 0) or `PROOF FAILED` (exit 1). On 18 November 2026 OMIE's totals of the year, from 1 January, were 550.25 negative, 361 zero and 929.75 low hours for Portugal and 697.5, 364.75 and 783 for Spain: the `entsoe` block must give the same over the same days.
+
+A day that differs is reported with its numbers, never put right by hand: one count is not adjusted to the other. A day counted on hourly means (`basis` other than `market-resolution`) differs by construction; it is counted again by the rewrite.
