@@ -82,7 +82,9 @@ file is only rewritten when a run brings something new.
          market_resolution_days, hourly_days}}}}}
 
 `omie.days` has the day in course, the day before and, once published, the
-day after. `updated` is the time of the run that last brought something new;
+day after. `omie.version_check` is the day OMIE was last asked for newer
+versions of the last ten days, with what is still to be asked.
+`updated` is the time of the run that last brought something new;
 `omie.fetched_at` the time a file of OMIE was last read and `entsoe.fetched_at`
 the time the prices of the day were obtained. `data_time` is the start of the
 last period that has a price.
@@ -237,17 +239,17 @@ def market_record(day, rows, version):
     }
 
 
-def fetch_market(day, market, get, pause=PAUSE_S, versions=MAX_VERSION):
+def fetch_market(day, market, get, pause=PAUSE_S, versions=MAX_VERSION, first=1):
     """Ask OMIE for one market of one day. Returns its record, 'missing' when
-    OMIE has no such file (HTTP 404 for each of the first `versions`
-    versions), or None when OMIE could not be reached or the file could not
+    OMIE has no such file (HTTP 404 for each of the `versions` versions from
+    `first` on), or None when OMIE could not be reached or the file could not
     be read."""
-    for version in range(1, versions + 1):
+    for version in range(first, first + versions):
         if market == 'day_ahead':
             url = DAY_AHEAD_URL.format(ymd=day.strftime('%Y%m%d'), version=version)
         else:
             url = AUCTION_URL.format(ymd=day.strftime('%Y%m%d'), session=SESSIONS[market], version=version)
-        if version > 1:
+        if version > first:
             time.sleep(pause)
         response = get(url, timeout=20)
         if response.status == 404:
@@ -341,6 +343,55 @@ def update_omie(now, records, today, get, budget, pause=PAUSE_S, limit=None):
     if left > 0:
         print(f'  {left} files of earlier days left for the next runs')
     return changed, read
+
+
+# --- The days OMIE corrects afterwards ---
+#
+# OMIE now and then publishes a day again with corrections: the file's suffix
+# goes up (.2, .3) and the earlier one is removed. Three days of the day-ahead
+# market since 2023 are like that, and three of the auctions since 2024. A
+# record keeps the version it was read from, so once a day, for the last ten
+# days, each market's next version is asked for: a 404 means there is none,
+# and a file means the day was corrected and is read again. The totals of the
+# month and of the year are added up from the records and follow by
+# themselves.
+#
+# It is done after the run's ordinary work with OMIE, within what is left of
+# the step's budget; what there is no time for is taken up by the next run
+# (`version_check` in the file says what is left), and OMIE not answering ends
+# it for the run.
+
+RECHECK_DAYS = 10
+
+
+def check_versions(now, records, today, state, get, budget, pause=PAUSE_S):
+    """Look for newer versions of the last RECHECK_DAYS days. `state` is the
+    file's `version_check` ({date, pending}); returns (the new state, how many
+    days were read again)."""
+    if not isinstance(state, dict) or state.get('date') != today.isoformat():
+        pending = [[(today - timedelta(days=back)).isoformat(), market]
+                   for back in range(RECHECK_DAYS) for market in MARKETS]
+    else:
+        pending = [item for item in state.get('pending') or [] if isinstance(item, list) and len(item) == 2]
+    read, left = 0, []
+    for number, (day_text, market) in enumerate(pending):
+        day = date.fromisoformat(day_text)
+        entry = ((records.get(day) or {}).get(OMIE) or {}).get(market)
+        if not isinstance(entry, dict) or not isinstance(entry.get('version'), int):
+            continue                                  # nothing read for it yet: the ordinary work gets it
+        if budget.left() < 5:
+            left = pending[number:]
+            break
+        time.sleep(pause)
+        found = fetch_market(day, market, get, pause, 1, entry['version'] + 1)
+        if found is None:
+            left = pending[number:]                   # OMIE in trouble: the rest waits for the next run
+            break
+        if found != 'missing':
+            print(f"  {day} {market}: OMIE has version {found['version']} (the record had {entry['version']}) - read again")
+            records[day][OMIE][market] = found
+            read += 1
+    return {'date': today.isoformat(), 'pending': left}, read
 
 
 # --- The other zones, from the prices the feed already has ---
@@ -514,7 +565,11 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
     before = {day: repr(record) for day, record in records.items()}
 
     print(f'Low prices: {len(records)} days of {today.year} on record')
-    _changed, read = update_omie(now, records, today, get, budget or Budget(BUDGET_S), pause, limit)
+    budget = budget or Budget(BUDGET_S)
+    _changed, read = update_omie(now, records, today, get, budget, pause, limit)
+    checked_before = (previous.get(OMIE) or {}).get('version_check')
+    version_check, corrected = check_versions(now, records, today, checked_before, get, budget, pause)
+    read += corrected
     _changed, prices_obtained = update_entsoe(records, today, year_start)
 
     os.makedirs(os.path.dirname(ARCHIVE_PATH), exist_ok=True)
@@ -531,7 +586,7 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
 
     had_prices = (previous.get(ENTSOE) or {}).get('fetched_at')
     new_prices = prices_obtained is not None and prices_obtained != had_prices
-    if not read and not new_prices and not written:
+    if not read and not new_prices and not written and version_check == checked_before:
         print(f'Nothing new in this run: {OUT_PATH} is left exactly as it was')
         return 0
 
@@ -559,6 +614,7 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
             'source': OMIE_SOURCE,
             'spread': 'price of Portugal minus price of Spain, EUR/MWh',
             **({'fetched_at': omie_read} if omie_read else {}),
+            'version_check': version_check,
             'days': shown,
             'year': {'year': today.year, 'from': year_start.isoformat(), 'to': today.isoformat(),
                      **omie_totals(records, days)},

@@ -290,6 +290,59 @@ class ARun(InADirectory):
         self.assertIn('left exactly as it was', log)
 
 
+class ADayOmieCorrectsAfterwards(InADirectory):
+    """Once a day, the next version of each market of the last ten days is asked for."""
+
+    NOW = at('2025-11-28 09:00:00')
+    DAY = date(2025, 11, 27)                           # OMIE's file of this day is a version 2
+
+    def setUp(self):
+        super().setUp()
+        # A record read from a version 1 that said the whole day was at zero.
+        _day, rows = lp.parse_marginal(omie_file('marginalpdbc_20251127.2'))
+        first = lp.market_record(self.DAY, [(period, Decimal(0), Decimal(0)) for period, _pt, _es in rows], 1)
+        with open(lp.ARCHIVE_PATH.format(day='2025-11-27'), 'w') as f:
+            json.dump({'date': '2025-11-27', 'omie': {'license': 'omie', 'source': 's', 'day_ahead': first}}, f)
+
+    def run_here(self, when, omie=None):
+        return self.run_at(when, omie, limit=0)        # none of the run's ordinary work with OMIE
+
+    def test_a_newer_version_is_read_and_the_totals_follow(self):
+        code, omie, log = self.run_here(self.NOW)
+        saved = self.doc(lp.ARCHIVE_PATH.format(day='2025-11-27'))['omie']['day_ahead']
+        self.assertEqual(code, 0)
+        self.assertEqual(omie.asked, ['marginalpdbc_20251127.2'])           # the only market there is a record of
+        self.assertEqual((saved['version'], saved['PT']['avg'], saved['PT']['zero_h']), (2, 86.02, 0))
+        self.assertIn('OMIE has version 2 (the record had 1) - read again', log)
+        november = self.doc()['omie']['months']['2025-11']['day_ahead']
+        self.assertEqual((november['days'], november['PT']['zero_h']), (1, 0))
+
+    def test_it_is_done_once_a_day(self):
+        self.run_here(self.NOW)
+        self.assertEqual(self.doc()['omie']['version_check'], {'date': '2025-11-28', 'pending': []})
+        _code, omie, _log = self.run_here(self.NOW + timedelta(hours=1))
+        self.assertEqual(omie.asked, [])
+        _code, omie, _log = self.run_here(self.NOW + timedelta(days=1))
+        self.assertEqual(omie.asked, ['marginalpdbc_20251127.3'])           # the day after, the version after that
+
+    def test_with_no_newer_version_the_record_stays(self):
+        _code, _omie, _log = self.run_here(self.NOW, Omie(without=['marginalpdbc_20251127.2']))
+        saved = self.doc(lp.ARCHIVE_PATH.format(day='2025-11-27'))['omie']['day_ahead']
+        self.assertEqual((saved['version'], saved['PT']['zero_h']), (1, 24))
+
+    def test_with_omie_not_answering_what_is_left_waits_for_the_next_run(self):
+        _code, omie, _log = self.run_here(self.NOW, Omie(down=True))
+        self.assertEqual(len(omie.asked), 1)                                # it does not insist
+        self.assertEqual(self.doc()['omie']['version_check']['pending'][0], ['2025-11-27', 'day_ahead'])
+        _code, omie, _log = self.run_here(self.NOW + timedelta(minutes=15))
+        self.assertEqual(omie.asked, ['marginalpdbc_20251127.2'])
+        self.assertEqual(self.doc(lp.ARCHIVE_PATH.format(day='2025-11-27'))['omie']['day_ahead']['version'], 2)
+
+    def test_only_the_last_ten_days_are_looked_at(self):
+        _code, omie, _log = self.run_here(self.NOW + timedelta(days=10))
+        self.assertEqual(omie.asked, [])
+
+
 class TheOtherZones(InADirectory):
 
     def prices(self, zone, values, day='2026-02-01'):
