@@ -5,8 +5,11 @@
 
 Waits for the first run of fetch.yml that started from a commit (HEAD unless
 --commit says another) and actually fetched, then checks the files on
-origin/main. Exit 0 REAL RUN OK, 1 REAL RUN BROKEN, 2 REAL RUN INCONCLUSIVE
-(a source was down: says nothing about the change; run it again).
+origin/main: the three the site has always read, and the newer datasets
+(balancing prices, outages, forecast error, low prices and the two files
+fetch_entsoe.py keeps for them), each block with its licence. Exit 0 REAL RUN
+OK, 1 REAL RUN BROKEN, 2 REAL RUN INCONCLUSIVE (a source was down: says
+nothing about the change; run it again).
 """
 
 import argparse
@@ -132,6 +135,113 @@ def check_flows(doc, broken):
             broken.append(f'cross-border-flows.json net {pair}: neither of its corridors is in the file')
 
 
+# --- The newer datasets ---
+#
+# Made by steps of their own, after the three files above are committed, and
+# published by a second commit. A step of theirs that got nothing leaves its
+# file as it was: that is a note here, never a failure of the change. What is
+# a failure is a file that is not valid, or that lost its shape or a licence.
+
+def exists(path):
+    return git('cat-file', '-e', f'origin/main:{path}').returncode == 0
+
+
+def _blocks(doc, path, licences, broken):
+    """The blocks of a newer file, each with the licence it must have. False when the file is not what it should be."""
+    if not isinstance(doc, dict) or 'updated' not in doc or 'data_time' not in doc:
+        broken.append(f'{path}: no `updated` or no `data_time`')
+        return False
+    for name, licence in licences.items():
+        block = doc.get(name)
+        if not isinstance(block, dict) or block.get('license') != licence:
+            broken.append(f'{path}: block {name} is missing or its licence is not {licence}')
+            return False
+    return True
+
+
+def _same_length(lists, count):
+    return all(isinstance(values, list) and len(values) == count for values in lists)
+
+
+def check_balancing(doc, path, broken):
+    if not _blocks(doc, path, {'afrr_activated': 'cc-by-4.0', 'afrr_cbmp': 'source-terms'}, broken):
+        return 'broken'
+    for zone, entry in doc['afrr_activated']['zones'].items():
+        days = entry.get('days') or {}
+        if 'fetched_at' not in entry or not days or not all(
+                _same_length([day.get('up'), day.get('down')], day.get('periods')) for day in days.values()):
+            broken.append(f'{path} afrr_activated {zone}: a day does not have one price for each period')
+    for zone, entry in doc['afrr_cbmp']['zones'].items():
+        for day in (entry.get('days') or {}).values():
+            if not all(isinstance(day.get(d), dict) and _same_length(
+                    [day[d].get(name) for name in ('min', 'avg', 'max', 'count')], day.get('quarters')) for d in ('up', 'down')):
+                broken.append(f'{path} afrr_cbmp {zone}: a day does not have one summary for each quarter-hour')
+    return f"{len(doc['afrr_activated']['zones'])} zones with the 17.1.F price, {len(doc['afrr_cbmp']['zones'])} with the PICASSO summary"
+
+
+OUTAGE = ('id', 'revision', 'asset_type', 'name', 'start', 'end', 'planned', 'status', 'published', 'phase')
+
+
+def check_outages(doc, path, broken):
+    if not _blocks(doc, path, {'generation': 'source-terms', 'transmission': 'cc-by-4.0'}, broken):
+        return 'broken'
+    total = 0
+    for block, key, more in (('generation', 'zones', ('zone', 'nominal_mw', 'unavailable_mw')),
+                             ('transmission', 'borders', ('border', 'ids', 'available_mw'))):
+        for name, entry in doc[block][key].items():
+            outages = entry.get('outages')
+            if 'fetched_at' not in entry or not isinstance(outages, list) or any(
+                    field not in outage for outage in outages for field in OUTAGE + more):
+                broken.append(f'{path} {block} {name}: an outage lost a field, or the entry its time')
+            total += len(outages or [])
+    return f"{len(doc['generation']['zones'])} zones, {len(doc['transmission']['borders'])} borders, {total} outages"
+
+
+def check_forecast(doc, path, broken):
+    if not _blocks(doc, path, {'wind_solar': 'source-terms'}, broken):
+        return 'broken'
+    for zone, entry in doc['wind_solar']['zones'].items():
+        for day in (entry.get('days') or {}).values():
+            series = [day[name] for name in ('solar', 'wind_onshore', 'wind_offshore') if name in day]
+            if not series or 'summary' not in day or not all(
+                    _same_length([one.get('forecast'), one.get('actual'), one.get('error')], day.get('hours')) for one in series):
+                broken.append(f'{path} {zone}: a day does not have forecast, actual and error for each hour')
+    return f"{len(doc['wind_solar']['zones'])} zones"
+
+
+def check_low_prices(doc, path, broken):
+    if not _blocks(doc, path, {'omie': 'omie', 'entsoe': 'source-terms'}, broken):
+        return 'broken'
+    year = (doc['omie'].get('year') or {}).get('day_ahead') or {}
+    if not doc['omie'].get('days') or any(not isinstance((year.get(zone) or {}).get('negative_or_zero_pct'), (int, float))
+                                          for zone in ('PT', 'ES')):
+        broken.append(f'{path}: OMIE has no day, or no total of the year for Portugal and Spain')
+        return 'broken'
+    return (f"OMIE {year.get('days')} days of the year, negative or zero {year['PT']['negative_or_zero_pct']} % in "
+            f"Portugal and {year['ES']['negative_or_zero_pct']} % in Spain; {len(doc['entsoe'].get('zones') or {})} zones of ENTSO-E")
+
+
+def check_kept(block):
+    def check(doc, path, broken):
+        if not _blocks(doc, path, {block: 'source-terms'}, broken):
+            return 'broken'
+        return f"{len(doc[block].get('zones') or {})} zones"
+    return check
+
+
+NEWER = {
+    'data/wind-solar-actual.json': check_kept('actual_generation'),
+    'data/spot-prices-intervals.json': check_kept('day_ahead_prices'),
+    'data/balancing-prices.json': check_balancing,
+    'data/outages.json': check_outages,
+    'data/wind-solar-forecast.json': check_forecast,
+    'data/low-prices.json': check_low_prices,
+}
+NEWER_STEPS = ('Balancing prices', 'Outages of power plants', 'Forecast error', 'Negative, zero and low prices',
+               'Commit and push the newer datasets')
+CADENCE_MINUTES = 15
+
+
 def finish(broken, inconclusive, notes):
     for line in notes:
         print(f'  {line}')
@@ -178,6 +288,31 @@ def main():
             inconclusive.append(f'ENTSO-E gave nothing for {path} in this run: it was left as it was, of {doc.get("updated")}')
         notes.append(f'{path}: {len(entries)} {key}, updated {doc.get("updated", "?")[:19]}'
                      + (f'; kept because the source did not answer: {", ".join(kept)}' if kept else ''))
+
+    for path, check in NEWER.items():
+        if not exists(path):
+            notes.append(f'{path}: not published (its step has not run yet, or has never obtained anything)')
+            continue
+        doc = published(path)
+        if doc is None:
+            broken.append(f'{path} is not valid JSON')
+            continue
+        found = check(doc, path, broken)
+        updated = carry_over.parse_time(doc.get('updated'))
+        fresh = updated is not None and updated >= started
+        notes.append(f'{path}: {found}, updated {str(doc.get("updated"))[:19]}'
+                     + ('' if fresh else ' - not written in this run (nothing new, or its source did not answer)'))
+
+    # The whole run must fit in the cadence: the next one starts 15 minutes after this one was asked for.
+    ended = datetime.fromisoformat(job['completed_at'].replace('Z', '+00:00')) if job.get('completed_at') else None
+    if ended is not None:
+        minutes = (ended - started).total_seconds() / 60
+        notes.append(f'the job took {minutes:.1f} minutes')
+        if minutes > CADENCE_MINUTES - 2:
+            broken.append(f'the job took {minutes:.1f} minutes: it does not fit in the cadence of {CADENCE_MINUTES}')
+    newer = {name: conclusion for name, conclusion in steps.items() if name.startswith(NEWER_STEPS)}
+    if newer:
+        notes.append('newer steps: ' + ', '.join(f'{name.split(" (")[0]} {conclusion}' for name, conclusion in newer.items()))
 
     status = published('data/status.json') or {}
     if status.get('status') != 'ok':
