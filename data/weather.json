@@ -29,9 +29,9 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T06:00",
-        "temperature_2m": 19.3,
-        "wind_speed_10m": 18.7,
+        "time": "2026-11-18T07:00",
+        "temperature_2m": 19.1,
+        "wind_speed_10m": 15.1,
         "weather_code": 61,
         "symbol_code": "lightrain"
       },
@@ -65,11 +65,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 15.3,
-        "wind_speed_10m": 22.7,
-        "weather_code": 61,
-        "symbol_code": "lightrain"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 15.0,
+        "wind_speed_10m": 22.3,
+        "weather_code": 3,
+        "symbol_code": "cloudy"
       },
       "daily_units": {
         "time": "iso8601",
@@ -101,11 +101,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 9.2,
-        "wind_speed_10m": 22.7,
-        "weather_code": 2,
-        "symbol_code": "partlycloudy_night"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 8.3,
+        "wind_speed_10m": 19.1,
+        "weather_code": 3,
+        "symbol_code": "cloudy"
       },
       "daily_units": {
         "time": "iso8601",
@@ -137,11 +137,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 10.7,
-        "wind_speed_10m": 23.0,
-        "weather_code": 1,
-        "symbol_code": "fair_night"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 10.4,
+        "wind_speed_10m": 22.0,
+        "weather_code": 2,
+        "symbol_code": "partlycloudy_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -173,11 +173,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 16.5,
-        "wind_speed_10m": 13.3,
-        "weather_code": 82,
-        "symbol_code": "heavyrainshowers_day"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 16.7,
+        "wind_speed_10m": 13.7,
+        "weather_code": 81,
+        "symbol_code": "rainshowers_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -209,9 +209,9 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 8.9,
-        "wind_speed_10m": 29.2,
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 9.2,
+        "wind_speed_10m": 27.4,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -245,11 +245,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 9.0,
-        "wind_speed_10m": 27.0,
-        "weather_code": 3,
-        "symbol_code": "cloudy"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 9.3,
+        "wind_speed_10m": 26.3,
+        "weather_code": 61,
+        "symbol_code": "lightrain"
       },
       "daily_units": {
         "time": "iso8601",
@@ -281,11 +281,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 6.3,
-        "wind_speed_10m": 16.2,
-        "weather_code": 65,
-        "symbol_code": "heavyrain"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 8.7,
+        "wind_speed_10m": 24.8,
+        "weather_code": 1,
+        "symbol_code": "fair_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -317,11 +317,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 8.2,
-        "wind_speed_10m": 26.6,
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 8.3,
+        "wind_speed_10m": 24.5,
         "weather_code": 80,
-        "symbol_code": "lightrainshowers_night"
+        "symbol_code": "lightrainshowers_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -353,11 +353,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 4.7,
-        "wind_speed_10m": 10.4,
-        "weather_code": 3,
-        "symbol_code": "cloudy"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 5.7,
+        "wind_speed_10m": 15.1,
+        "weather_code": 2,
+        "symbol_code": "partlycloudy_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -389,11 +389,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": -1.0,
-        "wind_speed_10m": 9.7,
-        "weather_code": 2,
-        "symbol_code": "partlycloudy_night"
+        "time": "2026-11-18T08:00",
+        "temperature_2m": -1.5,
+        "wind_speed_10m": 10.1,
+        "weather_code": 1,
+        "symbol_code": "fair_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -425,9 +425,9 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 2.7,
-        "wind_speed_10m": 13.3,
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 2.4,
+        "wind_speed_10m": 13.0,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -461,9 +461,9 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 5.6,
-        "wind_speed_10m": 22.7,
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 6.0,
+        "wind_speed_10m": 19.8,
         "weather_code": 63,
         "symbol_code": "rain"
       },
@@ -497,9 +497,9 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T08:00",
-        "temperature_2m": 7.1,
-        "wind_speed_10m": 28.1,
+        "time": "2026-11-18T09:00",
+        "temperature_2m": 6.9,
+        "wind_speed_10m": 31.7,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -533,11 +533,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T08:00",
-        "temperature_2m": 15.2,
-        "wind_speed_10m": 9.4,
-        "weather_code": 2,
-        "symbol_code": "partlycloudy_day"
+        "time": "2026-11-18T09:00",
+        "temperature_2m": 16.8,
+        "wind_speed_10m": 10.1,
+        "weather_code": 3,
+        "symbol_code": "cloudy"
       },
       "daily_units": {
         "time": "iso8601",
@@ -569,11 +569,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T06:00",
-        "temperature_2m": 6.7,
-        "wind_speed_10m": 15.8,
-        "weather_code": 3,
-        "symbol_code": "cloudy"
+        "time": "2026-11-18T07:00",
+        "temperature_2m": 6.9,
+        "wind_speed_10m": 14.4,
+        "weather_code": 2,
+        "symbol_code": "partlycloudy_night"
       },
       "daily_units": {
         "time": "iso8601",
@@ -605,11 +605,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T06:00",
-        "temperature_2m": 8.9,
-        "wind_speed_10m": 18.7,
+        "time": "2026-11-18T07:00",
+        "temperature_2m": 8.8,
+        "wind_speed_10m": 17.6,
         "weather_code": 2,
-        "symbol_code": "partlycloudy_night"
+        "symbol_code": "partlycloudy_day"
       },
       "daily_units": {
         "time": "iso8601",
@@ -641,11 +641,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T08:00",
-        "temperature_2m": 10.0,
-        "wind_speed_10m": 14.0,
-        "weather_code": 3,
-        "symbol_code": "cloudy"
+        "time": "2026-11-18T09:00",
+        "temperature_2m": 10.8,
+        "wind_speed_10m": 13.7,
+        "weather_code": 61,
+        "symbol_code": "lightrain"
       },
       "daily_units": {
         "time": "iso8601",
@@ -677,11 +677,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T08:00",
-        "temperature_2m": 10.0,
-        "wind_speed_10m": 17.6,
-        "weather_code": 63,
-        "symbol_code": "rain"
+        "time": "2026-11-18T09:00",
+        "temperature_2m": 10.8,
+        "wind_speed_10m": 17.3,
+        "weather_code": 65,
+        "symbol_code": "heavyrain"
       },
       "daily_units": {
         "time": "iso8601",
@@ -713,11 +713,11 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 7.3,
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 8.4,
         "wind_speed_10m": 12.2,
-        "weather_code": 61,
-        "symbol_code": "lightrain"
+        "weather_code": 45,
+        "symbol_code": "fog"
       },
       "daily_units": {
         "time": "iso8601",
@@ -749,9 +749,9 @@
         "weather_code": "wmo code"
       },
       "current": {
-        "time": "2026-11-18T07:00",
-        "temperature_2m": 9.4,
-        "wind_speed_10m": 25.6,
+        "time": "2026-11-18T08:00",
+        "temperature_2m": 9.3,
+        "wind_speed_10m": 22.0,
         "weather_code": 2,
         "symbol_code": "partlycloudy_day"
       },
