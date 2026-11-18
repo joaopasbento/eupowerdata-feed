@@ -48,8 +48,18 @@ What ENTSO-E has, as its answers of 18 Nov 2026 showed:
 Portugal and Spain (and their borders) are asked for in every run; the other
 zones and borders of the feed once an hour, and what ENTSO-E has no outages
 for every six hours. The withdrawn outages are only asked for where there are
-others: a zone or a border with none costs one request, not two. The step has
-its own time budget, runs after the files the site
+others: a zone or a border with none costs one request, not two.
+
+The requests go out in batches, each one finished before the next begins:
+Portugal, Spain and their borders first, then the rest, a few zones at a time,
+for as long as the budget lasts. A zone only counts when every request of it
+has come back, so sending the first request of every zone at once would, on a
+slow day, use up the budget and finish none of them: that is what the first
+real run did (run 2610, 18 Nov 2026: 108 requests sent in 90 seconds, no zone
+complete, nothing written). What a run does not get to is first in line in the
+next one.
+
+The step has its own time budget, runs after the files the site
 already reads have been published, and never fails the run. A zone or border
 that was asked for and did not answer, or whose pages could not all be had,
 keeps what was published, with the time it was obtained and the mark
@@ -86,7 +96,7 @@ from feed_common import (CC_BY, DATA_TIME, FETCHED_AT, HOURLY, SOURCE_TERMS, Ans
 
 OUT_PATH = 'data/outages.json'
 ARCHIVE_PATH = 'data/archive/outages-{day}.json'
-BUDGET_S = float(os.environ.get('OUTAGES_BUDGET_SECONDS', '90'))
+BUDGET_S = float(os.environ.get('OUTAGES_BUDGET_SECONDS', '110'))
 
 GENERATION = 'generation'
 TRANSMISSION = 'transmission'
@@ -96,6 +106,9 @@ MAX_AGE = timedelta(hours=3)     # how long a zone that does not answer keeps wh
 QUIET = timedelta(hours=6)       # how often a zone or border with no outages is asked again
 PAGE = 200                       # documents in one answer, at most
 MAX_PAGES = 10
+BATCH = 8                        # first requests sent at a time for the zones and borders read once an hour:
+                                 # one for each request in flight, so that a batch is two waves and no more
+ENOUGH_S = 30                    # a batch is only started with this much of the budget left
 KEEP_DAYS = 1830                 # the archive goes back five years, as the others
 STAMP = '%Y%m%d%H%M'
 
@@ -441,6 +454,32 @@ def plan(previous, now):
     return requests, followers
 
 
+def batches(requests, followers):
+    """The requests of a run in the order they are sent, a batch at a time:
+    first those of Portugal, Spain and their borders, then the rest in groups
+    of about BATCH first requests, a zone or border never split between two.
+    Each batch has the requests for the withdrawn outages of its own zones."""
+    def always(key):
+        return key[1] in (ALWAYS_ZONES if key[0] == GENERATION else ALWAYS_BORDERS)
+
+    units = {}
+    for key in requests:
+        units.setdefault(key[:2], []).append(key)
+    first = [key for unit, keys in units.items() if always(unit) for key in keys]
+    groups, group, size = ([first] if first else []), [], 0
+    for unit, keys in units.items():
+        if always(unit):
+            continue
+        group += keys
+        size += sum(key not in followers for key in keys)
+        if size >= BATCH:
+            groups.append(group)
+            group, size = [], 0
+    if group:
+        groups.append(group)
+    return [{key: requests[key] for key in keys} for keys in groups]
+
+
 def _fresh_enough(now):
     def may_keep(_name, entry):
         obtained = parse_time(entry.get(FETCHED_AT))
@@ -473,8 +512,14 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
     if not requests:
         print('  Nothing due in this run')
         return 0
-    results = {'wanted': list(requests),
-               'asked': ask_paged(requests, followers, budget or Budget(BUDGET_S), get, interval)}
+    budget = budget or Budget(BUDGET_S)
+    results = {'wanted': list(requests), 'asked': {}}
+    for number, batch in enumerate(batches(requests, followers)):
+        if number and budget.left() < ENOUGH_S:
+            print(f'  Outages: {len(requests) - len(results["asked"])} requests of zones and borders read once an '
+                  f'hour left for the next run')
+            break
+        results['asked'].update(ask_paged(batch, followers, budget, get, interval))
     unreadable = 0
 
     def records(answer, withdrawn):
