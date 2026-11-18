@@ -1087,22 +1087,17 @@ def _every_interval(period):
             yield period['start'] + period['step'] * (position - 1), value
 
 
-def prices_by_day(all_series):
-    """The day-ahead prices the series of an A44 answer have, for every
-    delivery day they have a complete hour of:
+def _complete_hours(all_series):
+    """The complete hours of the day-ahead prices an A44 answer has, for every
+    delivery day it has one of:
 
-        {day: [(hour, price)]}    hour 0 to 23 on the market's clock, in order;
-                                  price a Decimal, not rounded
+        {day: [(start of the hour, length of its intervals, {start of an interval: price})]}
 
-    An hour's price is the mean of the intervals of that hour, and an hour
-    with an interval missing is left out. On the day the clocks go back the
-    two hours called 02:00 are one entry, their mean; on the day they go
-    forward there is no 02:00. Each day is read from one auction only: the
-    first that has an hour of it.
-
-    One answer may cover one day (a run of the feed) or a whole year (the
-    rewriting of the archive, backfill_archive.py): every day is read the
-    same way."""
+    in order, the prices as Decimals, not rounded. Each day is read from one
+    auction only (the first that has a complete hour of it) and each hour from
+    the finest intervals that cover it whole; an hour with an interval missing
+    is left out. The hourly prices (prices_by_day) and the prices at the
+    market's own resolution (read_day_prices) are both made from this."""
     days = {}       # day -> position of the auction -> {start of an hour: {interval length: {start: price}}}
     for series in all_series:
         if series['contract'] not in (None, DAY_AHEAD):
@@ -1120,23 +1115,68 @@ def prices_by_day(all_series):
     found = {}
     for day, auctions in days.items():
         for position in sorted(auctions):
-            by_label = {}                 # hour on the market's clock -> the mean of each hour so called
+            hours = []
             for hour in sorted(auctions[position]):
                 for step, values in sorted(auctions[position][hour].items()):      # the finest intervals first
                     if step * len(values) == HOUR:
-                        by_label.setdefault(hour.astimezone(MARKET_TZ).hour, []).append(
-                            sum(values.values()) / len(values))
+                        hours.append((hour, step, values))
                         break
-            if by_label:
-                found[day] = [(label, sum(means) / len(means)) for label, means in sorted(by_label.items())]
+            if hours:
+                found[day] = hours
                 break
     return found
+
+
+def _hourly(hours):
+    """[(hour on the market's clock, price)] from the complete hours of a day:
+    an hour's price is the mean of its intervals, and the two hours called
+    02:00 on the day the clocks go back are one entry, their mean."""
+    by_label = {}                 # hour on the market's clock -> the mean of each hour so called
+    for hour, _step, values in hours:
+        by_label.setdefault(hour.astimezone(MARKET_TZ).hour, []).append(sum(values.values()) / len(values))
+    return [(label, sum(means) / len(means)) for label, means in sorted(by_label.items())]
+
+
+def prices_by_day(all_series):
+    """The day-ahead prices the series of an A44 answer have, for every
+    delivery day they have a complete hour of:
+
+        {day: [(hour, price)]}    hour 0 to 23 on the market's clock, in order;
+                                  price a Decimal, not rounded
+
+    An hour's price is the mean of the intervals of that hour, and an hour
+    with an interval missing is left out. On the day the clocks go back the
+    two hours called 02:00 are one entry, their mean; on the day they go
+    forward there is no 02:00. Each day is read from one auction only: the
+    first that has an hour of it.
+
+    One answer may cover one day (a run of the feed) or a whole year (the
+    rewriting of the archive, backfill_archive.py): every day is read the
+    same way."""
+    return {day: _hourly(hours) for day, hours in _complete_hours(all_series).items()}
 
 
 def read_prices(xml_str, day):
     """The day-ahead prices an A44 answer has for the delivery day `day`, as
     prices_by_day() gives them: [(hour, price)], or [] when it has none."""
     return prices_by_day(read_series(xml_str)).get(day, [])
+
+
+class DayPrices(list):
+    """The hourly prices of a zone's delivery day, as read_prices() gives
+    them: a plain list for everything that reads spot-prices.json's prices.
+    It also carries the prices they were made of, at the market's own
+    resolution, for price_intervals.py to keep: `intervals` is [(start, length
+    of the interval, price)], in order, of the complete hours of the day."""
+    intervals = ()
+
+
+def read_day_prices(xml_str, day):
+    """read_prices(), with the intervals the hourly prices were made of."""
+    hours = _complete_hours(read_series(xml_str)).get(day, [])
+    prices = DayPrices(_hourly(hours))
+    prices.intervals = [(at, step, value) for _hour, step, values in hours for at, value in sorted(values.items())]
+    return prices
 
 
 def price_entry(eic, hours, day):
@@ -1225,7 +1265,10 @@ def _incomplete(country, zone_codes, zones):
     return True
 
 
-def fetch_prices(base, deadline=None):
+def fetch_prices(base, deadline=None, intervals=None):
+    """The prices of the delivery day in course, by zone. With `intervals` (a
+    dict), the prices each answer had at the market's own resolution are put
+    in it, by zone as asked for."""
     if deadline is None:
         deadline = time.monotonic() + TOTAL_BUDGET_S
     now = utcnow()
@@ -1239,8 +1282,10 @@ def fetch_prices(base, deadline=None):
     }
 
     jobs = [(code, code, price_request(base, eic, day)) for code, eic in ZONES.items()]
-    fetched = fetch_all('Prices', jobs, lambda text: read_prices(text, day),
+    fetched = fetch_all('Prices', jobs, lambda text: read_day_prices(text, day),
                         lambda hours: f'{len(hours)} hours of {day:%d %b}', deadline)
+    if intervals is not None:
+        intervals.update({code: hours.intervals for code, hours in fetched.items() if getattr(hours, 'intervals', None)})
     prices['zones'] = price_zones(fetched, day)
     return prices
 
@@ -1787,6 +1832,19 @@ def publish(doc, key, path, order, dataset):
     return len(fresh)
 
 
+def keep_price_intervals(found, day):
+    """Keep the day's prices at the market's own resolution (price_intervals.py),
+    from which the hours of negative, zero and low prices are counted. After
+    spot-prices.json is published, and never the reason a run fails."""
+    try:
+        import price_intervals
+        count = price_intervals.save(found, day, utcnow())
+        if count:
+            print(f'Kept the prices of {day:%d %b} at the market\'s resolution for {count} zones ({price_intervals.PATH})')
+    except Exception as e:  # noqa: BLE001
+        print(f'  Prices at the market\'s resolution not kept: {type(e).__name__}: {e}')
+
+
 def keep_wind_solar(found):
     """Keep the day's series of solar and wind that the generation answers had
     (wind_solar_actual.py). After the generation mix is published, and never
@@ -1861,11 +1919,13 @@ def main():
     # cut short keeps whatever it had already fetched. A zone or corridor that
     # did not answer keeps what was published before, for a while (see carry_over.py).
     print('Fetching day-ahead prices...')
-    prices = fetch_prices(base, next_deadline())
+    intervals = {}
+    prices = fetch_prices(base, next_deadline(), intervals)
     print(f"  → {len(prices['zones'])} zones\n")
     zone_count = publish(prices, 'zones', 'data/spot-prices.json', PRICE_ORDER, 'spot-prices')
     if zone_count > 0:
         refresh_archive_index()
+    keep_price_intervals(intervals, carry_over.delivery_day(prices['updated']))
 
     print('\nFetching generation mix...')
     wind_solar = {}
