@@ -1,0 +1,1184 @@
+{
+ "updated": "2026-11-18T20:49:56+00:00",
+ "license": "cc-by-4.0",
+ "source": "Ember, Yearly Electricity Data",
+ "url": "https://ember-energy.org/data/yearly-electricity-data/",
+ "file": "https://files.ember-energy.org/public-downloads/generation/outputs/release_generation_yearly_global.csv",
+ "edition": "2026-11-17T18:34:40+00:00",
+ "countries": {
+  "PT": {
+   "iso3": "PRT",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 80.882,
+    "bioenergy": 6.618,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     53.12,
+     58.591,
+     64.08,
+     59.594,
+     74.469,
+     85.2,
+     80.882
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 6.95,
+    "wind": 5.61,
+    "hydro": 8.37,
+    "bioenergy": 0.66,
+    "other_renewables": 0.04
+   }
+  },
+  "ES": {
+   "iso3": "ESP",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 55.842,
+    "bioenergy": 2.225,
+    "nuclear": 18.769
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     37.332,
+     43.855,
+     46.445,
+     42.803,
+     51.514,
+     57.333,
+     55.842
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 47.21,
+    "wind": 33.3,
+    "hydro": 16.79,
+    "bioenergy": 1.16,
+    "other_renewables": 0.15
+   }
+  },
+  "DE": {
+   "iso3": "DEU",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 58.461,
+    "bioenergy": 10.078,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     40.189,
+     44.374,
+     40.167,
+     44.373,
+     54.685,
+     58.292,
+     58.461
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 106.27,
+    "wind": 77.81,
+    "hydro": 5.69,
+    "bioenergy": 8.98,
+    "other_renewables": 1.09
+   }
+  },
+  "FR": {
+   "iso3": "FRA",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 26.636,
+    "bioenergy": 1.785,
+    "nuclear": 68.257
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     19.964,
+     23.714,
+     22.187,
+     24.188,
+     26.89,
+     27.526,
+     26.636
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 31.23,
+    "wind": 25.65,
+    "hydro": 24.31,
+    "bioenergy": 1.67,
+    "other_renewables": 0.75
+   }
+  },
+  "IT": {
+   "iso3": "ITA",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 48.687,
+    "bioenergy": 5.879,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     39.943,
+     42.231,
+     40.747,
+     35.857,
+     44.55,
+     50.173,
+     48.687
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 41.19,
+    "wind": 13.57,
+    "hydro": 19.35,
+    "bioenergy": 2.96,
+    "other_renewables": 0.44
+   }
+  },
+  "NL": {
+   "iso3": "NLD",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 51.207,
+    "bioenergy": 5.073,
+    "nuclear": 2.951
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     18.992,
+     26.837,
+     33.452,
+     40.097,
+     47.382,
+     50.745,
+     51.207
+    ]
+   },
+   "capacity_gw": {
+    "year": 2024,
+    "solar": 24.77,
+    "wind": 11.7,
+    "hydro": 0.04,
+    "bioenergy": 0.48,
+    "other_renewables": 0.4
+   }
+  },
+  "BE": {
+   "iso3": "BEL",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 38.572,
+    "bioenergy": 5.108,
+    "nuclear": 33.5
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     20.984,
+     26.56,
+     22.887,
+     25.898,
+     33.435,
+     35.205,
+     38.572
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 10.4,
+    "wind": 5.85,
+    "hydro": 0.11,
+    "bioenergy": 0.52,
+    "other_renewables": 0.21
+   }
+  },
+  "AT": {
+   "iso3": "AUT",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 83.649,
+    "bioenergy": 6.316,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     77.295,
+     80.284,
+     79.121,
+     78.191,
+     84.756,
+     86.226,
+     83.649
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 10.3,
+    "wind": 4.29,
+    "hydro": 15.75,
+    "bioenergy": 0.96,
+    "other_renewables": 0.22
+   }
+  },
+  "CH": {
+   "iso3": "CHE",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 67.818,
+    "bioenergy": 1.599,
+    "nuclear": 29.876
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     59.87,
+     62.204,
+     66.587,
+     58.312,
+     63.165,
+     67.45,
+     67.818
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 9.11,
+    "wind": 0.11,
+    "hydro": 16.05,
+    "bioenergy": 0.08,
+    "other_renewables": 0.2
+   }
+  },
+  "PL": {
+   "iso3": "POL",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 31.222,
+    "bioenergy": 4.894,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     15.599,
+     17.964,
+     17.093,
+     21.103,
+     27.707,
+     31.136,
+     31.222
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 25.42,
+    "wind": 10.6,
+    "hydro": 0.99,
+    "bioenergy": 1.02,
+    "other_renewables": 0.19
+   }
+  },
+  "DK": {
+   "iso3": "DNK",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 91.153,
+    "bioenergy": 21.372,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     78.55,
+     82.05,
+     79.283,
+     80.859,
+     86.397,
+     89.233,
+     91.153
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 5.05,
+    "wind": 7.55,
+    "hydro": 0.01,
+    "bioenergy": 1.79,
+    "other_renewables": 0.17
+   }
+  },
+  "SE": {
+   "iso3": "SWE",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 71.346,
+    "bioenergy": 5.855,
+    "nuclear": 27.395
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     58.746,
+     68.47,
+     67.383,
+     68.321,
+     69.407,
+     69.353,
+     71.346
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 5.5,
+    "wind": 17.38,
+    "hydro": 16.31,
+    "bioenergy": 3.19,
+    "other_renewables": 0.48
+   }
+  },
+  "NO": {
+   "iso3": "NOR",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 98.997,
+    "bioenergy": 0.149,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     97.939,
+     98.517,
+     99.319,
+     98.646,
+     98.471,
+     98.607,
+     98.997
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 0.9,
+    "wind": 5.16,
+    "hydro": 34.65,
+    "bioenergy": 0.05,
+    "other_renewables": 0.05
+   }
+  },
+  "FI": {
+   "iso3": "FIN",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 56.425,
+    "bioenergy": 12.544,
+    "nuclear": 39.771
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     46.466,
+     51.892,
+     52.947,
+     53.568,
+     51.889,
+     55.823,
+     56.425
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 1.57,
+    "wind": 9.38,
+    "hydro": 3.22,
+    "bioenergy": 3.66,
+    "other_renewables": 0.11
+   }
+  },
+  "GR": {
+   "iso3": "GRC",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 47.745,
+    "bioenergy": 1.256,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     33.577,
+     36.94,
+     40.8,
+     43.449,
+     49.826,
+     49.23,
+     47.745
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 11.08,
+    "wind": 5.71,
+    "hydro": 3.49,
+    "bioenergy": 0.18,
+    "other_renewables": 0.0
+   }
+  },
+  "IE": {
+   "iso3": "IRL",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 47.838,
+    "bioenergy": 3.31,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     38.711,
+     42.444,
+     37.051,
+     39.213,
+     45.276,
+     46.51,
+     47.838
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 2.49,
+    "wind": 5.13,
+    "hydro": 0.24,
+    "bioenergy": 0.16,
+    "other_renewables": 0.04
+   }
+  },
+  "GB": {
+   "iso3": "GBR",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 51.824,
+    "bioenergy": 13.939,
+    "nuclear": 12.388
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     36.596,
+     43.065,
+     39.782,
+     41.611,
+     46.49,
+     50.705,
+     51.824
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 21.66,
+    "wind": 33.4,
+    "hydro": 2.19,
+    "bioenergy": 7.01
+   }
+  },
+  "RO": {
+   "iso3": "ROU",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 47.101,
+    "bioenergy": 0.954,
+    "nuclear": 20.456
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     41.916,
+     44.575,
+     44.98,
+     43.149,
+     49.798,
+     46.513,
+     47.101
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 6.24,
+    "wind": 3.28,
+    "hydro": 6.62,
+    "bioenergy": 0.16,
+    "other_renewables": 0.0
+   }
+  },
+  "BG": {
+   "iso3": "BGR",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 32.856,
+    "bioenergy": 4.426,
+    "nuclear": 39.026
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     17.132,
+     18.61,
+     21.834,
+     19.153,
+     25.075,
+     29.876,
+     32.856
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 5.91,
+    "wind": 0.71,
+    "hydro": 2.55,
+    "bioenergy": 0.09,
+    "other_renewables": 0.0
+   }
+  },
+  "HU": {
+   "iso3": "HUN",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 35.27,
+    "bioenergy": 5.986,
+    "nuclear": 40.097
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     13.711,
+     15.808,
+     19.141,
+     21.409,
+     26.393,
+     31.425,
+     35.27
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 8.18,
+    "wind": 0.32,
+    "hydro": 0.06,
+    "bioenergy": 0.62,
+    "other_renewables": 0.02
+   }
+  },
+  "CZ": {
+   "iso3": "CZE",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 16.92,
+    "bioenergy": 8.03,
+    "nuclear": 42.301
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     11.736,
+     12.909,
+     12.718,
+     12.863,
+     14.697,
+     16.914,
+     16.92
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 4.54,
+    "wind": 0.37,
+    "hydro": 1.12,
+    "bioenergy": 0.83,
+    "other_renewables": 0.03
+   }
+  },
+  "EE": {
+   "iso3": "EST",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 59.813,
+    "bioenergy": 21.784,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     28.121,
+     48.849,
+     39.917,
+     31.991,
+     48.78,
+     55.66,
+     59.813
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 0.98,
+    "wind": 0.71,
+    "hydro": 0.01,
+    "bioenergy": 0.98,
+    "other_renewables": 0.01
+   }
+  },
+  "LV": {
+   "iso3": "LVA",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 73.499,
+    "bioenergy": 9.282,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     49.534,
+     63.636,
+     63.59,
+     75.944,
+     77.743,
+     73.503,
+     73.499
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 0.92,
+    "wind": 0.13,
+    "hydro": 1.59,
+    "bioenergy": 0.11,
+    "other_renewables": 0.0
+   }
+  },
+  "LT": {
+   "iso3": "LTU",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 77.704,
+    "bioenergy": 10.23,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     73.952,
+     54.681,
+     60.93,
+     74.752,
+     83.774,
+     84.325,
+     77.704
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 3.3,
+    "wind": 2.51,
+    "hydro": 0.12,
+    "bioenergy": 0.18,
+    "other_renewables": 0.02
+   }
+  },
+  "SI": {
+   "iso3": "SVN",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 39.589,
+    "bioenergy": 1.912,
+    "nuclear": 39.293
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     31.718,
+     33.037,
+     34.894,
+     30.464,
+     40.514,
+     41.121,
+     39.589
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 1.57,
+    "wind": 0.0,
+    "hydro": 1.14,
+    "bioenergy": 0.07
+   }
+  },
+  "HR": {
+   "iso3": "HRV",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 76.323,
+    "bioenergy": 6.819,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     66.008,
+     64.626,
+     69.689,
+     63.475,
+     70.126,
+     73.435,
+     76.323
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 1.32,
+    "wind": 1.38,
+    "hydro": 2.19,
+    "bioenergy": 0.16,
+    "other_renewables": 0.0
+   }
+  },
+  "RS": {
+   "iso3": "SRB",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 28.535,
+    "bioenergy": 1.062,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     28.571,
+     27.391,
+     33.579,
+     28.381,
+     35.201,
+     32.309,
+     28.535
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 0.43,
+    "wind": 0.8,
+    "hydro": 2.51,
+    "bioenergy": 0.05,
+    "other_renewables": 0.02
+   }
+  },
+  "ME": {
+   "iso3": "MNE",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 74.571,
+    "bioenergy": 0.0,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     56.268,
+     52.212,
+     61.804,
+     53.172,
+     60.859,
+     59.749,
+     74.571
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 0.1,
+    "wind": 0.12,
+    "hydro": 0.7,
+    "bioenergy": 0.0,
+    "other_renewables": 0.0
+   }
+  },
+  "MK": {
+   "iso3": "MKD",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 45.389,
+    "bioenergy": 0.842,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     22.921,
+     27.919,
+     29.9,
+     27.566,
+     33.24,
+     40.482,
+     45.389
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 1.06,
+    "wind": 0.1,
+    "hydro": 0.72,
+    "bioenergy": 0.01,
+    "other_renewables": 0.0
+   }
+  },
+  "AL": {
+   "iso3": "ALB",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 99.998,
+    "bioenergy": 0.0,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     100.002,
+     99.992,
+     99.997,
+     99.997,
+     100.005,
+     100.005,
+     99.998
+    ]
+   },
+   "capacity_gw": {
+    "year": 2024,
+    "solar": 0.72,
+    "wind": 0.0,
+    "hydro": 2.56,
+    "bioenergy": 0.0,
+    "other_renewables": 0.0
+   }
+  },
+  "BA": {
+   "iso3": "BIH",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 43.646,
+    "bioenergy": 0.273,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     36.679,
+     29.138,
+     38.941,
+     31.986,
+     42.828,
+     40.293,
+     43.646
+    ]
+   },
+   "capacity_gw": {
+    "year": 2025,
+    "solar": 0.67,
+    "wind": 0.24,
+    "hydro": 1.88,
+    "bioenergy": 0.01,
+    "other_renewables": 0.0
+   }
+  },
+  "XK": {
+   "iso3": "XKX",
+   "year": 2025,
+   "share_of_generation_pct": {
+    "renewables": 10.752,
+    "bioenergy": 0.0,
+    "nuclear": 0.0
+   },
+   "renewables_trend": {
+    "years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ],
+    "share_of_generation_pct": [
+     4.882,
+     5.373,
+     6.512,
+     6.512,
+     12.783,
+     8.795,
+     10.752
+    ]
+   }
+  }
+ }
+}
