@@ -7,7 +7,9 @@ Waits for the first run of fetch.yml that started from a commit (HEAD unless
 --commit says another) and actually fetched, then checks the files on
 origin/main: the three the site has always read, and the newer datasets
 (balancing prices, outages, forecast error, low prices and the two files
-fetch_entsoe.py keeps for them), each block with its licence. Exit 0 REAL RUN
+fetch_entsoe.py keeps for them), each block with its licence, and the shape
+of the files a run reads or rewrites only now and then (the exchange rates,
+Ember's yearly figures, the installed capacity). Exit 0 REAL RUN
 OK, 1 REAL RUN BROKEN, 2 REAL RUN INCONCLUSIVE (a source was down: says
 nothing about the change; run it again).
 """
@@ -163,6 +165,9 @@ def _same_length(lists, count):
     return all(isinstance(values, list) and len(values) == count for values in lists)
 
 
+notes_of_balancing = []
+
+
 def check_balancing(doc, path, broken):
     if not _blocks(doc, path, {'afrr_activated': 'cc-by-4.0', 'afrr_cbmp': 'source-terms'}, broken):
         return 'broken'
@@ -171,12 +176,26 @@ def check_balancing(doc, path, broken):
         if 'fetched_at' not in entry or not days or not all(
                 _same_length([day.get('up'), day.get('down')], day.get('periods')) for day in days.values()):
             broken.append(f'{path} afrr_activated {zone}: a day does not have one price for each period')
+        if entry.get('currency') != 'EUR' and days and not all(
+                _same_length([day.get('up_eur'), day.get('down_eur')], day.get('periods'))
+                and number(day.get('fx_rate')) and 'fx_date' in day for day in days.values()):
+            # a day with no rate has no values in euros; the step's log says which
+            notes_of_balancing.append(f"{zone} ({entry.get('currency')}) has a day with no values in euros")
     for zone, entry in doc['afrr_cbmp']['zones'].items():
         for day in (entry.get('days') or {}).values():
             if not all(isinstance(day.get(d), dict) and _same_length(
                     [day[d].get(name) for name in ('min', 'avg', 'max', 'count')], day.get('quarters')) for d in ('up', 'down')):
                 broken.append(f'{path} afrr_cbmp {zone}: a day does not have one summary for each quarter-hour')
-    return f"{len(doc['afrr_activated']['zones'])} zones with the 17.1.F price, {len(doc['afrr_cbmp']['zones'])} with the PICASSO summary"
+    zones = doc['afrr_activated']['zones']
+    in_euros = sorted(zone for zone, entry in zones.items() if entry.get('currency') != 'EUR'
+                      and any('up_eur' in day for day in (entry.get('days') or {}).values()))
+    more = notes_of_balancing[:]
+    del notes_of_balancing[:]
+    if in_euros:
+        more.append(f"also in euros: {', '.join(in_euros)}")
+    more += [f"{zone} by the {entry['area']}" for zone, entry in zones.items() if entry.get('area')]
+    return (f"{len(zones)} zones with the 17.1.F price, {len(doc['afrr_cbmp']['zones'])} with the PICASSO summary"
+            + ''.join(f'; {line}' for line in more))
 
 
 OUTAGE = ('id', 'revision', 'asset_type', 'name', 'start', 'end', 'planned', 'status', 'published', 'phase')
@@ -217,8 +236,13 @@ def check_low_prices(doc, path, broken):
                                           for zone in ('PT', 'ES')):
         broken.append(f'{path}: OMIE has no day, or no total of the year for Portugal and Spain')
         return 'broken'
+    checked = doc['omie'].get('version_check') or {}
+    hourly = sorted(zone for zone, entry in (doc['entsoe'].get('zones') or {}).items()
+                    if ((entry.get('year') or {}).get('hourly_days') or 0) > 0)
     return (f"OMIE {year.get('days')} days of the year, negative or zero {year['PT']['negative_or_zero_pct']} % in "
-            f"Portugal and {year['ES']['negative_or_zero_pct']} % in Spain; {len(doc['entsoe'].get('zones') or {})} zones of ENTSO-E")
+            f"Portugal and {year['ES']['negative_or_zero_pct']} % in Spain; {len(doc['entsoe'].get('zones') or {})} zones of ENTSO-E"
+            + (f"; OMIE's later versions looked for on {checked.get('date')}" if checked.get('date') else '')
+            + (f"; zones whose year still has days counted on hourly means: {', '.join(hourly)}" if hourly else ''))
 
 
 def check_kept(block):
@@ -228,6 +252,58 @@ def check_kept(block):
         return f"{len(doc[block].get('zones') or {})} zones"
     return check
 
+
+CAPACITY_FIELDS = ['name', 'capacity_mw', 'renewable_pct', 'solar_pct', 'wind_pct', 'hydro_pct', 'bio_pct', 'nuclear_pct',
+                   'solar_mw', 'wind_mw', 'hydro_mw', 'target', 'target_year', 'trend', 'population_m', 'cap_source',
+                   'cap_year']
+
+
+def check_rates(doc, path, broken):
+    """data/fx-rates.json: the ECB's reference rates the prices not in euros are converted with."""
+    rates = doc.get('rates') if isinstance(doc, dict) else None
+    fixed = doc.get('fixed') if isinstance(doc, dict) else None
+    if not isinstance(rates, dict) or not isinstance(fixed, dict) or not {'PLN', 'RON'} <= set(rates) \
+            or not {'BGN', 'BAM'} <= set(fixed) or any(not days or not all(number(v) for v in days.values())
+                                                       for days in rates.values()):
+        broken.append(f'{path}: no rates, or a currency with no day or with a value that is not a number')
+        return 'broken'
+    last = max(max(days) for days in rates.values())
+    return f"{len(rates)} currencies and {len(fixed)} fixed rates, the last day {last}"
+
+
+def check_ember(doc, path, broken):
+    """data/ember-yearly.json: what merge_capacity.py reads of Ember's yearly data."""
+    countries = doc.get('countries') if isinstance(doc, dict) else None
+    if not isinstance(countries, dict) or doc.get('license') != 'cc-by-4.0' or not doc.get('edition') \
+            or not doc.get('source') or len(countries) != 32 or any(
+                not number((entry.get('share_of_generation_pct') or {}).get('renewables'))
+                or len((entry.get('renewables_trend') or {}).get('share_of_generation_pct') or []) != 7
+                for entry in countries.values()):
+        broken.append(f'{path}: not the licence, the edition and the 32 countries with their share and trend')
+        return 'broken'
+    return f"edition of {doc['edition'][:10]}, {len(countries)} countries, last complete year " \
+           f"{sorted({entry.get('year') for entry in countries.values()})}"
+
+
+def check_capacity(doc, path, broken):
+    """data/renewablenodes-capacity.json, which the site reads: the same countries and fields as ever."""
+    countries = doc.get('countries') if isinstance(doc, dict) else None
+    if not isinstance(countries, dict) or list(doc) != ['updated', 'source', 'countries', 'count'] \
+            or doc['count'] != len(countries) or any(list(country) != CAPACITY_FIELDS for country in countries.values()):
+        broken.append(f'{path}: top-level keys changed, or a country lost a field the site reads')
+        return 'broken'
+    sources = sorted({country['cap_source'] for country in countries.values()})
+    if not set(sources) <= {'entsoe', 'ember'} or 'Ember' not in str(doc['source']):
+        broken.append(f'{path}: the capacity comes from {sources}, or `source` does not name Ember')
+    return f"{len(countries)} countries, capacity from {', '.join(sources)}"
+
+
+# Files a run reads, or rewrites only now and then: their shape is checked, not their time.
+STANDING = {
+    'data/fx-rates.json': check_rates,
+    'data/ember-yearly.json': check_ember,
+    'data/renewablenodes-capacity.json': check_capacity,
+}
 
 NEWER = {
     'data/wind-solar-actual.json': check_kept('actual_generation'),
@@ -302,6 +378,13 @@ def main():
         fresh = updated is not None and updated >= started
         notes.append(f'{path}: {found}, updated {str(doc.get("updated"))[:19]}'
                      + ('' if fresh else ' - not written in this run (nothing new, or its source did not answer)'))
+
+    for path, check in STANDING.items():
+        doc = published(path) if exists(path) else None
+        if doc is None:
+            broken.append(f'{path} is missing or is not valid JSON')
+            continue
+        notes.append(f'{path}: {check(doc, path, broken)}, updated {str(doc.get("updated"))[:19]}')
 
     # The whole run must fit in the cadence: the next one starts 15 minutes after this one was asked for.
     ended = datetime.fromisoformat(job['completed_at'].replace('Z', '+00:00')) if job.get('completed_at') else None
