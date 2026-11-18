@@ -1,0 +1,51 @@
+name: Rewrite parts of the archive
+# Started by hand. Corrections to the archive that need ENTSO-E, each made
+# once, by the cheap way: one request for a year instead of one for a day.
+#
+#   italy-generation   Italy's generation by the country, not the North zone,
+#                      in the days before 18 Nov 2026: see "Italy's generation
+#                      in the archive" in backfill_archive.py.
+#
+# It does not get in the way of the runs of fetch.yml: it asks ENTSO-E for one
+# thing at a time, it only writes files of the archive those runs do not
+# write, and it pushes on top of whatever they pushed meanwhile. The runs that
+# write to the archive (this one, backfill.yml, rewrite-price-archive.yml) are
+# started one at a time.
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: Which part to rewrite
+        type: choice
+        options: [italy-generation]
+        required: true
+      years:
+        description: Years, separated by spaces. Empty for every year there is something to do in
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: rewrite-archive
+  cancel-in-progress: false
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 10    # enough for pull --rebase to put a commit on top of the feed's
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Italy's generation by the country
+        if: ${{ inputs.what == 'italy-generation' }}
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          YEARS: ${{ inputs.years }}
+        run: python backfill_archive.py --rewrite-italy-generation $YEARS

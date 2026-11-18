@@ -22,6 +22,7 @@ Reuses constants and helpers from fetch_entsoe.py so any future updates to
 zone codes, consolidation rules or XML parsing stay in a single place.
 """
 
+import bisect
 import contextlib
 import glob
 import io
@@ -207,44 +208,56 @@ def _ask(url):
     return fe._get(url, socket_timeout=120, max_s=300)
 
 
-def prices_of_span(base, code, first, last, expected, ask=_ask, sleep=time.sleep):
-    """{day: [(hour, price)]} of a zone for the delivery days `first` to
-    `last`, from one request or, when that fails, from the requests for its
-    two halves. Raises RewriteFailed when a part of it cannot be had.
+def ask_span(base, params, label, first, last, read, expected, ask=_ask, sleep=time.sleep):
+    """What ENTSO-E has of the days `first` to `last`, as a {day: ...} that
+    `read(answer, first, last)` makes of an answer: from one request or, when
+    that fails, from the requests for its two halves, down to a month. Raises
+    RewriteFailed when a part of it cannot be had.
 
-    `expected` says whether the archive has this zone somewhere in the span:
-    an answer with nothing at all for a zone the archive has is asked again in
-    halves before it is believed."""
+    `params` are those of the request but for its period, which is the days
+    asked for and one more on each side. A request that fails is repeated; a
+    refusal (HTTP 4xx) is not, and goes straight to the halves. `expected`
+    says whether there should be something in the span: an answer with nothing
+    at all is then asked again in halves before it is believed."""
     span = (last - first).days + 1
     start = fe.carry_over.day_bounds(first - timedelta(days=1))[0]      # a day more on each side: a zone
     end = fe.carry_over.day_bounds(last + timedelta(days=1))[1]         # whose day is on another clock
-    params = urllib.parse.urlencode({
-        'securityToken': fe.API_KEY, 'documentType': 'A44',
-        'in_Domain': fe.ZONES[code], 'out_Domain': fe.ZONES[code],
+    query = urllib.parse.urlencode({
+        'securityToken': fe.API_KEY, **params,
         'periodStart': start.strftime('%Y%m%d%H%M'), 'periodEnd': end.strftime('%Y%m%d%H%M'),
     })
     text, reason = None, 'not asked'
     for wait in (0,) + REWRITE_WAITS:
         if wait:
             sleep(wait)
-        text, reason = ask(f'{base}?{params}')
+        text, reason = ask(f'{base}?{query}')
         if text is not None or (reason or '').startswith('HTTP 4'):
             break                        # an answer, or a refusal that repeating will not change
-        print(f'    {code} {first} to {last}: failed ({reason}), asking again')
+        print(f'    {label} {first} to {last}: failed ({reason}), asking again')
 
-    by_day = None
     if text is not None:
-        by_day = {day: hours for day, hours in fe.prices_by_day(fe.read_series(text)).items() if first <= day <= last}
-        if by_day or not expected or span <= SMALLEST_SPAN:
-            return by_day
-        reason = 'nothing in the answer, for a zone the archive has'
+        found = read(text, first, last)
+        if found or not expected or span <= SMALLEST_SPAN:
+            return found
+        reason = 'nothing in the answer, where there should be something'
     if span <= SMALLEST_SPAN:
-        raise RewriteFailed(f'{code} {first} to {last}: {reason}')
-    print(f'    {code} {first} to {last}: {reason} - asking for its two halves')
+        raise RewriteFailed(f'{label} {first} to {last}: {reason}')
+    print(f'    {label} {first} to {last}: {reason} - asking for its two halves')
     middle = first + timedelta(days=span // 2 - 1)
-    found = prices_of_span(base, code, first, middle, expected, ask, sleep)
-    found.update(prices_of_span(base, code, middle + timedelta(days=1), last, expected, ask, sleep))
+    found = ask_span(base, params, label, first, middle, read, expected, ask, sleep)
+    found.update(ask_span(base, params, label, middle + timedelta(days=1), last, read, expected, ask, sleep))
     return found
+
+
+def prices_of_span(base, code, first, last, expected, ask=_ask, sleep=time.sleep):
+    """{day: [(hour, price)]} of a zone for the delivery days `first` to
+    `last` (see ask_span). `expected` says whether the archive has this zone
+    somewhere in the span."""
+    def read(text, first, last):
+        return {day: hours for day, hours in fe.prices_by_day(fe.read_series(text)).items() if first <= day <= last}
+
+    return ask_span(base, {'documentType': 'A44', 'in_Domain': fe.ZONES[code], 'out_Domain': fe.ZONES[code]},
+                    code, first, last, read, expected, ask, sleep)
 
 
 def rewrite_day(day, old, found, base, now):
@@ -321,10 +334,186 @@ def rewrite_prices(base, years=None, ask=_ask, sleep=time.sleep, commit=None):
     return 1 if failed else 0
 
 
+# ---------------------------------------------------------------------------
+# Italy's generation in the archive
+# ---------------------------------------------------------------------------
+#
+# Until 18 Nov 2026 the feed asked for Italy's generation by its North bidding
+# zone, so every day of the archive before that has the North alone (17 110 MW
+# when the country was generating 31 866). `python backfill_archive.py
+# --rewrite-italy-generation` puts the country in its place, by the cheap way:
+# one request for each year, or for the most ENTSO-E accepts (see ask_span),
+# where day by day it would be 1 800.
+#
+#   - Each file keeps the instant it is of, and Italy's value is of that same
+#     instant: the end of the UTC day in the files of the backfill, the time
+#     of `updated` in those the regular runs wrote. From the year's answer,
+#     the 24 hours before that instant are cut out, in the shape ENTSO-E
+#     gives them when asked for those hours alone (window_of), and read by
+#     the code of the regular runs (fetch_entsoe.latest_generation).
+#   - Only Italy's entry changes. It gains `eic`, the area its mix is of, by
+#     which a file already done is known and left alone. A file's `updated`
+#     is not touched: for the regular runs' files it is the instant itself.
+#   - On a day ENTSO-E has no generation for the country, Italy leaves the
+#     file: the North is not the country.
+#   - A request that fails is repeated and then asked in halves. If a part of
+#     a year cannot be had, no file of that year is written and the run ends
+#     in failure, to be started again.
+
+GENERATION_FILES = 'data/archive/generation-mix-{day}.json'
+ITALY = 'IT'
+ITALY_BY_COUNTRY_FROM = date(2026, 11, 18)       # the first day whose file the regular runs wrote with the country
+
+
+def window_of(all_series, start, end):
+    """The part of some series (as fetch_entsoe.read_series gives them) that
+    is of the hours from `start` to `end`, in the shape ENTSO-E gives it when
+    asked for those hours alone: each Period begins at the first of its
+    intervals in the window, its points are counted from there and, with
+    curveType A03, the value in force at the start is its first point."""
+    cut = []
+    for series in all_series:
+        periods = []
+        for period in series['periods']:
+            step, points = period['step'], period['points']
+            if not points:
+                continue
+            count = points[-1][0]
+            if period['end'] is not None:
+                count = max(count, int((period['end'] - period['start']) / step))
+            first = max(0, -((period['start'] - start) // step))                  # intervals before the window
+            last = min(count, -((period['start'] - end) // step))                  # the first one after it
+            if last <= first:
+                continue
+            positions = period.get('_positions')                                   # kept: a year is cut 365 times
+            if positions is None:
+                positions = period['_positions'] = [position for position, _value in points]
+            low, high = bisect.bisect_right(positions, first), bisect.bisect_right(positions, last)
+            kept = [(position - first, value) for position, value in points[low:high]]
+            if period['variable'] and low and (not kept or kept[0][0] != 1):
+                kept.insert(0, (1, points[low - 1][1]))                            # the value in force at the start
+            if kept:
+                periods.append({'start': period['start'] + step * first, 'end': period['start'] + step * last,
+                                'step': step, 'variable': period['variable'], 'points': kept})
+        if periods:
+            cut.append(dict(series, periods=periods))
+    return cut
+
+
+def instant_of(day, doc):
+    """The instant a generation file of the archive is of: the end of the UTC
+    day for a file of the backfill, the time it was written for one of the
+    regular runs."""
+    if 'date' in doc or '(backfilled)' in str(doc.get('source', '')):
+        return end_of_day(day)
+    return fe.carry_over.parse_time(doc.get('updated')) or end_of_day(day)
+
+
+def italy_to_do():
+    """{day: document} of the generation files that still have Italy by its North zone."""
+    found = {}
+    for path in sorted(glob.glob(GENERATION_FILES.format(day='*'))):
+        try:
+            day = date.fromisoformat(os.path.basename(path)[len('generation-mix-'):-len('.json')])
+            with open(path, encoding='utf-8') as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            continue
+        zones = doc.get('zones') if isinstance(doc, dict) else None
+        written = fe.carry_over.parse_time(doc.get('updated')) if isinstance(doc, dict) else None
+        if not isinstance(zones, dict) or day >= ITALY_BY_COUNTRY_FROM:
+            continue
+        if written is not None and written.date() >= ITALY_BY_COUNTRY_FROM:
+            continue                                   # a day filled in since: asked for by the country already
+        if (zones.get(ITALY) or {}).get('eic') == fe.GEN_ZONES[ITALY]:
+            continue
+        found[day] = doc
+    return found
+
+
+def italy_of_span(base, first, last, instants, ask=_ask, sleep=time.sleep):
+    """{day: entry of generation-mix.json} of Italy, the country, for the days
+    of `instants` ({day: instant}) between `first` and `last` that ENTSO-E has
+    generation for."""
+    def read(text, first, last):
+        all_series = fe.read_series(text)
+        found = {}
+        for day, instant in instants.items():
+            if not first <= day <= last:
+                continue
+            hour = instant.replace(minute=0, second=0, microsecond=0)
+            got = fe.latest_generation(None, instant,
+                                       window_of(all_series, hour - timedelta(hours=24), hour + timedelta(hours=1)))
+            if got:
+                found[day] = fe.generation_entry(got)
+        return found
+
+    return ask_span(base, {'documentType': 'A75', 'processType': 'A16', 'in_Domain': fe.GEN_ZONES[ITALY]},
+                    'Italy', first, last, read, True, ask, sleep)
+
+
+def rewrite_italy_generation(base, years=None, ask=_ask, sleep=time.sleep, commit=None):
+    """Put the country in the place of the North zone in the generation files
+    of the archive, a year at a time. Returns the exit code: 0, or 1 when a
+    year could not be had and was left alone."""
+    waiting = italy_to_do()
+    wanted = sorted({day.year for day in waiting} & set(years or {day.year for day in waiting}))
+    print(f'{len(waiting)} generation files with Italy by its North zone, in the years '
+          f'{sorted({day.year for day in waiting})}; rewriting {wanted}')
+    rewritten, removed, failed = 0, [], []
+    for year in wanted:
+        days = sorted(day for day in waiting if day.year == year)
+        instants = {day: instant_of(day, waiting[day]) for day in days}
+        print(f'\n{year}: {len(days)} files, {days[0]} to {days[-1]}')
+        started = time.monotonic()
+        try:
+            found = italy_of_span(base, days[0], days[-1], instants, ask, sleep)
+        except RewriteFailed as e:
+            print(f'  {year} NOT rewritten: {e}')
+            failed.append(year)
+            continue
+        print(f'  {len(found)} days with the generation of the country [{time.monotonic() - started:.0f}s]')
+        now = datetime.now(timezone.utc).isoformat()
+        for day in days:
+            doc = waiting[day]
+            zones = doc['zones']
+            stamped = any(fe.FETCHED_AT in entry for entry in zones.values() if isinstance(entry, dict))
+            if day in found:
+                entry = dict(found[day], eic=fe.GEN_ZONES[ITALY])
+                if stamped:
+                    entry[fe.FETCHED_AT] = now
+                if ITALY in zones:
+                    zones[ITALY] = entry                       # in the place it had
+                else:
+                    doc['zones'] = {name: (entry if name == ITALY else zones[name])
+                                    for name in fe.GEN_ORDER + [n for n in zones if n not in fe.GEN_ORDER]
+                                    if name == ITALY or name in zones}
+            elif ITALY in zones:
+                del zones[ITALY]
+                removed.append(day)
+            else:
+                continue
+            fe.write_json(GENERATION_FILES.format(day=day.isoformat()), doc, separators=(',', ':'))
+            rewritten += 1
+        if commit:
+            commit(f"Put Italy's generation of {year} in the archive by the country, not the North zone ({len(days)} days)")
+
+    print(f'\nRewritten: {rewritten} files. Years left alone: {failed or "none"}.')
+    print(f'Days Italy left, because ENTSO-E has no generation for the country: {len(removed)}'
+          + (f' ({", ".join(str(day) for day in removed[:40])}{"..." if len(removed) > 40 else ""})' if removed else ''))
+    return 1 if failed else 0
+
+
 def main():
     if not fe.API_KEY:
         print('ERROR: ENTSOE_API_KEY environment variable is not set')
         sys.exit(1)
+
+    if '--rewrite-italy-generation' in sys.argv:
+        years = [int(arg) for arg in sys.argv[1:] if arg.isdigit()]
+        _run_git(['config', 'user.name', 'github-actions[bot]'])
+        _run_git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
+        sys.exit(rewrite_italy_generation(fe.ALT_URLS[0], years or None, commit=_commit_and_push))
 
     if '--rewrite-prices' in sys.argv:
         years = [int(arg) for arg in sys.argv[1:] if arg.isdigit()]
