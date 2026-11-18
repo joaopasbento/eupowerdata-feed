@@ -1,0 +1,43 @@
+name: Rewrite the archive of the prices
+# Started by hand. Rewrites the files of data/archive/spot-prices-*.json that
+# were written by the old reading of the prices (every day up to 16 Nov 2026),
+# with one request to ENTSO-E for each zone and year: see "Rewriting the
+# archive of the prices" in backfill_archive.py.
+#
+# It does not get in the way of the runs of fetch.yml: it asks ENTSO-E for one
+# thing at a time (a few requests a minute, against the feed's 240), it only
+# writes files of past days, which those runs do not touch, and it pushes each
+# year on top of whatever they pushed meanwhile. A second start takes up where
+# the first left off.
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: Years to rewrite, separated by spaces. Empty for every year that still has files of the old reading
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: rewrite-price-archive
+  cancel-in-progress: false
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 10    # enough for pull --rebase to put a year on top of the feed's commits
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Rewrite the price files of the old reading
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          YEARS: ${{ inputs.years }}
+        run: python backfill_archive.py --rewrite-prices $YEARS

@@ -22,13 +22,16 @@ Reuses constants and helpers from fetch_entsoe.py so any future updates to
 zone codes, consolidation rules or XML parsing stay in a single place.
 """
 
+import contextlib
+import glob
+import io
 import os
 import sys
 import json
 import time
 import subprocess
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 # Reuse zone codes, consolidation rules, HTTP helper and XML parser from the
 # regular fetcher — single source of truth.
@@ -221,10 +224,189 @@ def fetch_flows_for_date(base, target_date):
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Rewriting the archive of the prices
+# ---------------------------------------------------------------------------
+#
+# Every day of the archive written before 17 Nov 2026 has wrong prices: until
+# October 2025 the average ran over two delivery days, and since then quarter-
+# hours were read as hours. `python backfill_archive.py --rewrite-prices`
+# puts them right, by the cheap way: one request to ENTSO-E for each zone and
+# each year (about 200 in all, where day by day it would be 64 800), with
+# every day of the answer read by the same code as the regular runs
+# (fetch_entsoe.prices_by_day and price_zones) and its file written over.
+#
+#   - Only the files that still have a zone of ENTSO-E in the old shape (with
+#     no delivery_date) are rewritten, so a second run takes up where the first
+#     left off and leaves the days of the new reading alone.
+#   - A zone that does not come from ENTSO-E (the United Kingdom) stays in each
+#     file as it is. A zone ENTSO-E has no data for on a day leaves that day.
+#   - A request that fails is repeated, and after that asked again in two
+#     halves, down to a month. It never counts as "no data": if a zone cannot
+#     be had for part of a year, no file of that year is written and the run
+#     ends in failure, to be started again.
+#   - The archives of generation and of flows are not touched.
+
+ENTSOE_PRICE_ZONES = (set(fe.ZONES) - set(fe.ELEXON_ZONES)) | set(fe.CONSOLIDATE)
+PRICE_FILES = 'data/archive/spot-prices-{day}.json'
+REWRITE_WAITS = (15, 45, 90)      # seconds before each repetition of a failed request
+SMALLEST_SPAN = 31                # days: a failed request for no more than this is not split again
+
+
+class RewriteFailed(Exception):
+    pass
+
+
+def _archive_day(path):
+    return date.fromisoformat(os.path.basename(path)[len('spot-prices-'):-len('.json')])
+
+
+def old_reader_days():
+    """{day: document} of the price files that still have a zone of ENTSO-E
+    with no delivery_date, that is, written by the old reading."""
+    found = {}
+    for path in sorted(glob.glob(PRICE_FILES.format(day='*'))):
+        try:
+            with open(path, encoding='utf-8') as f:
+                doc = json.load(f)
+            day = _archive_day(path)
+        except (OSError, ValueError):
+            continue
+        zones = doc.get('zones') if isinstance(doc, dict) else None
+        if isinstance(zones, dict) and any(name in ENTSOE_PRICE_ZONES and fe.DELIVERY_DATE not in entry
+                                           for name, entry in zones.items() if isinstance(entry, dict)):
+            found[day] = doc
+    return found
+
+
+def _ask(url):
+    """One request for a long period: (answer, None) or (None, reason)."""
+    return fe._get(url, socket_timeout=120, max_s=300)
+
+
+def prices_of_span(base, code, first, last, expected, ask=_ask, sleep=time.sleep):
+    """{day: [(hour, price)]} of a zone for the delivery days `first` to
+    `last`, from one request or, when that fails, from the requests for its
+    two halves. Raises RewriteFailed when a part of it cannot be had.
+
+    `expected` says whether the archive has this zone somewhere in the span:
+    an answer with nothing at all for a zone the archive has is asked again in
+    halves before it is believed."""
+    span = (last - first).days + 1
+    start = fe.carry_over.day_bounds(first - timedelta(days=1))[0]      # a day more on each side: a zone
+    end = fe.carry_over.day_bounds(last + timedelta(days=1))[1]         # whose day is on another clock
+    params = urllib.parse.urlencode({
+        'securityToken': fe.API_KEY, 'documentType': 'A44',
+        'in_Domain': fe.ZONES[code], 'out_Domain': fe.ZONES[code],
+        'periodStart': start.strftime('%Y%m%d%H%M'), 'periodEnd': end.strftime('%Y%m%d%H%M'),
+    })
+    text, reason = None, 'not asked'
+    for wait in (0,) + REWRITE_WAITS:
+        if wait:
+            sleep(wait)
+        text, reason = ask(f'{base}?{params}')
+        if text is not None or (reason or '').startswith('HTTP 4'):
+            break                        # an answer, or a refusal that repeating will not change
+        print(f'    {code} {first} to {last}: failed ({reason}), asking again')
+
+    by_day = None
+    if text is not None:
+        by_day = {day: hours for day, hours in fe.prices_by_day(fe.read_series(text)).items() if first <= day <= last}
+        if by_day or not expected or span <= SMALLEST_SPAN:
+            return by_day
+        reason = 'nothing in the answer, for a zone the archive has'
+    if span <= SMALLEST_SPAN:
+        raise RewriteFailed(f'{code} {first} to {last}: {reason}')
+    print(f'    {code} {first} to {last}: {reason} - asking for its two halves')
+    middle = first + timedelta(days=span // 2 - 1)
+    found = prices_of_span(base, code, first, middle, expected, ask, sleep)
+    found.update(prices_of_span(base, code, middle + timedelta(days=1), last, expected, ask, sleep))
+    return found
+
+
+def rewrite_day(day, old, found, base, now):
+    """Write the file of one day over. Returns (zones that left, zones that came)."""
+    with contextlib.redirect_stdout(io.StringIO()):          # one "Consolidated" line a day is too many
+        new = fe.price_zones({code: by_day[day] for code, by_day in found.items() if day in by_day}, day)
+    for entry in new.values():
+        entry[fe.FETCHED_AT] = now
+    before = old.get('zones') or {}
+    zones = {}
+    for name in fe.PRICE_ORDER:                              # the feed's order
+        if name in new:
+            zones[name] = new[name]
+        elif name in before and name not in ENTSOE_PRICE_ZONES:
+            zones[name] = before[name]                       # not ENTSO-E's: as it is
+    for name, entry in before.items():
+        if name not in zones and name not in ENTSOE_PRICE_ZONES and name not in fe.ZONES:
+            zones[name] = entry
+    doc = dict(old, updated=now, endpoint=base, zones=zones)
+    fe.write_json(PRICE_FILES.format(day=day.isoformat()), doc, separators=(',', ':'))
+    return ([name for name in before if name in ENTSOE_PRICE_ZONES and name not in new],
+            [name for name in new if name not in before])
+
+
+def rewrite_prices(base, years=None, ask=_ask, sleep=time.sleep, commit=None):
+    """Rewrite the price files of the old reading, a year at a time. Returns
+    the exit code: 0, or 1 when a year could not be had and was left alone."""
+    waiting = old_reader_days()
+    wanted = sorted({day.year for day in waiting} & set(years or {day.year for day in waiting}))
+    print(f'{len(waiting)} files of the old reading, in the years {sorted({day.year for day in waiting})}; '
+          f'rewriting {wanted}')
+    parent = {zone: country for country, zones in fe.CONSOLIDATE.items() for zone in zones}
+    left, came, rewritten, empty, failed = {}, {}, 0, [], []
+    for year in wanted:
+        days = sorted(day for day in waiting if day.year == year)
+        first, last = days[0], days[-1]
+        print(f'\n{year}: {len(days)} files, {first} to {last}')
+        found = {}
+        try:
+            for code in fe.ZONES:
+                if code in fe.ELEXON_ZONES:
+                    continue
+                name = parent.get(code, code)
+                expected = any(name in (waiting[day].get('zones') or {}) for day in days)
+                started = time.monotonic()
+                found[code] = prices_of_span(base, code, first, last, expected, ask, sleep)
+                print(f'  {code}: {len(found[code])} days with prices [{time.monotonic() - started:.0f}s]')
+        except RewriteFailed as e:
+            print(f'  {year} NOT rewritten: {e}')
+            failed.append(year)
+            continue
+        now = datetime.now(timezone.utc).isoformat()
+        for day in days:
+            gone, new = rewrite_day(day, waiting[day], found, base, now)
+            rewritten += 1
+            for name in gone:
+                left.setdefault(name, []).append(day)
+            for name in new:
+                came.setdefault(name, []).append(day)
+            if not any(day in by_day for by_day in found.values()):
+                empty.append(day)
+        if commit:
+            commit(f'Rewrite the archive of the prices of {year} with the new reading ({len(days)} days)')
+
+    print(f'\nRewritten: {rewritten} files. Years left alone: {failed or "none"}.')
+    print(f'Zone-days that left a file, because ENTSO-E has no prices for them: {sum(map(len, left.values()))}')
+    for name, days in sorted(left.items()):
+        print(f'  {name}: {len(days)} days, {days[0]} to {days[-1]}')
+    print(f'Zone-days that came into a file that did not have them: {sum(map(len, came.values()))}')
+    for name, days in sorted(came.items()):
+        print(f'  {name}: {len(days)} days, {days[0]} to {days[-1]}')
+    print(f'Days left with no zone of ENTSO-E: {len(empty)}' + (f' ({empty[0]} to {empty[-1]})' if empty else ''))
+    return 1 if failed else 0
+
+
 def main():
     if not fe.API_KEY:
         print('ERROR: ENTSOE_API_KEY environment variable is not set')
         sys.exit(1)
+
+    if '--rewrite-prices' in sys.argv:
+        years = [int(arg) for arg in sys.argv[1:] if arg.isdigit()]
+        _run_git(['config', 'user.name', 'github-actions[bot]'])
+        _run_git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
+        sys.exit(rewrite_prices(fe.ALT_URLS[0], years or None, commit=_commit_and_push))
 
     # How many days to backfill. Defaults to 1830 (~5 years); override via env.
     # Caps at 1830 to match the cleanup cutoff in fetch_entsoe.py.
