@@ -78,7 +78,7 @@ def flow_answer(mw, when, last=None):
 
 # --- Prices (A44) ---
 
-def price_series(start, prices, minutes=60, contract='A01', position=None, curve='A03', end=None):
+def price_series(start, prices, minutes=60, contract='A01', position=None, curve='A03', end=None, currency='EUR'):
     """One TimeSeries of an A44 answer, with one Period that starts at `start`
     (UTC): `prices` are those of positions 1, 2, 3..., with None for a
     position that is left out (curveType A03: the same price as the one
@@ -94,7 +94,7 @@ def price_series(start, prices, minutes=60, contract='A01', position=None, curve
             f'<in_Domain.mRID codingScheme="A01">10YPT-REN------W</in_Domain.mRID>'
             f'<out_Domain.mRID codingScheme="A01">10YPT-REN------W</out_Domain.mRID>'
             f'<contract_MarketAgreement.type>{contract}</contract_MarketAgreement.type>'
-            f'<currency_Unit.name>EUR</currency_Unit.name><price_Measure_Unit.name>MWH</price_Measure_Unit.name>'
+            f'<currency_Unit.name>{currency}</currency_Unit.name><price_Measure_Unit.name>MWH</price_Measure_Unit.name>'
             f'{which}<curveType>{curve}</curveType>'
             f'<Period><timeInterval><start>{start:%Y-%m-%dT%H:%MZ}</start><end>{end:%Y-%m-%dT%H:%MZ}</end>'
             f'</timeInterval><resolution>PT{minutes}M</resolution>{points}</Period></TimeSeries>')
