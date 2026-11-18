@@ -168,6 +168,21 @@ class SendingTheRequests(unittest.TestCase):
         self.assertEqual((answers, entsoe.asked), ({}, []))
         self.assertIn('left for the next run', log)
 
+    def test_a_request_cut_short_by_the_end_of_the_budget_is_not_a_failure(self):
+        clock = [0.0]
+
+        def slow(url, timeout=None, max_seconds=None):
+            clock[0] += 100                       # the budget ends while the request is waiting
+            return fc.Response(error='timed out')
+
+        log = io.StringIO()
+        with mock.patch.dict('os.environ', {'ENTSOE_API_KEY': KEY}), contextlib.redirect_stdout(log):
+            answers = fc.entsoe_ask([('A', 'zone A', {'in_Domain': 'A'})], fc.Budget(60, clock=lambda: clock[0]),
+                                    get=slow, interval=0)
+        self.assertEqual(answers, {})
+        self.assertIn('cut short by the end of the time budget', log.getvalue())
+        self.assertIn('left for the next run', log.getvalue())
+
     def test_once_the_key_is_refused_the_rest_is_not_asked_for(self):
         entsoe = Entsoe([({}, fc.Response(401, {}, b'Unauthorized', error='Unauthorized'))])
         log = io.StringIO()
