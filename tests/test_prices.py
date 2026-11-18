@@ -259,8 +259,9 @@ class TheDaysTheClocksChange(unittest.TestCase):
         self.assertEqual([p['time'] for p in zone['prices']], [f'{h:02d}:00' for h in range(24)])
         self.assertEqual(zone['prices'][2], {'time': '02:00', 'hour': 2, 'price': 40.0})
         self.assertEqual(zone['prices'][3], {'time': '03:00', 'hour': 3, 'price': 100.0})
-        # The plain mean of the 24 hourly values: (10 + 20 + 40 + 21 x 100) / 24.
-        self.assertEqual(zone['avg'], 90.42)
+        # The mean of the 25 hours of the day, the repeated one counted twice: (10 + 20 + 30 + 50 + 21 x 100) / 25.
+        # (The mean of the 24 values published would be 90.42.)
+        self.assertEqual(zone['avg'], 88.4)
         self.assertEqual((zone['min'], zone['max']), (10.0, 100.0))
 
     def test_the_day_of_25_hours_in_quarter_hours(self):
@@ -269,6 +270,14 @@ class TheDaysTheClocksChange(unittest.TestCase):
         zone = entry(price_document(price_series('2026-10-24 22:00', quarters, minutes=15)), day)
         self.assertEqual(len(zone['prices']), 24)
         self.assertEqual(zone['prices'][2]['price'], 40.0)
+        self.assertEqual(zone['avg'], 88.0)                              # the mean of the 100 quarter-hours
+
+    def test_the_mean_of_a_day_of_25_hours_with_no_two_o_clock_is_that_of_the_hours_it_has(self):
+        day = date(2026, 10, 25)
+        hours = [(0, Decimal(10)), (1, Decimal(20)), (3, Decimal(60))]
+        self.assertEqual(fe.price_entry('x', hours, day)['avg'], 30.0)
+        self.assertEqual(fe.hour_weights([0, 1, 2, 3], day), [1, 1, 2, 1])
+        self.assertEqual(fe.hour_weights([0, 1, 2, 3], date(2026, 10, 24)), [1, 1, 1, 1])
 
 
 class ACountryOfTwoZones(unittest.TestCase):

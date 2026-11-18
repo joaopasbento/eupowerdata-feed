@@ -1230,20 +1230,36 @@ def read_day_prices(xml_str, day):
     return prices
 
 
+REPEATED_HOUR = 2                 # on the day the clocks go back, the hour there are two of: 02:00
+
+
+def hour_weights(labels, day):
+    """How many hours of the delivery day each entry of a zone's prices
+    stands for: one, but for the entry of 02:00 on the day of 25 hours, two."""
+    start, end = carry_over.day_bounds(day)
+    long_day = end - start > timedelta(hours=24)
+    return [2 if long_day and label == REPEATED_HOUR else 1 for label in labels]
+
+
 def price_entry(eic, hours, day):
     """A zone of spot-prices.json from its [(hour, price)] of the delivery day.
 
-    `avg` is the plain mean of the hourly values (taken before they are
-    rounded, so that on a day of 24 hours it is the mean of every interval of
-    the day, to the cent); `min` and `max` are the lowest and the highest of
-    the hourly values as published."""
+    `avg` is the mean of every hour of the delivery day, as OMIE and the
+    exchanges work it out (taken before the values are rounded, so that it is
+    the mean of every interval of the day, to the cent). On the day the clocks
+    go back the day has 25 hours and `prices` 24 entries, that of 02:00 being
+    the mean of the two hours so called: it counts twice. Taken once, as it
+    was, Portugal's mean came to 77.52 instead of 77.67 on 27 Oct 2024 and to
+    110.61 instead of 111.88 on 25 Oct 2026. `min` and `max` are the lowest
+    and the highest of the hourly values as published."""
     prices = [{'time': f'{hour:02d}:00', 'hour': hour, 'price': _cents(value)} for hour, value in hours]
     published = [p['price'] for p in prices]
+    weights = hour_weights([hour for hour, _value in hours], day)
     return {
         'eic': eic,
         'prices': prices,
         'latest': prices[-1],
-        'avg': _cents(sum(value for _hour, value in hours) / len(hours)),
+        'avg': _cents(sum(value * weight for (_hour, value), weight in zip(hours, weights)) / sum(weights)),
         'min': min(published),
         'max': max(published),
         DELIVERY_DATE: day.isoformat(),

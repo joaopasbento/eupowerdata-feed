@@ -85,6 +85,25 @@ class MoldovaOutOfTheArchive(InADirectory):
         self.assertEqual(archive_fixes.remove_moldova(), ([], []))          # done once, nothing left to do
 
 
+class TheMeanOfTheDaysOf25Hours(InADirectory):
+
+    def test_counts_the_entry_of_two_o_clock_twice(self):
+        # 24 entries for 25 hours: 10, 20, 40 (the mean of 30 and 50) and 21 at 100.
+        prices = [10.0, 20.0, 40.0] + [100.0] * 21
+        self.write('2026-10-25', {'PT': zone(prices, delivery_date='2026-10-25'),
+                                  'XX': zone(prices, delivery_date='2026-10-24')})
+        changed = archive_fixes.fix_long_days()
+        self.assertEqual({str(day): rows for day, rows in changed.items()}, {'2026-10-25': [('PT', 90.42, 88.4)]})
+        portugal = self.read('2026-10-25')['PT']
+        self.assertEqual((portugal['avg'], portugal['min'], portugal['max'], len(portugal['prices'])), (88.4, 10.0, 100.0, 24))
+        self.assertEqual(self.read('2026-10-25')['XX']['avg'], 90.42)       # not of that delivery day: not touched
+        self.assertEqual(archive_fixes.fix_long_days(), {})                 # done once, nothing left to do
+
+    def test_a_day_of_24_hours_is_not_one_of_them(self):
+        self.write('2026-10-24', {'PT': zone([10.0, 20.0, 40.0], delivery_date='2026-10-24')})
+        self.assertEqual(archive_fixes.fix_long_days(), {})
+
+
 class TheArchiveFromNowOn(EntsoeFeed):
     """fetch_entsoe.py itself: a day Moldova has one hour of is not written to the archive for it."""
 

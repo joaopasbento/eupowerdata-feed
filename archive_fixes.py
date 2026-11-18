@@ -27,6 +27,14 @@ Romania's. The zone MD is taken out of the price files up to 30 Jun 2026,
 that day included, and out of the later days on which it has one hour only
 (its delivery day begins an hour before the market's: see ONE_HOUR_IS_NO_DAY
 in fetch_entsoe.py, which keeps such days out of the archive from now on).
+
+avg25. On the day the clocks go back the delivery day has 25 hours and a
+zone's `prices` 24 entries, that of 02:00 being the mean of the two hours so
+called. `avg` was the mean of the 24 entries; it is the mean of the 25 hours,
+the entry of 02:00 counted twice, as OMIE and the exchanges work it out and as
+fetch_entsoe.price_entry() now does. It is worked out again from the prices
+the file has, for every zone of the five such days of the archive; `prices`,
+`min` and `max` are not touched.
 """
 
 import glob
@@ -36,6 +44,7 @@ import sys
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
+import fetch_entsoe as fe
 from feed_common import write_json
 
 ARCHIVE = 'data/archive/spot-prices-{day}.json'
@@ -116,6 +125,37 @@ def remove_moldova():
     return early, thin
 
 
+LONG_DAYS = (date(2022, 10, 30), date(2023, 10, 29), date(2024, 10, 27), date(2025, 10, 26), date(2026, 10, 25))
+
+
+def mean_of_the_day(zone, day):
+    """A zone's `avg` from its published prices, each hour of the day counted once."""
+    rows = zone['prices']
+    weights = fe.hour_weights([row['hour'] for row in rows], day)
+    total = sum(Decimal(str(row['price'])) * weight for row, weight in zip(rows, weights))
+    return _cents(total / sum(weights))
+
+
+def fix_long_days():
+    """Returns {day: [(zone, avg before, avg after)]} for the zones whose mean changed."""
+    changed = {}
+    for day in LONG_DAYS:
+        path = ARCHIVE.format(day=day.isoformat())
+        if not os.path.exists(path):
+            continue
+        doc = _load(path)
+        for name, zone in (doc.get('zones') or {}).items():
+            if zone.get('delivery_date') != day.isoformat() or not zone.get('prices'):
+                continue
+            mean = mean_of_the_day(zone, day)
+            if mean != zone.get('avg'):
+                changed.setdefault(day, []).append((name, zone.get('avg'), mean))
+                zone['avg'] = mean
+        if day in changed:
+            write_json(path, doc, separators=(',', ':'))
+    return changed
+
+
 def main(argv):
     if argv[1:] == ['bgn']:
         converted, left = convert_bgn()
@@ -130,6 +170,13 @@ def main(argv):
               + (f' ({early[0]} to {early[-1]})' if early else '')
               + f' and of {len(thin)} later files in which it had one hour'
               + (f' ({", ".join(str(day) for day in thin)})' if thin else ''))
+        return 0
+    if argv[1:] == ['avg25']:
+        changed = fix_long_days()
+        for day in LONG_DAYS:
+            zones = changed.get(day, [])
+            print(f'{day}: the mean of {len(zones)} zones changed'
+                  + (': ' + ', '.join(f'{name} {before} -> {after}' for name, before, after in zones) if zones else ''))
         return 0
     print(__doc__)
     return 2
