@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     # Each step has its own limit; this one is only a backstop and must stay
     # above their sum, so that it is never the job that gets cancelled.
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       PYTHONUNBUFFERED: '1'   # progress shows in the log while the script runs
     steps:
@@ -133,4 +133,49 @@ jobs:
             sleep 5
           done
           echo "::error::Could not push after 3 attempts"
+          exit 1
+      # --- The newer datasets -------------------------------------------------
+      # They come after the commit above on purpose: the files the site already
+      # reads are published first, and nothing below can hold them back or
+      # undo them. Each step has its own time budget (inside the script, well
+      # under the step's limit) and never fails the run; what it could not get
+      # keeps what was published before (see feed_common.py). Their files are
+      # published by a second commit, at the end.
+      - name: Balancing prices (ENTSO-E 17.1.F and PICASSO)
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_balancing.py
+      - name: Commit and push the newer datasets
+        if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # As in the commit above: a step killed mid-write must not publish a broken file.
+          for f in $(git ls-files --modified --others --exclude-standard -- 'data/*.json'); do
+            [ -f "$f" ] || continue
+            if ! python -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$f" 2>/dev/null; then
+              echo "::warning::$f is not valid JSON - keeping the committed version"
+              git checkout -q -- "$f" 2>/dev/null || rm -f "$f"
+            fi
+          done
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update balancing data $(date -u '+%Y-%m-%d %H:%M UTC')"
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "Push attempt $attempt failed - retrying"
+            sleep 5
+          done
+          echo "::error::Could not push the newer datasets after 3 attempts"
           exit 1
