@@ -984,7 +984,7 @@ def _every_interval(period):
     if period['variable'] and period['end'] is not None:
         count = max(count, int((period['end'] - period['start']) / period['step']))
     value = None
-    for position in range(1, min(count, 2000) + 1):
+    for position in range(1, min(count, 40000) + 1):      # a year of quarter-hours is 35 136
         if position in points:
             value = points[position]
         elif not period['variable']:
@@ -993,42 +993,56 @@ def _every_interval(period):
             yield period['start'] + period['step'] * (position - 1), value
 
 
-def read_prices(xml_str, day):
-    """The day-ahead prices an A44 answer has for the delivery day `day`:
+def prices_by_day(all_series):
+    """The day-ahead prices the series of an A44 answer have, for every
+    delivery day they have a complete hour of:
 
-        [(hour, price)]    hour 0 to 23 on the market's clock, in order;
-                           price a Decimal, not rounded
+        {day: [(hour, price)]}    hour 0 to 23 on the market's clock, in order;
+                                  price a Decimal, not rounded
 
-    or [] when it has none. An hour's price is the mean of the intervals of
-    that hour, and an hour with an interval missing is left out. On the day
-    the clocks go back the two hours called 02:00 are one entry, their mean;
-    on the day they go forward there is no 02:00."""
-    start, end = carry_over.day_bounds(day)
-    auctions = {}           # position of the auction -> {start of an hour: {interval length: {start: price}}}
-    for series in read_series(xml_str):
+    An hour's price is the mean of the intervals of that hour, and an hour
+    with an interval missing is left out. On the day the clocks go back the
+    two hours called 02:00 are one entry, their mean; on the day they go
+    forward there is no 02:00. Each day is read from one auction only: the
+    first that has an hour of it.
+
+    One answer may cover one day (a run of the feed) or a whole year (the
+    rewriting of the archive, backfill_archive.py): every day is read the
+    same way."""
+    days = {}       # day -> position of the auction -> {start of an hour: {interval length: {start: price}}}
+    for series in all_series:
         if series['contract'] not in (None, DAY_AHEAD):
             continue
-        hours = auctions.setdefault(series['sequence'] or 0, {})
+        position = series['sequence'] or 0
         for period in series['periods']:
             step = period['step']
             if step > HOUR or HOUR % step:
                 continue                  # not a part of an hour: nothing an hourly price can be made of
             for at, value in _every_interval(period):
-                if start <= at < end:
-                    hour = at.replace(minute=0, second=0, microsecond=0)
-                    hours.setdefault(hour, {}).setdefault(step, {})[at] = Decimal(repr(value))
+                hour = at.replace(minute=0, second=0, microsecond=0)
+                days.setdefault(at.astimezone(MARKET_TZ).date(), {}).setdefault(position, {}) \
+                    .setdefault(hour, {}).setdefault(step, {})[at] = Decimal(repr(value))
 
-    for position in sorted(auctions):
-        by_label = {}                     # hour on the market's clock -> the mean of each hour so called
-        for hour in sorted(auctions[position]):
-            for step, values in sorted(auctions[position][hour].items()):      # the finest intervals first
-                if step * len(values) == HOUR:
-                    by_label.setdefault(hour.astimezone(MARKET_TZ).hour, []).append(
-                        sum(values.values()) / len(values))
-                    break
-        if by_label:
-            return [(label, sum(means) / len(means)) for label, means in sorted(by_label.items())]
-    return []
+    found = {}
+    for day, auctions in days.items():
+        for position in sorted(auctions):
+            by_label = {}                 # hour on the market's clock -> the mean of each hour so called
+            for hour in sorted(auctions[position]):
+                for step, values in sorted(auctions[position][hour].items()):      # the finest intervals first
+                    if step * len(values) == HOUR:
+                        by_label.setdefault(hour.astimezone(MARKET_TZ).hour, []).append(
+                            sum(values.values()) / len(values))
+                        break
+            if by_label:
+                found[day] = [(label, sum(means) / len(means)) for label, means in sorted(by_label.items())]
+                break
+    return found
+
+
+def read_prices(xml_str, day):
+    """The day-ahead prices an A44 answer has for the delivery day `day`, as
+    prices_by_day() gives them: [(hour, price)], or [] when it has none."""
+    return prices_by_day(read_series(xml_str)).get(day, [])
 
 
 def price_entry(eic, hours, day):
