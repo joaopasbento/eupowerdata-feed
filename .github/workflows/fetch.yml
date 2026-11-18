@@ -155,6 +155,14 @@ jobs:
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_outages.py
+      # Reads data/wind-solar-actual.json, which the ENTSO-E step above keeps.
+      - name: Forecast error of wind and solar (ENTSO-E 14.1.D)
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_forecast.py
       - name: Commit and push the newer datasets
         if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true

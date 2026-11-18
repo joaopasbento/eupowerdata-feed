@@ -185,7 +185,7 @@ class TheStep(Feed):
         self.assertEqual(contents(), before)
         self.assertEqual(sorted(os.listdir('data')),
                          ['archive', 'archive_index.json', 'cross-border-flows.json', 'generation-mix.json',
-                          'spot-prices.json', 'status.json'])
+                          'spot-prices.json', 'status.json', 'wind-solar-actual.json'])
 
 
 if __name__ == '__main__':
