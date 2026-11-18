@@ -1,27 +1,27 @@
 {
-  "updated": "2026-11-18T23:38:18.656734+00:00",
+  "updated": "2026-11-18T23:53:34.718878+00:00",
   "source": "ENTSO-E Transparency Platform",
   "mix": {
-    "Biomass": 296.0,
+    "Biomass": 288.0,
     "Fossil Brown coal/Lignite": 0.0,
     "Fossil Coal-derived gas": 0.0,
-    "Fossil Gas": 2896.0,
+    "Fossil Gas": 2936.0,
     "Fossil Hard coal": 0.0,
     "Fossil Oil": 16.0,
-    "Other": 20.0,
+    "Other": 24.0,
     "Geothermal": 0.0,
-    "Hydro Pumped Storage": 148.0,
-    "Hydro Run-of-river": 652.0,
-    "Hydro Water Reservoir": 1060.0,
+    "Hydro Pumped Storage": 624.0,
+    "Hydro Run-of-river": 688.0,
+    "Hydro Water Reservoir": 1148.0,
     "Marine": 0.0,
     "Nuclear": 6080.0,
     "Other renewable": 56.0,
-    "Solar": 36.0,
+    "Solar": 40.0,
     "Waste": 204.0,
     "Wind Offshore": 0.0,
-    "Wind Onshore": 18572.0
+    "Wind Onshore": 18276.0
   },
-  "total_mw": 30036.0,
-  "renewable_pct": 68.8,
-  "data_time": "2026-11-18T23:00:00+00:00"
+  "total_mw": 30380.0,
+  "renewable_pct": 67.5,
+  "data_time": "2026-11-18T23:15:00+00:00"
 }
