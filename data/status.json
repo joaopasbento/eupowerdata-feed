@@ -1,11 +1,11 @@
 {
   "status": "ok",
   "endpoint": "https://web-api.tp.entsoe.eu/api",
-  "time": "2026-11-18T04:54:01.183041+00:00",
+  "time": "2026-11-18T05:09:41.773489+00:00",
   "prices_zones": 32,
   "generation_zones": 30,
   "flow_corridors": 86,
-  "run_started": "2026-11-18T04:53:06.109371+00:00",
+  "run_started": "2026-11-18T05:08:04.986402+00:00",
   "prices_zones_fetched": 32,
   "prices_zones_carried_over": 0,
   "generation_zones_fetched": 30,
