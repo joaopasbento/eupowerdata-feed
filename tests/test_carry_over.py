@@ -91,8 +91,13 @@ class Feed(unittest.TestCase):
             self.deadlines[label] = deadline
             read = {}
             for key, name, _url in jobs:
-                if key in answers[label]:
-                    read[key] = parser(answers[label][key])
+                given = key
+                if label == 'Flow':                  # (corridor, link): a test names the zones ENTSO-E is asked for
+                    corridor, given = key
+                    if given not in answers[label] and corridor in answers[label] and len(fe.flow_links(*corridor)) == 1:
+                        given = corridor
+                if given in answers[label]:
+                    read[key] = parser(answers[label][given])
                     if read[key]:            # the log line, as the real fetch_all() writes it
                         print(f'  {label}: {name}... OK ({describe(read[key])})')
             return {key: value for key, value in read.items() if value}
@@ -566,9 +571,9 @@ class TheNetBlock(Feed):
     def test_a_pair_comes_back_when_one_of_its_corridors_does(self):
         self.entsoe(MORNING, flows={('PT', 'ES'): 1000})
         self.assertEqual(list(read(FLOWS)['net']), ['ES-PT'])
-        self.entsoe(LATER, flows={('PT', 'ES'): 1000, ('NO', 'SE'): 300})
-        self.assertEqual(read(FLOWS)['net']['NO-SE']['net_mw'], 300)
-        self.assertEqual(list(read(FLOWS)['net']), ['ES-PT', 'NO-SE'])      # in the order of the corridors
+        self.entsoe(LATER, flows={('PT', 'ES'): 1000, ('DE', 'FR'): 300})
+        self.assertEqual(read(FLOWS)['net']['DE-FR']['net_mw'], 300)
+        self.assertEqual(list(read(FLOWS)['net']), ['ES-PT', 'DE-FR'])      # in the order of the corridors
 
     def test_a_pair_is_as_old_as_the_older_of_its_two_corridors(self):
         self.entsoe(MORNING, flows={('PT', 'ES'): (1000, '2026-11-16 09:00'), ('ES', 'PT'): (200, '2026-11-16 06:00')})

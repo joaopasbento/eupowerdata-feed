@@ -155,7 +155,8 @@ class TheRun(Feed):
             code, _log = self.entsoe(self.NOW, probe=slow_probe, **self.EVERYTHING)
         self.assertEqual(code, 0)
         budget = fe.TOTAL_BUDGET_S
-        requests = [len(fe.ZONES), len(fe.GEN_COUNTRIES) + 6, len(fe.FLOW_CORRIDORS)]
+        requests = [len(fe.ZONES), len(fe.GEN_COUNTRIES) + 6,
+                    sum(len(fe.flow_links(*pair)) for pair in fe.FLOW_CORRIDORS)]     # one request for each link
         # Prices get their share of what is left, not of the whole budget.
         spent = fe.PROBE_MAX_S
         self.assertAlmostEqual(self.deadlines['Prices'],
