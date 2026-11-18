@@ -229,6 +229,9 @@ def entsoe_ask(jobs, budget, get=http_get, key=None, workers=8, interval=0.25, t
     was no time left for is absent, and so are those not sent once ENTSO-E has
     refused the API key (HTTP 401) or suspended it (HTTP 429).
 
+    A request that was still waiting for its answer when the budget ended is
+    not a failure of ENTSO-E's: it is left out too, as one that was not sent.
+
     Each request writes one line to the log: its name, what came back and how
     long it took. Never the address, which carries the API key."""
     api_key = key if key is not None else os.environ.get('ENTSOE_API_KEY', '')
@@ -257,6 +260,13 @@ def entsoe_ask(jobs, budget, get=http_get, key=None, workers=8, interval=0.25, t
             started = time.monotonic()
             left = budget.left()
             response = get(url, timeout=max(1.0, min(timeout, left)), max_seconds=max(1.0, min(timeout + 15, left)))
+            if response.status is None and budget.left() < 1:
+                # Cut short by the end of the budget, not by ENTSO-E: it counts as
+                # not asked, and is left for the next run.
+                with lock:
+                    print(f'  {label}: {name}... cut short by the end of the time budget '
+                          f'[{time.monotonic() - started:.1f}s]', flush=True)
+                continue
             if response.status in ENTSOE_REFUSED:
                 refused.set()
             with lock:
