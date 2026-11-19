@@ -168,6 +168,12 @@ def _same_length(lists, count):
 notes_of_balancing = []
 
 
+def _priced(entry):
+    """How many periods of a zone's days have a price, upward or downward."""
+    return sum(1 for day in (entry.get('days') or {}).values()
+               for up, down in zip(day.get('up') or [], day.get('down') or []) if up is not None or down is not None)
+
+
 def check_balancing(doc, path, broken):
     if not _blocks(doc, path, {'afrr_activated': 'cc-by-4.0', 'afrr_cbmp': 'source-terms'}, broken):
         return 'broken'
@@ -193,7 +199,9 @@ def check_balancing(doc, path, broken):
     del notes_of_balancing[:]
     if in_euros:
         more.append(f"also in euros: {', '.join(in_euros)}")
-    more += [f"{zone} by the {entry['area']}" for zone, entry in zones.items() if entry.get('area')]
+    more += [f"{zone} by the {entry['area']}, process {entry.get('process')}, "
+             f"{_priced(entry)} periods priced in {len(entry.get('days') or {})} days"
+             for zone, entry in zones.items() if entry.get('area')]
     return (f"{len(zones)} zones with the 17.1.F price, {len(doc['afrr_cbmp']['zones'])} with the PICASSO summary"
             + ''.join(f'; {line}' for line in more))
 

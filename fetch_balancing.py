@@ -24,7 +24,10 @@ What ENTSO-E has, as its answers of 18 Nov 2026 showed:
     selection") is what Spain and Austria publish, since they joined PICASSO,
     in place of A16: Spain has had nothing under A16 since then. Both are item
     17.1.F. A zone is asked for both and shows the one that has prices (A16
-    when both do); `process` says which.
+    when both do); `process` says which. Italy is the exception: when both
+    processes have prices, the one with more periods priced in the days the
+    file keeps stays (A16 when they tie). Its North zone publishes A68 for
+    whole days and A16 only for some hours.
   - Not every country is up to date. Spain's last period is half an hour old;
     Portugal publishes a whole delivery day at a time, two days later (at 18:00
     UTC of the 18th its last period was 22:45 UTC of the 16th). So the request
@@ -120,6 +123,8 @@ DIRECTIONS = {'A01': 'up', 'A02': 'down'}
 AREAS = {code: eic for code, eic in fe.ZONES.items() if code not in fe.ELEXON_ZONES and code != 'MD'}
 AREAS['DE'] = '10YDE-EON------1'
 CBMP_AREAS = dict(AREAS, IT='10YIT-GRTN-----B')
+# Zones for which, when both processes have prices, the one with more periods priced stays (see above).
+MOST_PERIODS = ('IT',)
 # Zones whose 17.1.F prices are asked for by more than one area: [(EIC, what it is)], the first preferred.
 ALTERNATIVES = {'IT': [(CBMP_AREAS['IT'], 'control area of the country'), (AREAS['IT'], 'North bidding zone')]}
 
@@ -201,6 +206,12 @@ def day_series(prices, day, step):
 
 def in_euros(values, rate):
     return [None if value is None else _cents(float(Decimal(str(value)) / rate)) for value in values]
+
+
+def priced_periods(entry):
+    """How many periods of a zone's days have a price, upward or downward."""
+    return sum(1 for day in entry['days'].values() for up, down in zip(day['up'], day['down'])
+               if up is not None or down is not None)
 
 
 def activated_entry(eic, process, read, today, rates=None, area=None):
@@ -444,16 +455,24 @@ def main(now=None, get=http_get, budget=None, interval=0.25, update_rates=fx_rat
         given = asked.get((ACTIVATED, zone))
         if not given:
             continue
-        # Of each area, the first process that has prices; of the areas, the one whose prices go furthest.
+        # Of each area, the first process that has prices (for Italy, the one with more periods priced, the
+        # first when they tie); of the areas, the one whose prices go furthest.
         entries = []
         for eic, what in areas_of(zone):
+            of_the_area = []
             for process in PROCESSES:
                 answer = given.get((process, eic))
                 read = read_activated(answer.documents[0]) if answer is not None and answer.documents else None
                 entry = activated_entry(eic, process, read, today, rates, what) if read else None
                 if entry:
-                    entries.append(entry)
-                    break
+                    of_the_area.append(entry)
+                    if zone not in MOST_PERIODS:
+                        break
+            if len(of_the_area) > 1:
+                counts = ', '.join(f"{e['process']} {priced_periods(e)}" for e in of_the_area)
+                print(f'  {zone}: periods priced by the {what or eic}: {counts}')
+            if of_the_area:
+                entries.append(max(of_the_area, key=priced_periods))           # the first of them, when they tie
         for process in PROCESSES:
             answers_of = [given[(process, eic)] for eic, _what in areas_of(zone) if (process, eic) in given]
             if answers_of and all(a.problem is None and not a.documents for a in answers_of):
