@@ -276,6 +276,73 @@ test('the run GitHub created is read from its answer', () => {
 	assert.equal(runId('not json'), null);
 });
 
-test('the Worker has no address: only a scheduled handler', () => {
-	assert.deepEqual(Object.keys(worker), ['scheduled']);
+test('the Worker has no public address: its fetch handler is reached only by a service binding', async () => {
+	assert.deepEqual(Object.keys(worker).sort(), ['fetch', 'scheduled']);
+	const { readFile } = await import('node:fs/promises');
+	const config = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+	const settings = JSON.parse(config.replace(/^\s*\/\/.*$/gm, ''));
+	assert.equal(settings.workers_dev, false);
+	assert.equal(settings.preview_urls, false);
+	assert.equal(settings.routes, undefined);
+	assert.equal(settings.route, undefined);
+});
+
+// --- Runs asked for by the site's status page, through the service binding ---
+
+import { onRequest } from '../src/index.js';
+
+const ask = (body, method = 'POST', path = '/dispatch') => new Request(`https://scheduler.internal${path}`, {
+	method,
+	body: method === 'POST' ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
+});
+
+test('the status page can start fetch.yml with force', async () => {
+	const calls = github({ status: 200, body: '{"workflow_run_id":7,"html_url":"https://github.com/x/y/actions/runs/7"}' });
+	const response = await onRequest(ask({ workflow: 'fetch.yml', force: true }), ENV);
+	assert.equal(response.status, 200);
+	assert.deepEqual(await response.json(), { started: true, status: 200, run: 'https://github.com/x/y/actions/runs/7' });
+	assert.equal(calls.length, 1);
+	assert.match(calls[0].url, /\/actions\/workflows\/fetch\.yml\/dispatches$/);
+	assert.deepEqual(JSON.parse(calls[0].options.body), { ref: 'main', inputs: { force: 'true' } });
+});
+
+test('a workflow without the force input is started without it', async () => {
+	const calls = github({ status: 204 });
+	const response = await onRequest(ask({ workflow: 'fetch-datacenters.yml', force: true }), ENV);
+	assert.equal(response.status, 200);
+	assert.deepEqual(JSON.parse(calls[0].options.body), { ref: 'main' });
+});
+
+test('only the workflows of ON_REQUEST can be started', async () => {
+	const calls = github({ status: 204 });
+	for (const workflow of ['rewrite-archive.yml', 'backfill.yml', '../x', '', undefined, 'constructor']) {
+		const response = await onRequest(ask({ workflow }), ENV);
+		assert.equal(response.status, 400);
+		assert.equal((await response.json()).error, 'unknown workflow');
+	}
+	assert.equal(calls.length, 0);
+});
+
+test('a wrong method, path or body starts nothing', async () => {
+	const calls = github({ status: 204 });
+	assert.equal((await onRequest(ask(null, 'GET'), ENV)).status, 405);
+	assert.equal((await onRequest(ask({ workflow: 'fetch.yml' }, 'POST', '/other'), ENV)).status, 404);
+	assert.equal((await onRequest(ask('{broken'), ENV)).status, 400);
+	assert.equal(calls.length, 0);
+});
+
+test('a refusal of GitHub is passed on, without the token', async () => {
+	github({ status: 401, body: '{"message":"Bad credentials"}' });
+	const response = await onRequest(ask({ workflow: 'fetch.yml' }), ENV);
+	assert.equal(response.status, 502);
+	const body = await response.json();
+	assert.equal(body.started, false);
+	assert.match(body.error, /HTTP 401/);
+	assert.doesNotMatch(body.error, /not-a-real-token/);
+});
+
+test('the default export answers fetch through onRequest', async () => {
+	github({ status: 204 });
+	const response = await worker.fetch(ask({ workflow: 'fetch-transition.yml' }), ENV);
+	assert.equal(response.status, 200);
 });

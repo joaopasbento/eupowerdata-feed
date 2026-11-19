@@ -15,6 +15,7 @@ description: Confirm that a change to the feed works - the offline tests and val
 | What the feed publishes in `data/`: a file's shape or values, or the steps of `fetch.yml` | Part 1, then part 2 after the push |
 | The newer datasets: `fetch_balancing.py`, `fetch_outages.py`, `fetch_forecast.py`, `fetch_low_prices.py`, `wind_solar_actual.py`, `price_intervals.py`, or what `feed_common.py` gives them | Part 1, then part 2 after the push |
 | The exchange rates or what is converted with them (`fx_rates.py`), Ember's figures and the capacity file (`fetch_ember.py`, `merge_capacity.py`) | Part 1, then part 2 after the push |
+| The state of the files for the site's status page (`build_meta.py`, `data/meta.json`) | Part 1, then part 2 after the push |
 | How the negative, zero and low prices are counted, or a rewrite of their daily records | Part 1, part 2 after the push, and the proof of part 3 |
 | Documentation only (`*.md`, comments) | Nothing here |
 

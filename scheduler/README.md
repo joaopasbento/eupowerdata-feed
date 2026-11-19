@@ -19,7 +19,7 @@ at once.
 
 | File | What it is |
 | --- | --- |
-| `src/index.js` | The Worker: one `scheduled` handler, no address of its own |
+| `src/index.js` | The Worker: a `scheduled` handler, and a `fetch` handler reached only through a service binding (no address of its own) |
 | `wrangler.jsonc` | Its name, the Cron Trigger and what to start (repository, workflow, branch) |
 | `test/dispatch.test.js` | Tests, without network: `npm test` in this folder |
 | `waits.py` | Prints how long GitHub held each run before starting it (see below) |
@@ -60,6 +60,23 @@ To renew it: create a new token with the same access and permission, then in
 the Cloudflare dashboard open the Worker > Settings > Variables and Secrets,
 edit `GITHUB_TOKEN`, paste the new value and deploy. Nothing changes in this
 repository.
+
+## Runs asked for by the site's status page
+
+The site's own Worker (`eupowerdata-site`) has a status page behind a PIN, with
+buttons that ask for a run now. It does not hold a GitHub token: it asks this
+Worker, through a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/),
+with `POST /dispatch {"workflow": "fetch.yml", "force": true}`, and this Worker
+starts the run with its own `GITHUB_TOKEN`. A service binding is a call from
+one Worker to another inside Cloudflare: it cannot be reached from the
+internet, and this Worker still has no workers.dev address and no route.
+
+Only the workflows in `ON_REQUEST` (`src/index.js`) can be started this way:
+`fetch.yml` and `fetch-ember.yml` (with `force` when asked), and
+`fetch-capacity.yml`, `fetch-datacenters.yml` and `fetch-transition.yml`. The
+site checks the PIN session and how often the buttons are pressed before it
+asks. Each run started this way has its own log line
+(`Started fetch.yml on main for the status page ...`).
 
 ## Deploying
 

@@ -60,6 +60,7 @@ jobs:
       # The script stops by itself after FETCH_BUDGET_SECONDS (300 s) and writes
       # each file as soon as its dataset is done, so the step limit is slack.
       - name: Fetch ENTSO-E data
+        id: entsoe
         if: ${{ steps.fresh.outputs.skip != 'true' }}
         timeout-minutes: 7
         env:
@@ -67,21 +68,25 @@ jobs:
         run: python fetch_entsoe.py
       # The steps below run even when an earlier one failed or ran out of time.
       - name: Fetch GB (Elexon Insights) data
+        id: gb
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         timeout-minutes: 2
         run: python fetch_gb.py
       # The two below read data/generation-mix.json, so they come after it.
       - name: Spain generation (copy of the ENTSO-E ES zone)
+        id: ree
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 1
         run: python fetch_ree.py
       - name: Portugal generation (REN, else the ENTSO-E PT zone)
+        id: ren
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2
         run: python fetch_ren.py
       - name: OMIE day-ahead prices
+        id: omie
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 3
@@ -89,6 +94,7 @@ jobs:
       # Runs every time but only does something when the file is over 12 hours old.
       # No request: it reads data/capacity-installed.json and data/ember-yearly.json.
       - name: Installed capacity (ENTSO-E + Ember)
+        id: capacity
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2
@@ -97,6 +103,7 @@ jobs:
       # is used: until the repository variable MET_NORWAY_TOS_ACCEPTED is "true"
       # this step makes no request. https://api.met.no/doc/TermsOfService
       - name: Weather (MET Norway)
+        id: weather
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 4
@@ -104,6 +111,7 @@ jobs:
           MET_NORWAY_TOS_ACCEPTED: ${{ vars.MET_NORWAY_TOS_ACCEPTED }}
         run: python fetch_weather.py
       - name: Commit and push
+        id: commit
         if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
         timeout-minutes: 3
         run: |
@@ -143,6 +151,7 @@ jobs:
       # keeps what was published before (see feed_common.py). Their files are
       # published by a second commit, at the end.
       - name: Balancing prices (ENTSO-E 17.1.F and PICASSO)
+        id: balancing
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 3
@@ -150,6 +159,7 @@ jobs:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
         run: python fetch_balancing.py
       - name: Outages of power plants and lines (ENTSO-E 15.1 and 10.1)
+        id: outages
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 3
@@ -158,6 +168,7 @@ jobs:
         run: python fetch_outages.py
       # Reads data/wind-solar-actual.json, which the ENTSO-E step above keeps.
       - name: Forecast error of wind and solar (ENTSO-E 14.1.D)
+        id: forecast
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2
@@ -166,10 +177,33 @@ jobs:
         run: python fetch_forecast.py
       # Reads data/spot-prices-intervals.json, which the ENTSO-E step above keeps, and OMIE's files.
       - name: Negative, zero and low prices (OMIE and ENTSO-E)
+        id: low_prices
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
         timeout-minutes: 2
         run: python fetch_low_prices.py
+      # The state of the files the site reads, for its status page: whether
+      # each is there, when its data are of, its size and counts, and how each
+      # step of this run ended (see build_meta.py). No request; never fails.
+      - name: State of the files (data/meta.json)
+        id: meta
+        if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          STEP_ENTSOE: ${{ steps.entsoe.outcome }}
+          STEP_GB: ${{ steps.gb.outcome }}
+          STEP_REE: ${{ steps.ree.outcome }}
+          STEP_REN: ${{ steps.ren.outcome }}
+          STEP_OMIE: ${{ steps.omie.outcome }}
+          STEP_CAPACITY: ${{ steps.capacity.outcome }}
+          STEP_WEATHER: ${{ steps.weather.outcome }}
+          STEP_COMMIT: ${{ steps.commit.outcome }}
+          STEP_BALANCING: ${{ steps.balancing.outcome }}
+          STEP_OUTAGES: ${{ steps.outages.outcome }}
+          STEP_FORECAST: ${{ steps.forecast.outcome }}
+          STEP_LOW_PRICES: ${{ steps.low_prices.outcome }}
+        run: python build_meta.py
       - name: Commit and push the newer datasets
         if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
         continue-on-error: true
