@@ -463,6 +463,21 @@ class CountingAYearAgain(InADirectory):
                          'market-resolution')
         self.assertIn("zone-days before, by basis: {'hourly-means': 3}", log)
 
+    def test_a_count_that_is_not_published_ends_in_failure(self):
+        """The records are written but the push did not go through: the run must not pass for done."""
+        self.record('2026-01-01', {'ES': self.HOURLY})
+        answers = {fe.ZONES['ES']: self.answer([[40.0] * 96, [40.0] * 96])}
+
+        def ask(url):
+            params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+            return answers.get(params['in_Domain'], NO_DATA), None
+
+        for published, code in ((False, 1), (True, 0), (None, 0)):
+            self.record('2026-01-01', {'ES': self.HOURLY})
+            with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(lp.refill_entsoe('https://entsoe.test/api', now=self.NOW, ask=ask,
+                                                  sleep=lambda seconds: None, commit=lambda message: published), code)
+
     def test_one_request_for_each_zone_for_the_year(self):
         self.record('2026-01-01', {'ES': self.HOURLY})
         _code, asked, _log = self.refill({fe.ZONES['ES']: self.answer([[40.0] * 96] * 3)})

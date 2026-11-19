@@ -495,8 +495,10 @@ def rewrite_italy_generation(base, years=None, ask=_ask, sleep=time.sleep, commi
                 continue
             fe.write_json(GENERATION_FILES.format(day=day.isoformat()), doc, separators=(',', ':'))
             rewritten += 1
-        if commit:
-            commit(f"Put Italy's generation of {year} in the archive by the country, not the North zone ({len(days)} days)")
+        if commit and commit(f"Put Italy's generation of {year} in the archive by the country, not the North zone "
+                             f"({len(days)} days)") is False:
+            print(f'  {year}: written here but NOT published')
+            failed.append(year)
 
     print(f'\nRewritten: {rewritten} files. Years left alone: {failed or "none"}.')
     print(f'Days Italy left, because ENTSO-E has no generation for the country: {len(removed)}'
@@ -737,36 +739,43 @@ def _commit_and_push(message):
     The regular fetch_entsoe.py cron runs every 15 minutes and commits to the
     same branch. If it commits during our batch, our push is rejected with
     'non-fast-forward'. We recover with pull --rebase and retry up to 5 times.
+
+    Returns False when the batch could not be published, True otherwise
+    (pushed, or nothing to commit). A rebase that stops on a conflict (a
+    regular run wrote one of the same files meanwhile) is taken back, so the
+    checkout stays on its branch; the files are not merged by guessing.
     """
     print(f'  -> committing batch: {message}')
     code, out = _run_git(['add', 'data/archive/'])
     if code != 0:
         print(f'    git add failed: {out.strip()}')
-        return
+        return False
 
     code, _ = _run_git(['diff', '--cached', '--quiet'])
     if code == 0:
         print('    nothing staged, skip')
-        return
+        return True
 
     code, out = _run_git(['commit', '-m', message])
     if code != 0:
         print(f'    git commit failed: {out.strip()}')
-        return
+        return False
 
     for attempt in range(1, 6):
         code, out = _run_git(['push'])
         if code == 0:
             print('    pushed')
-            return
+            return True
         print(f'    push failed (attempt {attempt}/5): {out.strip()[:200]}')
         rc, rout = _run_git(['pull', '--rebase', '--autostash'])
         if rc != 0:
             print(f'    pull --rebase failed: {rout.strip()[:200]}')
+            _run_git(['rebase', '--abort'])
             time.sleep(10 * attempt)
 
     print('    push failed after 5 attempts - local commits remain; '
           'the workflow will retry on its next chained run')
+    return False
 
 
 if __name__ == '__main__':
