@@ -760,8 +760,10 @@ def refill_entsoe(base, year=None, now=None, ask=None, sleep=time.sleep, commit=
         print(f'    {day} {zone}: OMIE {omie}, ENTSO-E {entsoe}')
     if len(differ) > 60:
         print(f'    ... and {len(differ) - 60} more')
-    if commit and written:
-        commit(f"Count the low prices of {year} again at the market's resolution ({written} records)")
+    if commit and written and commit(
+            f"Count the low prices of {year} again at the market's resolution ({written} records)") is False:
+        print(f'{year} counted again but NOT published: start the run again')
+        return 1
     return 0
 
 
