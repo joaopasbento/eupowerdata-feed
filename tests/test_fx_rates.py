@@ -76,13 +76,14 @@ class TheFile(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return fx_rates.update(at(when), get=get), asked
 
-    def test_the_first_time_it_asks_for_the_whole_history_and_keeps_the_currencies_of_europe(self):
+    def test_the_first_time_it_asks_for_the_whole_history_and_keeps_the_currencies_it_needs(self):
         wrote, asked = self.update('2026-11-18 16:00', ecb({'2026-11-18': {'USD': 1.0968, 'PLN': 4.4118, 'RON': 5.3467},
                                                            '2026-11-17': {'USD': 1.09, 'PLN': 4.41}}))
         with open(fx_rates.PATH) as f:
             doc = json.load(f)
         self.assertEqual((wrote, asked), (True, [fx_rates.HISTORY_URL]))
-        self.assertEqual(doc['rates'], {'PLN': {'2026-11-17': 4.41, '2026-11-18': 4.4118}, 'RON': {'2026-11-18': 5.3467}})
+        self.assertEqual(doc['rates'], {'PLN': {'2026-11-17': 4.41, '2026-11-18': 4.4118}, 'RON': {'2026-11-18': 5.3467},
+                                       'USD': {'2026-11-17': 1.09, '2026-11-18': 1.0968}})
         self.assertEqual((doc['updated'], doc['fixed']), ('2026-11-18T16:00:00+00:00', {'BGN': 1.95583, 'BAM': 1.95583}))
 
     def test_with_the_days_rates_in_the_file_the_ecb_is_not_asked_again(self):

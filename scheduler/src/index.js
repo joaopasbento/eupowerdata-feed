@@ -21,8 +21,12 @@
  * invocation may wait up to 15 minutes and waiting takes no CPU time; if one
  * is ever cut short, all that is lost is that one second request.
  *
- * It has no address of its own (no fetch handler, no workers.dev route): the
- * only thing that starts it is its Cron Trigger.
+ * It has no address of its own (no workers.dev address, no route). Besides
+ * its Cron Trigger, the only way in is a service binding from the site's own
+ * Worker (eupowerdata-site), whose status page, behind its PIN, has buttons
+ * that ask for a run now: see onRequest() below. A service binding cannot be
+ * reached from the internet, so the GitHub token never leaves this Worker and
+ * the site needs no key of its own.
  *
  * Nothing secret is in this folder. The GitHub token is a secret of the
  * Worker, set in the Cloudflare dashboard under the name GITHUB_TOKEN; what
@@ -44,8 +48,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * error. `expires` is when GitHub says the token stops working (it sends that
  * with every answer to a token that has an expiration date), or null.
  */
-async function post(env) {
-	const url = `${API}/repos/${env.GITHUB_REPOSITORY}/actions/workflows/${env.WORKFLOW_FILE}/dispatches`;
+async function post(env, workflow = env.WORKFLOW_FILE, inputs = null) {
+	const url = `${API}/repos/${env.GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches`;
 	const response = await fetch(url, {
 		method: 'POST',
 		headers: {
@@ -55,7 +59,7 @@ async function post(env) {
 			'X-GitHub-Api-Version': API_VERSION,
 			'User-Agent': USER_AGENT,
 		},
-		body: JSON.stringify({ ref: env.GIT_REF }),
+		body: JSON.stringify(inputs ? { ref: env.GIT_REF, inputs } : { ref: env.GIT_REF }),
 	});
 	return {
 		status: response.status,
@@ -141,7 +145,7 @@ export function expiry(expires, now = Date.now()) {
  * message that says what to look at, when the run was not started. The token
  * is never part of a message or of a log line.
  */
-export async function dispatch(env, wait = sleep) {
+export async function dispatch(env, wait = sleep, workflow = env.WORKFLOW_FILE, inputs = null) {
 	for (const name of ['GITHUB_TOKEN', 'GITHUB_REPOSITORY', 'WORKFLOW_FILE', 'GIT_REF']) {
 		if (!env[name]) {
 			throw new Error(`${name} is not set: see scheduler/README.md`);
@@ -155,7 +159,7 @@ export async function dispatch(env, wait = sleep) {
 		}
 		let answer;
 		try {
-			answer = await post(env);
+			answer = await post(env, workflow, inputs);
 		} catch (error) {
 			failure = `could not reach GitHub (${error.message})`;
 			continue;
@@ -176,7 +180,76 @@ export async function dispatch(env, wait = sleep) {
 	throw new Error(`Workflow not started: ${failure}`);
 }
 
+/**
+ * The workflows the site's status page may ask for, and whether each takes
+ * the `force` input (run even if the data are fresh). Nothing else can be
+ * started this way.
+ */
+export const ON_REQUEST = {
+	'fetch.yml': { force: true },
+	'fetch-capacity.yml': { force: false },
+	'fetch-datacenters.yml': { force: false },
+	'fetch-transition.yml': { force: false },
+	'fetch-ember.yml': { force: true },
+};
+
+const answerJson = (status, body) => new Response(JSON.stringify(body), {
+	status,
+	headers: { 'Content-Type': 'application/json; charset=UTF-8', 'Cache-Control': 'no-store' },
+});
+
+/**
+ * A run asked for by the site's Worker, through its service binding:
+ *
+ *   POST /dispatch  {"workflow": "fetch.yml", "force": true}
+ *
+ * Answers {started: true, status, run} or {started: false, error}. The site
+ * checks the visitor's PIN session before it asks, and limits how often; this
+ * side only checks that the workflow is one of ON_REQUEST. There is no second
+ * look two minutes later, as there is for the schedule: a person is watching
+ * and can press the button again.
+ */
+export async function onRequest(request, env) {
+	const { pathname } = new URL(request.url);
+	if (pathname !== '/dispatch') {
+		return answerJson(404, { started: false, error: 'not found' });
+	}
+	if (request.method !== 'POST') {
+		return answerJson(405, { started: false, error: 'use POST' });
+	}
+	let asked;
+	try {
+		asked = await request.json();
+	} catch {
+		return answerJson(400, { started: false, error: 'the body is not JSON' });
+	}
+	const workflow = asked && asked.workflow;
+	const rules = Object.hasOwn(ON_REQUEST, workflow) ? ON_REQUEST[workflow] : null;
+	if (!rules) {
+		return answerJson(400, { started: false, error: 'unknown workflow', available: Object.keys(ON_REQUEST) });
+	}
+	const inputs = rules.force && asked.force === true ? { force: 'true' } : null;
+	try {
+		const answer = await dispatch(env, sleep, workflow, inputs);
+		let run = '';
+		try {
+			run = JSON.parse(answer.body).html_url || '';
+		} catch {
+			// HTTP 204: started without saying which run.
+		}
+		console.log(`Started ${workflow} on ${env.GIT_REF} for the status page (HTTP ${answer.status}${inputs ? ', force' : ''}) ${run}`);
+		return answerJson(200, { started: true, status: answer.status, run });
+	} catch (error) {
+		console.error(`${error.message} (${workflow}, asked for by the status page)`);
+		return answerJson(502, { started: false, error: error.message });
+	}
+}
+
 export default {
+	async fetch(request, env) {
+		return onRequest(request, env);
+	},
+
 	async scheduled(controller, env, ctx) {
 		const due = new Date(controller.scheduledTime).toISOString();
 		const what = `${env.WORKFLOW_FILE} on ${env.GIT_REF} of ${env.GITHUB_REPOSITORY}`;

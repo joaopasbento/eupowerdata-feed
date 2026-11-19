@@ -20,7 +20,7 @@ not answer for uses the last ones known:
     {updated, source, fixed: {BGN, BAM}, rates: {PLN: {"2026-11-18": 4.4118}}}
 
 `updated` is when the ECB last gave a new day. The file has the days of the
-last 400 or so, for the currencies of Europe. update() brings it up to date:
+last 400 or so, for the currencies of Europe and the US dollar. update() brings it up to date:
 it asks the ECB only when a new day's rates may be out (once they are in the
 file, not again until the next working day at 15:00 UTC), with the small file
 of the day, the one of the last 90 days after a gap, or the whole history the
@@ -47,7 +47,10 @@ RECENT_URL = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist-90d.xml'
 HISTORY_URL = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml'
 
 FIXED = {'BGN': Decimal('1.95583'), 'BAM': Decimal('1.95583')}
-CURRENCIES = ('PLN', 'RON', 'CZK', 'HUF', 'SEK', 'NOK', 'DKK', 'CHF', 'GBP', 'ISK', 'TRY')
+# The currencies of Europe, for the prices, and the US dollar, which the site
+# shows prices in when the visitor asks for it (it no longer asks a service of
+# its own for that rate).
+CURRENCIES = ('PLN', 'RON', 'CZK', 'HUF', 'SEK', 'NOK', 'DKK', 'CHF', 'GBP', 'ISK', 'TRY', 'USD')
 KEEP_DAYS = 400
 PUBLICATION_HOUR_UTC = 15
 
