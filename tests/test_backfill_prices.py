@@ -26,12 +26,16 @@ class ThePricesOfAPastDay(unittest.TestCase):
         """fetch_prices_for_date() with ENTSO-E answering {EIC of the zone: XML}."""
         asked = []
 
-        def http_get(url, timeout=45):
+        # The zones are asked for in parallel, through fetch_entsoe's requests (_get), at the backfill's pace:
+        # the pace is made quick here, and what it changes in fetch_entsoe is put back after.
+        def get(url, deadline=None, **_more):
             asked.append(url)
-            return next((answer for eic, answer in answers.items() if f'in_Domain={eic}&' in url), NO_DATA)
+            return next((answer for eic, answer in answers.items() if f'in_Domain={eic}&' in url), NO_DATA), None
 
-        with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), mock.patch.object(fe, 'http_get', http_get), \
-                mock.patch.object(backfill_archive.time, 'sleep', lambda seconds: None), \
+        with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), mock.patch.object(fe, '_get', get), \
+                mock.patch.object(fe, 'MIN_INTERVAL_S', 0), mock.patch.object(fe, '_throttle', fe._Throttle(0)), \
+                mock.patch.object(fe, 'MAX_WORKERS', fe.MAX_WORKERS), \
+                mock.patch.object(backfill_archive, 'BACKFILL_INTERVAL_S', 0.001), \
                 contextlib.redirect_stdout(io.StringIO()):
             return backfill_archive.fetch_prices_for_date('https://entsoe.test/api', DAY), asked
 

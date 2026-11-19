@@ -9,6 +9,8 @@ No network: ENTSO-E's answers are documents written by hand (tests/entsoe_xml.py
 
 import contextlib
 import io
+import threading
+import time
 import unittest
 import urllib.parse
 from datetime import date
@@ -16,7 +18,7 @@ from unittest import mock
 
 import backfill_archive
 import fetch_entsoe as fe
-from entsoe_xml import FLOW_NS, document, series
+from entsoe_xml import FLOW_NS, day_start, document, price_document, price_series, series
 
 DAY = date(2026, 9, 1)
 
@@ -102,6 +104,74 @@ class APastDay(unittest.TestCase):
                 mock.patch.object(fe, 'MAX_WORKERS', fe.MAX_WORKERS):
             backfill_archive._gently()
             self.assertEqual((fe.MIN_INTERVAL_S, fe.MAX_WORKERS), (0.6, 6))
+
+
+class ThePricesOfAPastDay(unittest.TestCase):
+    """fetch_prices_for_date asks for the zones in parallel, by fetch_entsoe.fetch_all,
+    and must write what asking for them one after the other wrote."""
+
+    def answers(self):
+        start = day_start(DAY)
+        hourly = lambda base: [base + hour for hour in range(24)]
+        return {
+            fe.ZONES['PT']: price_document(price_series(start, hourly(80.0))),
+            fe.ZONES['ES']: price_document(price_series(start, [None if hour % 3 else 70.0 + hour for hour in range(24)])),
+            fe.ZONES['BG']: price_document(price_series(start, [195.583] * 24, currency='BGN')),
+            fe.ZONES['NO1']: price_document(price_series(start, [10.0 + q % 4 for q in range(96)], minutes=15)),
+            fe.ZONES['NO2']: price_document(price_series(start, [20.0] * 96, minutes=15)),
+            fe.ZONES['MD']: price_document(price_series(start, [757.11])),                # one hour only
+        }
+
+    def run_it(self):
+        answers, lock, flying, most = self.answers(), threading.Lock(), [0], [0]
+
+        def get(url, deadline=None, **_more):
+            with lock:
+                flying[0] += 1
+                most[0] = max(most[0], flying[0])
+            time.sleep(0.01)
+            with lock:
+                flying[0] -= 1
+            domain = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))['in_Domain']
+            return answers.get(domain, ''), None
+
+        with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), mock.patch.object(fe, '_get', get), \
+                mock.patch.object(fe, 'MIN_INTERVAL_S', 0), mock.patch.object(fe, '_throttle', fe._Throttle(0)), \
+                mock.patch.object(fe, 'MAX_WORKERS', fe.MAX_WORKERS), \
+                mock.patch.object(backfill_archive, 'BACKFILL_INTERVAL_S', 0.001), \
+                contextlib.redirect_stdout(io.StringIO()):
+            doc = backfill_archive.fetch_prices_for_date('https://entsoe.test/api', DAY)
+        return doc, answers, most[0]
+
+    def test_the_file_is_what_asking_one_zone_after_the_other_gave(self):
+        doc, answers, _most = self.run_it()
+        with contextlib.redirect_stdout(io.StringIO()):
+            one_by_one = {code: fe.read_prices(answers[eic], DAY) for code, eic in fe.ZONES.items() if eic in answers}
+            expected = fe.for_the_archive(fe.price_zones({code: hours for code, hours in one_by_one.items() if hours}, DAY))
+        self.assertEqual(doc['zones'], expected)
+        self.assertEqual(list(doc), ['updated', 'date', 'source', 'endpoint', 'zones'])
+        self.assertEqual((doc['date'], doc['source']), ('2026-09-01', 'ENTSO-E Transparency Platform (backfilled)'))
+
+    def test_the_rules_of_the_archive_hold(self):
+        doc, _answers, _most = self.run_it()
+        zones = doc['zones']
+        self.assertEqual(list(zones), ['PT', 'ES', 'BG', 'NO'])          # the feed's order; NO1 and NO2 put together
+        self.assertEqual({row['price'] for row in zones['BG']['prices']}, {100.0})   # levs to euros
+        self.assertNotIn('MD', zones)                                     # a day of one hour is not archived
+        self.assertEqual(zones['NO']['prices'][0]['price'], 15.75)        # (11.5 + 20) / 2, the hour's mean
+        self.assertEqual(len(zones['ES']['prices']), 24)                  # A03: the hours left out put back
+
+    def test_six_at_a_time_at_most(self):
+        _doc, _answers, most = self.run_it()
+        self.assertLessEqual(most, backfill_archive.BACKFILL_WORKERS)
+        self.assertGreater(most, 1)
+
+    def test_at_most_100_requests_a_minute(self):
+        with mock.patch.object(fe, 'MIN_INTERVAL_S', fe.MIN_INTERVAL_S), mock.patch.object(fe, '_throttle', fe._throttle), \
+                mock.patch.object(fe, 'MAX_WORKERS', fe.MAX_WORKERS):
+            backfill_archive._gently()
+            self.assertEqual((fe.MIN_INTERVAL_S, fe.MAX_WORKERS), (0.6, 6))
+            self.assertEqual(fe._throttle._min, 0.6)
 
 
 if __name__ == '__main__':
