@@ -58,7 +58,7 @@ A run has two halves. The steps that make the three files above come first and a
 
 | File | Made by | What must hold |
 | --- | --- | --- |
-| `data/balancing-prices.json` | `fetch_balancing.py` | blocks `afrr_activated` (`cc-by-4.0`) and `afrr_cbmp` (`source-terms`); each day of a zone has one value for each period; a zone not in euros has, in each day, `up_eur` and `down_eur` of the same length, with `fx_rate` and `fx_date` (a day with no rate is a note); a zone asked for by more than one area says which in `area` |
+| `data/balancing-prices.json` | `fetch_balancing.py` | blocks `afrr_activated` (`cc-by-4.0`) and `afrr_cbmp` (`source-terms`); each day of a zone has one value for each period; a zone not in euros has, in each day, `up_eur` and `down_eur` of the same length, with `fx_rate` and `fx_date` (a day with no rate is a note); a zone asked for by more than one area says which in `area`; the note gives Italy's area, its process (the one with more periods priced, A16 when they tie) and how many periods priced it has |
 | `data/outages.json` | `fetch_outages.py` | blocks `generation` (`source-terms`) and `transmission` (`cc-by-4.0`); every outage has its fields |
 | `data/wind-solar-forecast.json` | `fetch_forecast.py` | block `wind_solar` (`source-terms`); each day has forecast, actual and error for each hour |
 | `data/low-prices.json` | `fetch_low_prices.py` | blocks `omie` (`omie`) and `entsoe` (`source-terms`); the total of the year for Portugal and Spain; the note says when OMIE's later versions were last looked for (`omie.version_check`) and which zones still have days of the year counted on hourly means |

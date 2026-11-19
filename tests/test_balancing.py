@@ -347,6 +347,33 @@ class ItalyByTwoAreas(Feed):
             ({'processType': 'A68', 'controlArea_Domain': self.COUNTRY}, 'balancing_A68_ES.xml')])      # up to 18 Nov 17:15
         self.assertEqual((entry['eic'], entry['data_time']), (self.COUNTRY, '2026-11-18T17:15:00+00:00'))
 
+    def test_with_both_processes_the_one_with_more_periods_priced_stays(self):
+        """In the North zone, A16 has a few hours and A68 whole days."""
+        entry, _entsoe = self.italy([
+            ({'processType': 'A16', 'controlArea_Domain': self.NORTH}, 'balancing_A16_IT.xml'),
+            ({'processType': 'A68', 'controlArea_Domain': self.NORTH}, 'balancing_A68_ES.xml')])
+        self.assertEqual((entry['eic'], entry['process']), (self.NORTH, 'A68'))
+        self.assertGreater(fb.priced_periods(entry), 100)
+
+    def test_with_both_processes_a16_stays_when_it_has_more(self):
+        entry, _entsoe = self.italy([
+            ({'processType': 'A16', 'controlArea_Domain': self.NORTH}, 'balancing_A68_ES.xml'),
+            ({'processType': 'A68', 'controlArea_Domain': self.NORTH}, 'balancing_A16_IT.xml')])
+        self.assertEqual(entry['process'], 'A16')
+
+    def test_with_both_processes_a16_stays_when_they_tie(self):
+        entry, _entsoe = self.italy([
+            ({'processType': 'A16', 'controlArea_Domain': self.NORTH}, 'balancing_A16_IT.xml'),
+            ({'processType': 'A68', 'controlArea_Domain': self.NORTH}, 'balancing_A16_IT.xml')])
+        self.assertEqual(entry['process'], 'A16')
+
+    def test_the_rule_is_italys_alone(self):
+        """Elsewhere A16 stays whenever it has prices, however few."""
+        _code, _entsoe, _log = self.run_at(ASKED_AT, [
+            ({'processType': 'A16', 'controlArea_Domain': ES}, 'balancing_A16_IT.xml'),
+            ({'processType': 'A68', 'controlArea_Domain': ES}, 'balancing_A68_ES.xml')] + self.ANSWERS)
+        self.assertEqual(self.doc()['afrr_activated']['zones']['ES']['process'], 'A16')
+
     def test_with_neither_italy_is_listed_as_not_published(self):
         entry, _entsoe = self.italy([])
         self.assertIsNone(entry)
