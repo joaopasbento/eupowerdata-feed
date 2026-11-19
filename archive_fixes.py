@@ -9,6 +9,7 @@ again: every one of them leaves alone a file it has already put right.
     python archive_fixes.py bgn        Bulgaria's prices in levs, to euros
     python archive_fixes.py moldova    Moldova out of the days before 1 Jul 2026 and of its one-hour days
     python archive_fixes.py avg25      the daily mean of the days of 25 hours
+    python archive_fixes.py bg20220106 Bulgaria out of the file of 6 Jan 2022
 
 bgn. ENTSO-E gave Bulgaria's day-ahead prices in levs until January 2022 and
 the feed took them for euros: from 14 Nov 2021 (the first day of the archive)
@@ -35,6 +36,17 @@ the entry of 02:00 counted twice, as OMIE and the exchanges work it out and as
 fetch_entsoe.price_entry() now does. It is worked out again from the prices
 the file has, for every zone of the five such days of the archive; `prices`,
 `min` and `max` are not touched.
+
+bg20220106. On 6 Jan 2022 the price ENTSO-E has for Bulgaria is not
+Bulgaria's: each of its 24 hours is Romania's price of that hour divided by
+1.95583, so it was already wrong at the source, a price in euros taken for
+one in levs. Converted from levs with the other days of the range (bgn), it
+became a quarter of the real price (a daily mean of 52.25 EUR/MWh, where
+Romania's and Hungary's is 199.90). The zone BG is taken out of the price
+file of that day, and of no other: the other zones of the day and the other
+days of Bulgaria stay as they are. A rewrite of the prices by
+backfill_archive.py leaves the file alone (its zones are already in the
+shape it writes), and the backfill does not write a day that has a file.
 """
 
 import glob
@@ -156,6 +168,25 @@ def fix_long_days():
     return changed
 
 
+WRONG_AT_THE_SOURCE = {date(2022, 1, 6): 'BG'}     # day -> zone ENTSO-E has a wrong price for
+
+
+def remove_wrong_at_the_source():
+    """Returns [(day, zone)] of the zones taken out (see bg20220106 above)."""
+    removed = []
+    for day, name in WRONG_AT_THE_SOURCE.items():
+        path = ARCHIVE.format(day=day.isoformat())
+        if not os.path.exists(path):
+            continue
+        doc = _load(path)
+        zones = doc.get('zones') or {}
+        if name in zones:
+            del zones[name]
+            write_json(path, doc, separators=(',', ':'))
+            removed.append((day, name))
+    return removed
+
+
 def main(argv):
     if argv[1:] == ['bgn']:
         converted, left = convert_bgn()
@@ -177,6 +208,11 @@ def main(argv):
             zones = changed.get(day, [])
             print(f'{day}: the mean of {len(zones)} zones changed'
                   + (': ' + ', '.join(f'{name} {before} -> {after}' for name, before, after in zones) if zones else ''))
+        return 0
+    if argv[1:] == ['bg20220106']:
+        removed = remove_wrong_at_the_source()
+        print(f'Zones with a wrong price at the source: {len(removed)} taken out'
+              + (': ' + ', '.join(f'{name} of {day}' for day, name in removed) if removed else ''))
         return 0
     print(__doc__)
     return 2
