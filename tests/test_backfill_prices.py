@@ -128,7 +128,7 @@ class RewritingTheArchive(unittest.TestCase):
         with open(f'data/archive/spot-prices-{day}.json', encoding='utf-8') as f:
             return json.load(f)
 
-    def rewrite(self, answers, years=None):
+    def rewrite(self, answers, years=None, commit=None):
         """answers: {zone: what ENTSO-E answers, in turn, to the requests for it}; an answer is XML, None for a
         failure, or a function of (first day, last day) of the request. A zone not given has no data."""
         turns = {}
@@ -150,7 +150,7 @@ class RewritingTheArchive(unittest.TestCase):
         log = io.StringIO()
         with mock.patch.object(fe, 'API_KEY', 'not-a-real-key'), contextlib.redirect_stdout(log):
             code = backfill_archive.rewrite_prices('https://entsoe.test/api', years, ask=ask, sleep=self.slept.append,
-                                                   commit=self.commits.append)
+                                                   commit=commit or self.commits.append)
         return code, log.getvalue()
 
     def test_each_day_is_rewritten_from_the_answer_for_its_year(self):
@@ -227,6 +227,27 @@ class RewritingTheArchive(unittest.TestCase):
         self.assertEqual(self.read('2025-06-15')['zones']['PT']['delivery_date'], '2025-06-15')
         self.assertIn('2024 NOT rewritten: PT 2024-06-15 to 2024-06-15', log)
         self.assertEqual(self.commits, ['Rewrite the archive of the prices of 2025 with the new reading (1 days)'])
+
+    def test_a_year_written_but_not_published_ends_in_failure(self):
+        """The push did not go through: the run must not pass for done, and the log says which year."""
+        self.old_file('2024-06-15', {'PT': dict(OLD)})
+        self.old_file('2025-06-15', {'PT': dict(OLD)})
+        published = {'2024': False, '2025': True}
+        code, log = self.rewrite({'PT': lambda start, end: year_answer(['2024-06-15'] if start.startswith('2024')
+                                                                       else ['2025-06-15'])},
+                                 commit=lambda message: published[message.split(' of ')[-1][:4]])
+        self.assertEqual(code, 1)
+        self.assertIn('2024: written here but NOT published', log)
+        self.assertNotIn('2025: written here but NOT published', log)
+        self.assertIn('Years left alone: [2024]', log)
+
+    def test_a_year_published_or_with_nothing_to_say_ends_well(self):
+        self.old_file('2024-06-15', {'PT': dict(OLD)})
+        for published in (True, None):
+            self.old_file('2024-06-15', {'PT': dict(OLD)})
+            code, log = self.rewrite({'PT': year_answer(['2024-06-15'])}, commit=lambda message: published)
+            self.assertEqual(code, 0, published)
+            self.assertNotIn('NOT published', log)
 
     def test_a_long_request_that_keeps_failing_is_asked_again_in_halves(self):
         days = [(date(2024, 1, 1) + timedelta(days=n)).isoformat() for n in range(0, 366, 30)]

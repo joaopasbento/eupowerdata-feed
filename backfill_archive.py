@@ -288,7 +288,8 @@ def rewrite_day(day, old, found, base, now):
 
 def rewrite_prices(base, years=None, ask=_ask, sleep=time.sleep, commit=None):
     """Rewrite the price files of the old reading, a year at a time. Returns
-    the exit code: 0, or 1 when a year could not be had and was left alone."""
+    the exit code: 0, or 1 when a year could not be had and was left alone,
+    or was written but could not be published (`commit` returned False)."""
     waiting = old_reader_days()
     wanted = sorted({day.year for day in waiting} & set(years or {day.year for day in waiting}))
     print(f'{len(waiting)} files of the old reading, in the years {sorted({day.year for day in waiting})}; '
@@ -323,8 +324,10 @@ def rewrite_prices(base, years=None, ask=_ask, sleep=time.sleep, commit=None):
                 came.setdefault(name, []).append(day)
             if not any(day in by_day for by_day in found.values()):
                 empty.append(day)
-        if commit:
-            commit(f'Rewrite the archive of the prices of {year} with the new reading ({len(days)} days)')
+        if commit and commit(f'Rewrite the archive of the prices of {year} with the new reading '
+                             f'({len(days)} days)') is False:
+            print(f'  {year}: written here but NOT published')
+            failed.append(year)
 
     print(f'\nRewritten: {rewritten} files. Years left alone: {failed or "none"}.')
     print(f'Zone-days that left a file, because ENTSO-E has no prices for them: {sum(map(len, left.values()))}')
