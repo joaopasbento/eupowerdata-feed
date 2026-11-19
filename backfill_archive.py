@@ -51,7 +51,13 @@ def fetch_prices_for_date(base, target_date):
     one value for each hour of the delivery day on the market's clock (Central
     European Time), read by the same code (fetch_entsoe.read_prices and
     price_zones), which knows the length of the intervals, puts back the
-    points curveType A03 leaves out and reads the day-ahead market only.
+    points curveType A03 leaves out, reads the day-ahead market only and
+    converts to euros the prices not given in euros.
+
+    The zones are asked for in parallel, by the code of the regular runs
+    (fetch_entsoe.fetch_all), at the pace of a backfill (see _gently below),
+    as the generation and the flows are. A zone that does not answer within
+    the day's time is left out of the file, as one that failed always was.
 
     target_date: a datetime.date object, the delivery day.
     """
@@ -63,14 +69,10 @@ def fetch_prices_for_date(base, target_date):
         'zones': {},
     }
 
-    found = {}
-    for code, eic in fe.ZONES.items():
-        xml = fe.http_get(fe.price_request(base, eic, target_date))
-        if xml:
-            hours = fe.read_prices(xml, target_date)
-            if hours:
-                found[code] = hours
-        time.sleep(0.15)   # gentle on the ENTSO-E API
+    _gently()
+    jobs = [(code, code, fe.price_request(base, eic, target_date)) for code, eic in fe.ZONES.items()]
+    found = fe.fetch_all('Prices', jobs, lambda text: fe.read_prices(text, target_date),
+                         lambda hours: f'{len(hours)} hours of {target_date:%d %b %Y}', time.monotonic() + DAY_BUDGET_S)
 
     # The zones in the feed's order, with the same Nordic consolidation as the
     # regular fetcher (NO1+NO2 -> NO, SE1+SE3 -> SE, DK1+DK2 -> DK).
@@ -95,7 +97,8 @@ def fetch_prices_for_date(base, target_date):
 #
 # The regular runs send their requests in parallel, up to 240 a minute. A
 # backfill runs beside them, on the same API key, and ENTSO-E suspends a key
-# that goes over 400 a minute: here they go out 100 a minute at most.
+# that goes over 400 a minute: here they go out 100 a minute at most, six at a
+# time, for the prices of a day as for its generation and its flows.
 
 DAY_BUDGET_S = 300            # the most one dataset of one day may take
 BACKFILL_INTERVAL_S = 0.6     # between request starts: 100 requests a minute
