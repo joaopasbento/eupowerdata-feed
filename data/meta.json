@@ -1,0 +1,79 @@
+{
+  "last_update": "2026-11-19T17:57:24+00:00",
+  "trigger": "feed_workflow_dispatch",
+  "datasets": {
+    "spot-prices": {
+      "exists": true,
+      "updated": "2026-11-19T17:53:08.597171+00:00",
+      "size": 38278,
+      "zones": 32
+    },
+    "generation-mix": {
+      "exists": true,
+      "updated": "2026-11-19T17:53:31.934550+00:00",
+      "size": 11532,
+      "zones": 32
+    },
+    "cross-border-flows": {
+      "exists": true,
+      "updated": "2026-11-19T17:53:55.215680+00:00",
+      "size": 86714,
+      "corridors": 92
+    },
+    "ren-generation": {
+      "exists": true,
+      "updated": "2026-11-19T17:53:31.934550+00:00",
+      "size": 497
+    },
+    "ree-generation": {
+      "exists": true,
+      "updated": "2026-11-19T17:53:31.934550+00:00",
+      "size": 693
+    },
+    "omie-prices": {
+      "exists": true,
+      "updated": "2026-11-19T17:54:40+00:00",
+      "size": 19788
+    },
+    "forward-curves": {
+      "exists": true,
+      "updated": "2026-11-19T17:53:04.050192+00:00",
+      "size": 22619
+    },
+    "capacity-installed": {
+      "exists": true,
+      "updated": "2026-11-01T11:07:59.589358+00:00",
+      "size": 4972
+    },
+    "renewablenodes-capacity": {
+      "exists": true,
+      "updated": "2026-11-19T08:54:29+00:00",
+      "size": 17609
+    },
+    "transition": {
+      "exists": true,
+      "updated": "2026-11-16T13:23:05.963467+00:00",
+      "size": 87294
+    },
+    "datacenters": {
+      "exists": true,
+      "updated": "2026-11-19T12:44:21.765772+00:00",
+      "size": 241894
+    }
+  },
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44581884298",
+  "steps": {
+    "balancing": "success",
+    "capacity": "success",
+    "commit": "success",
+    "entsoe": "success",
+    "forecast": "success",
+    "gb": "success",
+    "low_prices": "success",
+    "omie": "success",
+    "outages": "success",
+    "ree": "success",
+    "ren": "success",
+    "weather": "success"
+  }
+}
