@@ -67,6 +67,35 @@ class BulgariaInLevs(InADirectory):
         self.assertEqual(self.read('2022-01-22')['BG'], zone([195.583, 391.166]))
 
 
+class BulgariaOf6Jan2022(InADirectory):
+    """ENTSO-E's price for Bulgaria that day is Romania's divided by 1.95583."""
+
+    def test_only_bulgaria_of_that_day_leaves(self):
+        others = {'RO': zone([199.9] * 24), 'HU': zone([199.9] * 24)}
+        self.write('2022-01-06', {'RO': others['RO'], 'BG': zone([52.25] * 24, converted_from='BGN'),
+                                  'HU': others['HU']})
+        self.write('2022-01-05', {'BG': zone([90.0] * 24), 'RO': zone([90.0] * 24)})
+        self.write('2022-01-07', {'BG': zone([120.0] * 24)})
+        removed = archive_fixes.remove_wrong_at_the_source()
+        self.assertEqual([(str(day), name) for day, name in removed], [('2022-01-06', 'BG')])
+        self.assertEqual(self.read('2022-01-06'), others)
+        self.assertEqual(list(self.read('2022-01-06')), ['RO', 'HU'])        # the order of the others kept
+        self.assertEqual(self.read('2022-01-05')['BG'], zone([90.0] * 24))
+        self.assertEqual(self.read('2022-01-07')['BG'], zone([120.0] * 24))
+        self.assertEqual(archive_fixes.remove_wrong_at_the_source(), [])     # done once, nothing left to do
+        self.assertEqual(self.read('2022-01-06'), others)
+
+    def test_the_rest_of_the_file_is_kept(self):
+        self.write('2022-01-06', {'BG': zone([52.25]), 'RO': zone([199.9])})
+        path = archive_fixes.ARCHIVE.format(day='2022-01-06')
+        with open(path) as f:
+            before = json.load(f)
+        archive_fixes.remove_wrong_at_the_source()
+        with open(path) as f:
+            after = json.load(f)
+        self.assertEqual({k: v for k, v in after.items() if k != 'zones'}, {k: v for k, v in before.items() if k != 'zones'})
+
+
 class MoldovaOutOfTheArchive(InADirectory):
 
     def test_leaves_every_day_up_to_30_jun_2026_and_the_later_days_of_one_hour(self):
