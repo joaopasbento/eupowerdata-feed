@@ -82,9 +82,12 @@ the file of the country shown):
     once: a unit (its `asset_eic`, or its name when it has none) with several
     outages in force at once (two notices of Ascó 2 that overlap) counts with
     the largest of their unavailable powers, not their sum. `units` counts the
-    units with an outage in force, those that lose 0 MW included. On 20 Nov
-    2026 that was 9 000 MW in 31 units in Spain, where adding up the outages
-    gave 11 435 MW.
+    units whose largest unavailable power in force is above 0 MW: one whose
+    outages say 0 MW, or give no power at all, is not counted (decided on
+    20 Nov 2026; at 15:01 UTC that day Spain had one, 18WABO1-12345-D7, with
+    no name, technology nor nominal power, reason A95, from 21 Jan to 31 Dec
+    2026). Its outages stay in the file as they are. On 20 Nov 2026 that was
+    9 000 MW in 30 units in Spain, where adding up the outages gave 11 435 MW.
   - A zone's file has no time of the run in it: it is only written when what
     it says changes, so that the commits do not grow with files that did not.
     The times of the run (`updated`, and `fetched_at` and `carried_over` of
@@ -374,7 +377,9 @@ def _counts(outages):
 def unavailable_now(outages, now):
     """What is out at `now`, each unit counted once: {unavailable_mw, units}.
     A unit is its asset_eic or, with none, its name; with several outages in
-    force at once it counts with the largest of their unavailable powers."""
+    force at once it counts with the largest of their unavailable powers.
+    A unit whose largest unavailable power is 0 MW, or not given, is not
+    counted in `units`."""
     largest = {}
     for outage in outages:
         if outage.get('status') != 'active':
@@ -384,7 +389,7 @@ def unavailable_now(outages, now):
             continue
         unit = outage.get('asset_eic') or outage.get('name') or outage.get('id')
         largest[unit] = max(largest.get(unit, 0), outage.get('unavailable_mw') or 0)
-    return {'unavailable_mw': _mw(round(sum(largest.values()), 1)), 'units': len(largest)}
+    return {'unavailable_mw': _mw(round(sum(largest.values()), 1)), 'units': sum(1 for mw in largest.values() if mw > 0)}
 
 
 def merge_directions(records, names):
