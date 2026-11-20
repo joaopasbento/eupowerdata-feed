@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """fetch_outages.py - outages of power plants and of lines, by country.
 
-Writes data/outages.json: the outages in course, those that start in the next
+Writes one file for each zone, data/outages/<ZONE>.json, and an index,
+data/outages/index.json: the outages in course, those that start in the next
 seven days and those that ended in the last 48 hours, in two blocks that are
 kept apart because they are under different licences (see feed_common.py):
 
@@ -64,22 +65,61 @@ already reads have been published, and never fails the run. A zone or border
 that was asked for and did not answer, or whose pages could not all be had,
 keeps what was published, with the time it was obtained and the mark
 carried_over, for under three hours (the feed's rule for generation and
-flows); a run that obtains nothing leaves the file exactly as it was.
+flows); a run that obtains nothing leaves the files exactly as they were.
 
-    {updated, data_time, window: {from, to},
-     generation: {license, source, known_issue, zones: {PT: {eic, outages:
+What is published (the "Radar" page, decided on 20 Nov 2026, asks only for
+the file of the country shown):
+
+  - Only the outages in force: the cancelled and the withdrawn ones are still
+    asked for and read, because the archive needs them to take an outage out
+    of a day's record, but they are not published. On 20 Nov 2026 they were
+    877 of the 2 375 outages of the single file there was until then.
+  - A zone's file has its units and the borders that touch it: those of the
+    zone and, for a zone of Norway, Sweden or Denmark, those of its country,
+    whose borders are by the country (DE-DK goes into DK1 and DK2). Every zone
+    of the feed has a file, with no outages when there are none.
+  - `unavailable_now` is what is out at the time of the run, each unit counted
+    once: a unit (its `asset_eic`, or its name when it has none) with several
+    outages in force at once (two notices of Ascó 2 that overlap) counts with
+    the largest of their unavailable powers, not their sum. `units` counts the
+    units with an outage in force, those that lose 0 MW included. On 20 Nov
+    2026 that was 9 000 MW in 31 units in Spain, where adding up the outages
+    gave 11 435 MW.
+  - A zone's file has no time of the run in it: it is only written when what
+    it says changes, so that the commits do not grow with files that did not.
+    The times of the run (`updated`, and `fetched_at` and `carried_over` of
+    each zone and border) are in the index, which is written by every run
+    that obtains something.
+
+    data/outages/ES.json:
+    {zone, data_time,
+     generation: {license, source, known_issue, eic, outages:
          [{id, revision, asset_type, name, plant, asset_eic, location, zone,
            technology, psr_type, nominal_mw, available_mw, unavailable_mw,
            start, end, planned, status, published, reason, phase}], counts,
-         data_time,
-         fetched_at}}, not_published: {A80: {zone: time}, A77: {...}}},
-     transmission: {license, source, borders: {"ES-PT": {zones, outages:
-         [{id, ids, revision, asset_type, name, assets, border, start, end,
-           planned, status, published, reason, available_mw,
-           min_available_mw, phase}], counts, data_time, fetched_at}},
+         data_time, unavailable_now: {unavailable_mw, units}},
+     transmission: {license, source, data_time, borders: {"ES-PT": {zones,
+         outages: [{id, ids, revision, asset_type, name, assets, border,
+           start, end, planned, status, published, reason, available_mw,
+           min_available_mw, phase}], counts, data_time}}}}
+
+    data/outages/index.json:
+    {updated, data_time, window: {from, to}, zones: [every zone with a file],
+     generation: {license, source, zones: {ES: {outages, counts, data_time,
+         unavailable_now, fetched_at[, carried_over]}},
+         not_published: {A80: {zone: time}, A77: {...}}},
+     transmission: {license, source, borders: {"ES-PT": {zones, outages,
+         counts, data_time, fetched_at[, carried_over]}},
          not_published: {border: time}}}
 
-`data_time` is the time of the most recent publication among the outages.
+`data_time` is the time of the most recent publication among the outages (a
+cancellation is a publication too); null in a zone's block when nothing is
+published for it. `outages` in the index is how many the zone's file has.
+
+The single data/outages.json of before is no longer written: nothing read it
+(neither the site's Worker nor its pages, checked on 20 Nov 2026). The first
+run after the change takes what it needs from it (when each zone was obtained,
+what has nothing published) and then removes it.
 """
 
 import collections
@@ -90,11 +130,14 @@ from xml.etree import ElementTree as ET
 
 import carry_over
 import fetch_entsoe as fe
-from feed_common import (CC_BY, DATA_TIME, FETCHED_AT, HOURLY, SOURCE_TERMS, Answer, Budget, asked_recently, carry,
-                         due, entsoe_answer, entsoe_ask, http_get, iso, latest, load_json, parse_time, step_of,
-                         write_json)
+from feed_common import (CARRIED_OVER, CC_BY, DATA_TIME, FETCHED_AT, HOURLY, SOURCE_TERMS, Answer, Budget,
+                         asked_recently, carry, due, entsoe_answer, entsoe_ask, http_get, iso, latest, load_json,
+                         parse_time, step_of, write_json, write_json_if_changed)
 
-OUT_PATH = 'data/outages.json'
+OUT_DIR = 'data/outages'
+ZONE_PATH = OUT_DIR + '/{zone}.json'
+INDEX_PATH = OUT_DIR + '/index.json'
+OLD_PATH = 'data/outages.json'   # the single file of before 20 Nov 2026: read once, then removed
 ARCHIVE_PATH = 'data/archive/outages-{day}.json'
 BUDGET_S = float(os.environ.get('OUTAGES_BUDGET_SECONDS', '110'))
 
@@ -150,6 +193,15 @@ def _borders():
 
 BORDERS = _borders()
 BORDER_ORDER = list(ALWAYS_BORDERS) + [name for name in BORDERS if name not in ALWAYS_BORDERS]
+COUNTRY_OF = {zone: country for country, zones in fe.CONSOLIDATE.items() for zone in zones}
+
+
+def touches(border, zone):
+    """Whether a border goes into a zone's file: it is of the zone, or of its
+    country for a zone of Norway, Sweden or Denmark (whose borders are named
+    by the country)."""
+    sides = border.split('-')
+    return zone in sides or COUNTRY_OF.get(zone) in sides
 
 
 # --- Reading a document ---
@@ -317,6 +369,22 @@ def _counts(outages):
     """How many outages in force (not cancelled nor withdrawn) each phase has."""
     tally = collections.Counter(o['phase'] for o in outages if o['status'] == 'active')
     return {phase: tally.get(phase, 0) for phase in PHASES}
+
+
+def unavailable_now(outages, now):
+    """What is out at `now`, each unit counted once: {unavailable_mw, units}.
+    A unit is its asset_eic or, with none, its name; with several outages in
+    force at once it counts with the largest of their unavailable powers."""
+    largest = {}
+    for outage in outages:
+        if outage.get('status') != 'active':
+            continue
+        start, end = parse_time(outage.get('start')), parse_time(outage.get('end'))
+        if start is None or end is None or not start <= now < end:
+            continue
+        unit = outage.get('asset_eic') or outage.get('name') or outage.get('id')
+        largest[unit] = max(largest.get(unit, 0), outage.get('unavailable_mw') or 0)
+    return {'unavailable_mw': _mw(round(sum(largest.values()), 1)), 'units': len(largest)}
 
 
 def merge_directions(records, names):
@@ -505,7 +573,7 @@ def _collect(results, block, name):
 def main(now=None, get=http_get, budget=None, interval=0.25):
     now = now or datetime.now(timezone.utc)
     stamp = iso(now)
-    previous = load_json(OUT_PATH)
+    previous = read_published()
     requests, followers = plan(previous, now)
     print(f'Outages: {len(requests) - len(followers)} requests (and as many for the withdrawn ones, where there are '
           f'others), for the outages from {now - BACK:%d %b %H:%M} to {now + AHEAD:%d %b %H:%M} UTC')
@@ -599,7 +667,7 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
         print(f'  {unreadable} documents were not well-formed XML and were left out')
 
     if not obtained and not crossing:
-        print(f'Nothing obtained in this run: {OUT_PATH} is left exactly as it was')
+        print(f'Nothing obtained in this run: {OUT_DIR}/ is left exactly as it was')
         return 1
 
     doc = {
@@ -621,11 +689,137 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
             'not_published': {border: no_lines[border] for border in BORDERS if border in no_lines},
         },
     }
-    write_json(OUT_PATH, doc, separators=(',', ':'))
-    print(f'Wrote {OUT_PATH}: {len(zones)} zones ({len(obtained)} from this run), '
+    written = publish(doc, now)
+    print(f'Wrote {INDEX_PATH} and {written} of the {len(ZONE_ORDER)} files of the zones (the others had not '
+          f'changed): {len(zones)} zones with outages of units ({len(obtained)} from this run), '
           f'{len(borders)} borders ({len(crossing)} from this run)')
+    for zone in ALWAYS_ZONES:
+        now_out = unavailable_now((zones.get(zone) or {}).get('outages', []), now)
+        print(f"  {zone}: {now_out['unavailable_mw']} MW out now, in {now_out['units']} units, each counted once")
     archive(doc, now)
     return 0
+
+
+# --- What is published: a file for each zone, and the index ---
+
+def _published(outages):
+    """The outages that are published: those in force, not the cancelled nor the withdrawn ones."""
+    return [o for o in outages if o.get('status') == 'active']
+
+
+def _zero_counts():
+    return {phase: 0 for phase in PHASES}
+
+
+def zone_file(doc, zone, now):
+    """The file of one zone: its units and the borders that touch it."""
+    entry = doc[GENERATION]['zones'].get(zone)
+    units = _published(entry['outages']) if entry else []
+    generation = {
+        'license': doc[GENERATION]['license'],
+        'source': doc[GENERATION]['source'],
+        'known_issue': doc[GENERATION]['known_issue'],
+        'eic': ZONES[zone],
+        'outages': units,
+        'counts': entry['counts'] if entry else _zero_counts(),
+        DATA_TIME: entry.get(DATA_TIME) if entry else None,
+        'unavailable_now': unavailable_now(units, now),
+    }
+    borders = {name: {'zones': entry['zones'], 'outages': _published(entry['outages']), 'counts': entry['counts'],
+                      DATA_TIME: entry.get(DATA_TIME)}
+               for name, entry in doc[TRANSMISSION]['borders'].items() if touches(name, zone)}
+    transmission = {
+        'license': doc[TRANSMISSION]['license'],
+        'source': doc[TRANSMISSION]['source'],
+        DATA_TIME: latest(entry[DATA_TIME] for entry in borders.values()),
+        'borders': borders,
+    }
+    return {'zone': zone, DATA_TIME: latest([generation[DATA_TIME], transmission[DATA_TIME]]),
+            GENERATION: generation, TRANSMISSION: transmission}
+
+
+def _run_marks(entry):
+    return {name: entry[name] for name in (FETCHED_AT, CARRIED_OVER) if name in entry}
+
+
+def index_file(doc, now):
+    """The index: the zones, how many outages each file has, the times of the data and of the run."""
+    zones = {}
+    for zone, entry in doc[GENERATION]['zones'].items():
+        units = _published(entry['outages'])
+        zones[zone] = {'outages': len(units), 'counts': entry['counts'], DATA_TIME: entry.get(DATA_TIME),
+                       'unavailable_now': unavailable_now(units, now), **_run_marks(entry)}
+    borders = {name: {'zones': entry['zones'], 'outages': len(_published(entry['outages'])), 'counts': entry['counts'],
+                      DATA_TIME: entry.get(DATA_TIME), **_run_marks(entry)}
+               for name, entry in doc[TRANSMISSION]['borders'].items()}
+    return {
+        'updated': doc['updated'],
+        DATA_TIME: doc[DATA_TIME],
+        'window': doc['window'],
+        'zones': list(ZONE_ORDER),
+        GENERATION: {'license': doc[GENERATION]['license'], 'source': doc[GENERATION]['source'], 'zones': zones,
+                     'not_published': doc[GENERATION]['not_published']},
+        TRANSMISSION: {'license': doc[TRANSMISSION]['license'], 'source': doc[TRANSMISSION]['source'],
+                       'borders': borders, 'not_published': doc[TRANSMISSION]['not_published']},
+    }
+
+
+def publish(doc, now):
+    """Write the files of the zones that changed and the index; take out the
+    single file of before and the file of a zone the feed no longer has.
+    Returns how many files of zones were written."""
+    written = sum(write_json_if_changed(ZONE_PATH.format(zone=zone), zone_file(doc, zone, now), separators=(',', ':'))
+                  for zone in ZONE_ORDER)
+    write_json(INDEX_PATH, index_file(doc, now), separators=(',', ':'))
+    for name in os.listdir(OUT_DIR):
+        if name.endswith('.json') and name != os.path.basename(INDEX_PATH) and name[:-len('.json')] not in ZONES:
+            os.remove(os.path.join(OUT_DIR, name))
+    if os.path.exists(OLD_PATH):
+        os.remove(OLD_PATH)
+        print(f'Took out {OLD_PATH}, replaced by {OUT_DIR}/')
+    return written
+
+
+def read_published():
+    """What was published, in the shape of one document ({updated, data_time,
+    window, generation: {..., zones: {zone: entry}, not_published},
+    transmission: {..., borders: {border: entry}, not_published}}), each
+    entry with its outages and the times of the run the index keeps. None
+    when nothing was published; the single file of before when it is all
+    there is (the first run after the change)."""
+    index = load_json(INDEX_PATH)
+    if not isinstance(index, dict):
+        return load_json(OLD_PATH)
+    files = {}
+
+    def block_of(zone, block):
+        if zone not in files:
+            files[zone] = load_json(ZONE_PATH.format(zone=zone)) or {}
+        return files[zone].get(block) or {}
+
+    generation, transmission = index.get(GENERATION) or {}, index.get(TRANSMISSION) or {}
+    zones = {}
+    for zone, info in (generation.get('zones') or {}).items():
+        block = block_of(zone, GENERATION) if zone in ZONES else {}
+        if isinstance(info, dict) and isinstance(block.get('outages'), list):
+            zones[zone] = {'eic': block.get('eic'), 'outages': block['outages'], 'counts': block.get('counts'),
+                           DATA_TIME: block.get(DATA_TIME), 'unavailable_now': block.get('unavailable_now'),
+                           **_run_marks(info)}
+    borders = {}
+    for border, info in (transmission.get('borders') or {}).items():
+        entry = next((found for zone in ZONE_ORDER if touches(border, zone)
+                      if isinstance(found := (block_of(zone, TRANSMISSION).get('borders') or {}).get(border), dict)),
+                     None)
+        if isinstance(info, dict) and entry is not None:
+            borders[border] = {**entry, **_run_marks(info)}
+    return {
+        'updated': index.get('updated'),
+        DATA_TIME: index.get(DATA_TIME),
+        'window': index.get('window'),
+        GENERATION: {**{k: v for k, v in generation.items() if k != 'zones'},
+                     'known_issue': block_of(ZONE_ORDER[0], GENERATION).get('known_issue'), 'zones': zones},
+        TRANSMISSION: {**{k: v for k, v in transmission.items() if k != 'borders'}, 'borders': borders},
+    }
 
 
 # --- The archive: what was in force on each day ---
