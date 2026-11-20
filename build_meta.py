@@ -22,6 +22,18 @@ feed's files, so the feed writes this one too, with the same shape:
       "steps": {"entsoe": "success", "omie": "failure", ...}
     }
 
+After the eleven files of the PHP's list, in its order and shape (the status
+page and the widget read them), come the other files the site reads (since
+20 Nov 2026, known issue N87): fx-rates, low-prices, balancing-prices and
+weather, described as the others, and the two datasets kept in one file per
+zone, outages and forecast, one entry each, made from their index:
+
+        "outages": {"exists": true, "updated": "...", "zones": 35, "size": 968123},
+
+`exists` says the index is there, `updated` is the index's own, `zones` how
+many zones it lists (a count, as the `zones` of the prices) and `size` the
+index and the files of those zones together.
+
 Two things differ from the PHP's file, both for the better:
 
   - `updated` is the time the file's own `updated` field gives (when its data
@@ -49,6 +61,10 @@ FILES = (
     'omie-prices', 'forward-curves', 'capacity-installed', 'renewablenodes-capacity',
     'transition', 'datacenters',
 )
+# The other files the site reads (20 Nov 2026), after those of the PHP.
+MORE_FILES = ('fx-rates', 'low-prices', 'balancing-prices', 'weather')
+# The datasets kept in one file per zone: data/<name>/index.json and data/<name>/<ZONE>.json.
+ZONED = ('outages', 'forecast')
 
 
 def describe(name, folder='data'):
@@ -71,6 +87,23 @@ def describe(name, folder='data'):
     return info
 
 
+def describe_zoned(name, folder='data'):
+    """What meta.json says about a dataset kept in one file per zone, from its index."""
+    index_path = os.path.join(folder, name, 'index.json')
+    if not os.path.isfile(index_path):
+        return {'exists': False, 'updated': None, 'zones': 0, 'size': 0}
+    doc = load_json(index_path, {})
+    zones = doc.get('zones') if isinstance(doc, dict) else None
+    zones = [zone for zone in zones if isinstance(zone, str)] if isinstance(zones, list) else []
+    size = os.path.getsize(index_path)
+    for zone in zones:
+        path = os.path.join(folder, name, f'{zone}.json')
+        if os.path.isfile(path):
+            size += os.path.getsize(path)
+    return {'exists': True, 'updated': doc.get('updated') if isinstance(doc, dict) else None,
+            'zones': len(zones), 'size': size}
+
+
 def steps(environ):
     """{step id: outcome} from the STEP_<ID> variables the workflow passes."""
     found = {}
@@ -86,7 +119,8 @@ def build(environ=None, now=None, folder='data'):
     meta = {
         'last_update': iso(now),
         'trigger': 'feed_' + (environ.get('GITHUB_EVENT_NAME') or 'local'),
-        'datasets': {name: describe(name, folder) for name in FILES},
+        'datasets': {**{name: describe(name, folder) for name in FILES + MORE_FILES},
+                     **{name: describe_zoned(name, folder) for name in ZONED}},
     }
     if environ.get('GITHUB_RUN_ID') and environ.get('GITHUB_REPOSITORY'):
         server = environ.get('GITHUB_SERVER_URL') or 'https://github.com'
@@ -102,7 +136,7 @@ def main():
         meta = build()
         write_json(OUT_PATH, meta, indent=2)
         present = sum(1 for info in meta['datasets'].values() if info['exists'])
-        print(f'Wrote {OUT_PATH}: {present} of {len(FILES)} files present, trigger {meta["trigger"]}')
+        print(f'Wrote {OUT_PATH}: {present} of {len(meta["datasets"])} datasets present, trigger {meta["trigger"]}')
     except Exception as error:          # never fail the run for this file
         print(f'::warning::{OUT_PATH} not written: {error}')
 
