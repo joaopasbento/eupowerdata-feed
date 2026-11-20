@@ -15,15 +15,17 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 from unittest import mock
 
+import backfill_archive
 import feed_common as fc
 import fetch_entsoe as fe
 import fetch_forecast as ff
 import wind_solar_actual as ws
 from entsoe_real import KEY, Entsoe, sample
-from entsoe_xml import document, series
+from entsoe_xml import NO_DATA, document, series
 from test_carry_over import Feed as EntsoeFeed
 
 ASKED_AT = datetime(2026, 11, 18, 18, 8, 34, tzinfo=timezone.utc)      # when the generation answers were obtained
@@ -411,6 +413,152 @@ class TheArchive(Feed):
         self.assertNotIn('wind-solar-forecast-2021-11-01.json', left)
         self.assertIn('wind-solar-forecast-2021-11-30.json', left)
         self.assertIn('outages-2021-11-01.json', left)
+
+
+class TheFilesOfTheZones(Feed):
+    """The last 30 days and the day in course, one file for each zone, from the records of the archive."""
+
+    def zone(self, code):
+        return self.doc(ff.ZONE_PATH.format(zone=code))
+
+    def put_record(self, day, zones):
+        os.makedirs('data/archive', exist_ok=True)
+        with open(ff.ARCHIVE_PATH.format(day=day), 'w', encoding='utf-8') as f:
+            json.dump({'date': day, 'wind_solar': {'license': 'source-terms', 'source': 's', 'zones': zones}}, f)
+
+    def test_each_zone_with_a_forecast_has_a_file_with_its_days(self):
+        self.run_at(ASKED_AT)
+        self.assertEqual(sorted(os.listdir(ff.OUT_DIR)), ['BE.json', 'ES.json', 'PT.json', 'index.json'])
+        portugal = self.zone('PT')
+        self.assertEqual(list(portugal), ['zone', 'timezone', 'data_time', 'wind_solar'])
+        block = portugal['wind_solar']
+        self.assertEqual(list(block), ['license', 'source', 'error', 'eic', 'forecast_zones', 'days'])
+        self.assertEqual((block['license'], block['eic'], portugal['data_time']),
+                         ('source-terms', PT, '2026-11-18T16:00:00+00:00'))
+        self.assertEqual(list(block['days']), ['2026-11-17', '2026-11-18'])           # oldest first
+        self.assertEqual(block['days'], self.zones()['PT']['days'])                   # each day as it is published
+        self.assertNotIn('fetched_at', json.dumps(portugal))                          # the times of the run: in the index
+
+    def test_the_index_has_the_zones_the_days_and_the_times(self):
+        self.run_at(ASKED_AT)
+        index = self.doc(ff.INDEX_PATH)
+        self.assertEqual(list(index), ['updated', 'data_time', 'timezone', 'days', 'zones', 'wind_solar'])
+        self.assertEqual(index['days'], {'from': '2026-10-19', 'to': '2026-11-18'})   # 30 days and the day in course
+        self.assertEqual(index['zones'], ['PT', 'ES', 'BE'])
+        self.assertEqual(index['wind_solar']['license'], 'source-terms')
+        self.assertEqual(index['wind_solar']['zones']['PT'],
+                         {'days': 2, 'first': '2026-11-17', 'last': '2026-11-18', 'data_time': '2026-11-18T16:00:00+00:00',
+                          'fetched_at': '2026-11-18T18:08:34+00:00', 'actual_updated': '2026-11-18T18:08:34+00:00'})
+        self.assertIn('MD', index['wind_solar']['not_published'])
+
+    def test_the_day_that_closes_stays_and_the_oldest_leaves(self):
+        oldest = {'start': '2026-10-18T22:00:00+00:00', 'hours': 24, 'summary': {}}
+        self.put_record('2026-10-19', {'PT': oldest})
+        self.put_record('2026-10-18', {'PT': dict(oldest, start='2026-10-17T22:00:00+00:00')})   # out of the window
+        self.run_at(ASKED_AT)
+        self.assertEqual(list(self.zone('PT')['wind_solar']['days']), ['2026-10-19', '2026-11-17', '2026-11-18'])
+        # The next delivery day (19 Nov), with ENTSO-E not answering: 17 Nov is no longer one of the two days a run
+        # asks for, and stays as it closed; 19 Oct leaves the window.
+        self.run_at(at('2026-11-18 23:10:00'), [({}, None)])
+        days = self.zone('PT')['wind_solar']['days']
+        self.assertEqual(list(days), ['2026-11-17', '2026-11-18'])
+        self.assertEqual(days['2026-11-17']['summary']['solar']['hours'], 5)
+        self.assertEqual(self.doc(ff.INDEX_PATH)['days'], {'from': '2026-10-20', 'to': '2026-11-19'})
+
+    def test_a_failed_run_takes_no_day_out(self):
+        self.run_at(ASKED_AT)
+        before = self.zone('ES')['wind_solar']['days']
+        code, _entsoe, _log = self.run_at(ASKED_AT + timedelta(minutes=15), [({}, None)])
+        self.assertEqual(code, 1)
+        self.assertEqual(self.zone('ES')['wind_solar']['days'], before)
+
+    def test_only_the_files_that_changed_are_written(self):
+        self.run_at(ASKED_AT)
+        inodes = {code: os.stat(ff.ZONE_PATH.format(zone=code)).st_ino for code in ('PT', 'ES', 'BE')}
+        index = os.stat(ff.INDEX_PATH).st_ino
+        later = ASKED_AT + timedelta(minutes=15)
+        ws.save({'BE': {'wind_offshore': (timedelta(hours=1), {at('2026-11-18 17:00'): 1000.0})}}, later)
+        self.run_at(later)
+        self.assertEqual(os.stat(ff.ZONE_PATH.format(zone='PT')).st_ino, inodes['PT'])     # asked again, the same
+        self.assertEqual(os.stat(ff.ZONE_PATH.format(zone='ES')).st_ino, inodes['ES'])
+        self.assertNotEqual(os.stat(ff.ZONE_PATH.format(zone='BE')).st_ino, inodes['BE'])  # a new actual
+        self.assertNotEqual(os.stat(ff.INDEX_PATH).st_ino, index)
+
+
+class FillingInTheDaysBefore(InADirectory):
+    """fill_days: the 30 days before the files existed, from ENTSO-E, once."""
+
+    NOW = at('2026-11-20 10:00:00')                     # delivery day 20 Nov: 21 Oct to 18 Nov are filled in
+    START = at('2026-10-19 22:00:00')                   # the period asked for begins a day early
+
+    def answer(self, url):
+        params = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        self.asked.append(params)
+        hours = int((at('2026-11-19 23:00:00') - self.START) / timedelta(hours=1))
+        if params['in_Domain'] == ES:
+            return None, 'HTTP 400 Bad Request'
+        if params['in_Domain'] != PT:
+            return NO_DATA, None
+        if params['documentType'] == 'A69':
+            return document(series(self.START, [100] * hours, psr='B16')), None
+        return document(series(self.START, [110] * hours, psr='B16'), series(self.START, [500] * hours, psr='B19')), None
+
+    def fill(self, commit=None):
+        self.asked = []
+        log = io.StringIO()
+        with mock.patch.object(backfill_archive, '_gently'), contextlib.redirect_stdout(log):
+            code = ff.fill_days('https://example.invalid/api', now=self.NOW, ask=self.answer, sleep=lambda s: None,
+                                commit=commit, previous={'wind_solar': {'not_published': {'MD': 'x', 'XK': 'x'}}})
+        return code, log.getvalue()
+
+    def record(self, day):
+        return self.doc(ff.ARCHIVE_PATH.format(day=day))['wind_solar']
+
+    def test_each_day_before_yesterday_gets_its_record_worked_out_as_a_run_would(self):
+        code, log = self.fill()
+        days = sorted(name[len('wind-solar-forecast-'):-len('.json')] for name in os.listdir('data/archive'))
+        self.assertEqual((days[0], days[-1], len(days)), ('2026-10-21', '2026-11-18', 29))
+        day = self.record('2026-11-02')['zones']['PT']
+        self.assertEqual((day['start'], day['hours']), ('2026-11-01T23:00:00+00:00', 24))
+        self.assertEqual((day['solar']['forecast'], day['solar']['actual'], day['solar']['error']),
+                         ([100.0] * 24, [110.0] * 24, [10.0] * 24))
+        self.assertNotIn('wind_onshore', day)                     # no forecast of it: not there, as in a run
+        self.assertEqual(day['summary']['solar'], {'hours': 24, 'forecast_mwh': 2400.0, 'actual_mwh': 2640.0,
+                                                   'mean_error_mw': 10.0, 'mean_abs_error_mw': 10.0})
+        self.assertEqual(self.record('2026-10-25')['zones']['PT']['hours'], 25)     # the clocks go back
+        self.assertEqual(self.record('2026-10-21')['license'], 'source-terms')
+        self.assertIn('PT: 29 days', log)
+
+    def test_one_request_for_the_forecast_and_one_for_the_actuals_of_each_zone(self):
+        self.fill()
+        kinds = {(p['documentType'], p.get('processType')) for p in self.asked}
+        self.assertEqual(kinds, {('A69', 'A01'), ('A75', 'A16')})
+        self.assertEqual({(p['periodStart'], p['periodEnd']) for p in self.asked}, {('202610192200', '202611192300')})
+        zones = [code for name in ff.ORDER if name not in ('MD', 'XK') for code in ff.PARTS[name]]
+        asked = [p['in_Domain'] for p in self.asked]
+        self.assertEqual(len(asked), 2 * len(zones) - 1)          # Spain's first request is refused: no second
+        self.assertNotIn(fe.GEN_ZONES['MD'], asked)               # publishes no forecast
+
+    def test_a_zone_that_cannot_be_had_is_left_out_and_the_run_says_so(self):
+        code, log = self.fill()
+        self.assertEqual(code, 1)
+        self.assertIn('ES: NOT filled in', log)
+        self.assertNotIn('ES', self.record('2026-11-02')['zones'])
+
+    def test_the_day_before_and_the_day_in_course_are_left_to_the_runs_and_other_zones_stay(self):
+        os.makedirs('data/archive', exist_ok=True)
+        with open(ff.ARCHIVE_PATH.format(day='2026-11-02'), 'w', encoding='utf-8') as f:
+            json.dump({'date': '2026-11-02', 'wind_solar': {'license': 'source-terms', 'source': ff.SOURCE,
+                                                            'zones': {'BE': {'hours': 24}}}}, f)
+        self.fill()
+        self.assertEqual(list(self.record('2026-11-02')['zones']), ['BE', 'PT'])
+        self.assertFalse(os.path.exists(ff.ARCHIVE_PATH.format(day='2026-11-19')))
+        self.assertFalse(os.path.exists(ff.ARCHIVE_PATH.format(day='2026-11-20')))
+
+    def test_records_not_published_end_in_failure(self):
+        code, log = self.fill(commit=lambda message: False)
+        self.assertEqual(code, 1)
+        self.assertIn('NOT published', log)
 
 
 if __name__ == '__main__':

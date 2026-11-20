@@ -9,6 +9,11 @@ name: Rewrite parts of the archive
 #                      feed's zones at the market's resolution, in the records
 #                      of the year: see "Counting a year again" in
 #                      fetch_low_prices.py.
+#   forecast-days      The forecast error of wind and solar of the 30 days
+#                      before the day in course, which the files of
+#                      data/forecast/ show and which the archive did not have
+#                      yet: see "The last 30 days" in fetch_forecast.py. The
+#                      years are not used.
 #
 # It does not get in the way of the runs of fetch.yml: it asks ENTSO-E for one
 # thing at a time, it only writes files of the archive those runs do not
@@ -21,7 +26,7 @@ on:
       what:
         description: Which part to rewrite
         type: choice
-        options: [italy-generation, low-prices]
+        options: [italy-generation, low-prices, forecast-days]
         required: true
       years:
         description: Years, separated by spaces. Empty for every year there is something to do in (low-prices - the year in course)
@@ -59,3 +64,8 @@ jobs:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
           YEARS: ${{ inputs.years }}
         run: python fetch_low_prices.py --refill-entsoe $YEARS
+      - name: The forecast error of the last 30 days
+        if: ${{ inputs.what == 'forecast-days' }}
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_forecast.py --fill-days
