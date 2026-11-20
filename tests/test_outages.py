@@ -436,10 +436,22 @@ class WhatIsOutNow(unittest.TestCase):
                    self.outage('e', 500, status='withdrawn')]
         self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 100, 'units': 1})
 
-    def test_a_unit_with_no_eic_goes_by_its_name_and_a_unit_that_loses_nothing_counts(self):
-        outages = [self.outage(None, 50, name='Unit X'), self.outage(None, 70, name='Unit X'),
-                   self.outage('z', 0)]
-        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 70, 'units': 2})
+    def test_a_unit_with_no_eic_goes_by_its_name(self):
+        outages = [self.outage(None, 50, name='Unit X'), self.outage(None, 70, name='Unit X')]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 70, 'units': 1})
+
+    def test_a_unit_that_loses_0_mw_is_not_counted(self):
+        outages = [self.outage('a', 100), self.outage('z', 0)]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 100, 'units': 1})
+
+    def test_a_unit_whose_outage_gives_no_power_is_not_counted(self):
+        # As 18WABO1-12345-D7 in Spain on 20 Nov 2026: no name, no technology, no nominal power
+        outages = [self.outage('a', 100), self.outage('18WABO1-12345-D7', None)]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 100, 'units': 1})
+
+    def test_a_unit_with_an_outage_of_0_mw_and_a_larger_one_in_force_still_counts(self):
+        outages = [self.outage('a', 0), self.outage('a', 250)]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 250, 'units': 1})
 
     def test_nothing_out(self):
         self.assertEqual(fo.unavailable_now([], self.NOW), {'unavailable_mw': 0, 'units': 0})
