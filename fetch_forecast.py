@@ -67,20 +67,58 @@ Denmark, the zones that forecast it). `updated` is the time of the run,
 `fetched_at` the time a zone's forecast was obtained, `actual_updated` the
 time its actuals were, and `data_time` the start of the last hour that has an
 actual value.
+
+The last 30 days, one file for each zone (for the "Radar" page, decided on
+20 Nov 2026, which asks only for the file of the country shown):
+
+    data/forecast/ES.json:
+    {zone, timezone, data_time,
+     wind_solar: {license, source, error, eic, forecast_zones,
+         days: {"2026-10-21": {start, hours, solar: {forecast, actual,
+             error}, ..., summary: {...}}, ... "2026-11-20": {...}}}}
+
+    data/forecast/index.json:
+    {updated, data_time, timezone, days: {from, to}, zones: [zones with a file],
+     wind_solar: {license, source, zones: {ES: {days, first, last, data_time,
+         fetched_at, actual_updated[, carried_over]}}, not_published}}
+
+`days` has the day in course and the 30 before it, each as in the file above,
+oldest first. They come from the records of the archive, which already keep
+each day as it was when it closed: every run writes there the day in course
+and the day before (with the actuals of the whole day by then), and leaves the
+older ones as they are. A run still asks ENTSO-E for those two days only. The
+oldest day leaves the window by the date alone, so a run that obtains nothing
+takes no day out; a day the archive has no record of for a zone is not in its
+file. A zone's file has no time of the run in it (those are in the index) and
+is only written when what it says changes.
+
+The 30 days before the files existed were filled in once, from ENTSO-E itself:
+`python fetch_forecast.py --fill-days`, started by hand through
+rewrite-archive.yml (where the key is). For each zone it makes one request for
+the forecast and one for the actual generation of the whole period, one
+request at a time and no more than 100 a minute (as backfill_archive.py), and
+writes the records of the archive of the days before yesterday, each zone's
+day worked out as a run works out the day before.
 """
 
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import carry_over
 import fetch_entsoe as fe
 import wind_solar_actual
-from feed_common import (DAILY, DATA_TIME, FETCHED_AT, HOURLY, SOURCE_TERMS, Budget, asked_recently, carry, due,
-                         entsoe_answer, entsoe_ask, http_get, iso, latest, load_json, parse_time, write_json)
+from feed_common import (CARRIED_OVER, DAILY, DATA_TIME, FETCHED_AT, HOURLY, SOURCE_TERMS, Budget, asked_recently,
+                         carry, due, entsoe_answer, entsoe_ask, http_get, iso, latest, load_json, parse_time,
+                         write_json, write_json_if_changed)
 
 OUT_PATH = 'data/wind-solar-forecast.json'
 ARCHIVE_PATH = 'data/archive/wind-solar-forecast-{day}.json'
+OUT_DIR = 'data/forecast'
+ZONE_PATH = OUT_DIR + '/{zone}.json'
+INDEX_PATH = OUT_DIR + '/index.json'
+WINDOW_DAYS = 30                 # the days before the one in course that the files of the zones have
 BUDGET_S = float(os.environ.get('FORECAST_BUDGET_SECONDS', '45'))
 
 BLOCK = 'wind_solar'
@@ -227,6 +265,20 @@ def build(name, forecasts, kept, stamps, now):
     return entry
 
 
+def forecasts_of(name, read, day):
+    """{technology: ([hourly forecast of the day], [zones])} of a published
+    name, from the forecast series of each of its zones ({zone: {technology:
+    (step, {time: MW})}}): the sum of the zones that forecast the technology."""
+    start, end = carry_over.day_bounds(day)
+    hours = int((end - start) / HOUR)
+    found = {}
+    for technology in NAMES:
+        zones = [zone for zone in PARTS[name] if technology in read[zone]]
+        if zones:
+            found[technology] = (add_up([hourly(read[zone][technology], start, hours) for zone in zones]), zones)
+    return found
+
+
 def plan(previous, now):
     """The requests of this run, Portugal and Spain first: [((name, zone), log name, params)]."""
     today = carry_over.delivery_day(now)
@@ -306,16 +358,7 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
             failed.add(name)
             continue
         silent.pop(name, None)
-        forecasts = {}
-        for day in days:
-            start, end = carry_over.day_bounds(day)
-            hours = int((end - start) / HOUR)
-            forecasts[day] = {}
-            for technology in NAMES:
-                zones = [zone for zone in PARTS[name] if technology in read[zone]]
-                if zones:
-                    forecasts[day][technology] = (add_up([hourly(read[zone][technology], start, hours) for zone in zones]),
-                                                  zones)
+        forecasts = {day: forecasts_of(name, read, day) for day in days}
         entry = build(name, forecasts, kept, stamps, now)
         if entry is None:
             failed.add(name)
@@ -348,10 +391,100 @@ def main(now=None, get=http_get, budget=None, interval=0.25):
     write_json(OUT_PATH, doc, separators=(',', ':'))
     print(f'Wrote {OUT_PATH}: {len(zones)} zones ({len(obtained)} forecasts from this run)')
     archive(doc, now)
+    written, names, window = publish(doc, now)
+    spain = ((load_json(ZONE_PATH.format(zone='ES')) or {}).get(BLOCK) or {}).get('days') or {}
+    print(f'Wrote {INDEX_PATH} and {written} of the {len(names)} files of the zones (the others had not changed), '
+          f'for the days {window[0]} to {window[-1]}; Spain has {len(spain)} of them')
     return 0 if (obtained or not jobs or not failed) else 1
 
 
+# --- The last 30 days, a file for each zone ---
+
+def window_of(now):
+    """The days the files of the zones have: the 30 before the one in course and that one, oldest first."""
+    today = carry_over.delivery_day(now)
+    return [today - timedelta(days=back) for back in range(WINDOW_DAYS, -1, -1)]
+
+
+def last_actual(days):
+    """The start of the last hour that has an actual value, in the days of a zone's file; None with none."""
+    last = None
+    for block in days.values():
+        start = parse_time(block.get('start'))
+        for name in NAMES:
+            actual = (block.get(name) or {}).get('actual') or []
+            measured = [hour for hour, value in enumerate(actual) if value is not None]
+            if start is not None and measured:
+                at = start + HOUR * measured[-1]
+                last = at if last is None else max(last, at)
+    return iso(last) if last else None
+
+
+def publish(doc, now):
+    """Write the files of the zones that changed, from the records of the
+    archive of the days of the window, and the index. Returns (how many files
+    of zones were written, the zones that have one, the days)."""
+    window = window_of(now)
+    records = {}
+    for day in window:
+        zones = (((load_json(ARCHIVE_PATH.format(day=day.isoformat())) or {}).get(BLOCK) or {}).get('zones'))
+        records[day] = zones if isinstance(zones, dict) else {}
+    entries = doc[BLOCK]['zones']
+    names = [name for name in PARTS if any(isinstance(records[day].get(name), dict) for day in window)]
+    written, listed = 0, {}
+    for name in names:
+        days = {day.isoformat(): records[day][name] for day in window if isinstance(records[day].get(name), dict)}
+        entry = entries.get(name) or {}
+        data_time = last_actual(days)
+        zone_file = {
+            'zone': name,
+            'timezone': doc['timezone'],
+            DATA_TIME: data_time,
+            BLOCK: {
+                'license': doc[BLOCK]['license'],
+                'source': doc[BLOCK]['source'],
+                'error': doc[BLOCK]['error'],
+                'eic': ', '.join(fe.GEN_ZONES[zone] for zone in PARTS[name]),
+                **({'forecast_zones': entry['forecast_zones']} if entry.get('forecast_zones') else {}),
+                'days': days,
+            },
+        }
+        written += write_json_if_changed(ZONE_PATH.format(zone=name), zone_file, separators=(',', ':'))
+        listed[name] = {'days': len(days), 'first': min(days), 'last': max(days), DATA_TIME: data_time,
+                        **{key: entry[key] for key in (FETCHED_AT, 'actual_updated', CARRIED_OVER) if key in entry}}
+    write_json(INDEX_PATH, {
+        'updated': doc['updated'],
+        DATA_TIME: latest(entry[DATA_TIME] for entry in listed.values()),
+        'timezone': doc['timezone'],
+        'days': {'from': window[0].isoformat(), 'to': window[-1].isoformat()},
+        'zones': names,
+        BLOCK: {'license': doc[BLOCK]['license'], 'source': doc[BLOCK]['source'], 'zones': listed,
+                'not_published': doc[BLOCK]['not_published']},
+    }, separators=(',', ':'))
+    for file_name in os.listdir(OUT_DIR):
+        if (file_name.endswith('.json') and file_name != os.path.basename(INDEX_PATH)
+                and file_name[:-len('.json')] not in names):
+            os.remove(os.path.join(OUT_DIR, file_name))
+    return written, names, window
+
+
 # --- The archive: one record for each delivery day ---
+
+def write_record(day, blocks, licence=SOURCE_TERMS, source=SOURCE):
+    """Put the day blocks of some zones ({name: block}) into the record of a
+    day, over what it had for them; the other zones of the record stay as
+    they are. Written only when it changes. Returns whether it was."""
+    path = ARCHIVE_PATH.format(day=day.isoformat())
+    before = load_json(path)
+    zones = dict((((before or {}).get(BLOCK) or {}).get('zones')) or {})
+    zones.update(blocks)
+    record = {'date': day.isoformat(),
+              BLOCK: {'license': licence, 'source': source, 'zones': {name: zones[name] for name in sorted(zones)}}}
+    if not zones or record == before:
+        return False
+    write_json(path, record, separators=(',', ':'))
+    return True
+
 
 def archive(doc, now):
     """Write the records of the delivery day in course and of the one before
@@ -360,18 +493,9 @@ def archive(doc, now):
     no time of its own: it only changes when its numbers do."""
     os.makedirs(os.path.dirname(ARCHIVE_PATH), exist_ok=True)
     for day in _days(now):
-        path = ARCHIVE_PATH.format(day=day.isoformat())
-        before = load_json(path)
-        zones = dict((((before or {}).get(BLOCK) or {}).get('zones')) or {})
-        for name, entry in doc[BLOCK]['zones'].items():
-            block = (entry.get('days') or {}).get(day.isoformat())
-            if block:
-                zones[name] = block
-        record = {'date': day.isoformat(),
-                  BLOCK: {'license': doc[BLOCK]['license'], 'source': doc[BLOCK]['source'],
-                          'zones': {name: zones[name] for name in sorted(zones)}}}
-        if zones and record != before:
-            write_json(path, record, separators=(',', ':'))
+        write_record(day, {name: entry['days'][day.isoformat()] for name, entry in doc[BLOCK]['zones'].items()
+                           if (entry.get('days') or {}).get(day.isoformat())},
+                     doc[BLOCK]['license'], doc[BLOCK]['source'])
     cutoff = (carry_over.delivery_day(now) - timedelta(days=KEEP_DAYS)).isoformat()
     folder, prefix = os.path.dirname(ARCHIVE_PATH), 'wind-solar-forecast-'
     for name in os.listdir(folder):
@@ -379,5 +503,93 @@ def archive(doc, now):
             os.remove(os.path.join(folder, name))
 
 
+# --- Filling in the 30 days before the files existed, once ---
+
+def _by_day(series, first, last):
+    """{day: {technology: (step, {time: MW})}} of series ({technology: (step, {time: MW})}), for the delivery
+    days `first` to `last`."""
+    found = {}
+    day = first
+    while day <= last:
+        start, end = carry_over.day_bounds(day)
+        of_day = {name: (step, {at: value for at, value in values.items() if start <= at < end})
+                  for name, (step, values) in series.items()}
+        of_day = {name: kept for name, kept in of_day.items() if kept[1]}
+        if of_day:
+            found[day] = of_day
+        day += timedelta(days=1)
+    return found
+
+
+def fill_days(base, now=None, ask=None, sleep=time.sleep, commit=None, previous=None):
+    """Write the records of the archive of the 30 days before the day in
+    course, but for the day before (which the runs write), from ENTSO-E: for
+    each zone, one request for the forecast and one for the actual generation
+    of the whole period. Returns the exit code: 0, or 1 when a zone could not
+    be had (the others are written) or the records could not be published."""
+    import backfill_archive
+    backfill_archive._gently()
+    ask = ask or backfill_archive._ask
+    now = now or datetime.now(timezone.utc)
+    today = carry_over.delivery_day(now)
+    first, last = today - timedelta(days=WINDOW_DAYS), today - timedelta(days=2)
+    end = carry_over.day_bounds(last)[1]
+    silent = _memory(load_json(OUT_PATH) if previous is None else previous)
+    print(f'Filling in the forecast error of {first} to {last}, from ENTSO-E')
+
+    def forecast(text, first, last):
+        return _by_day(read_forecast(text, end), first, last)
+
+    def actual(text, first, last):
+        return _by_day(wind_solar_actual.series_of(fe.read_series(text), end, fe._every_interval), first, last)
+
+    blocks, failed = {}, []
+    for name in ORDER:
+        if name in silent:
+            print(f'  {name}: publishes no forecast - not asked for')
+            continue
+        started = time.monotonic()
+        try:
+            forecasts, actuals = {}, {}
+            for zone in PARTS[name]:
+                area = {'in_Domain': fe.GEN_ZONES[zone]}
+                forecasts[zone] = backfill_archive.ask_span(base, {'documentType': 'A69', 'processType': 'A01', **area},
+                                                            f'{zone} forecast', first, last, forecast, True, ask, sleep)
+                actuals[zone] = backfill_archive.ask_span(base, {'documentType': 'A75', 'processType': 'A16', **area},
+                                                          f'{zone} actual', first, last, actual, True, ask, sleep)
+        except backfill_archive.RewriteFailed as e:
+            print(f'  {name}: NOT filled in ({e})')
+            failed.append(name)
+            continue
+        day, count = first, 0
+        while day <= last:
+            read = {zone: forecasts[zone].get(day) or {} for zone in PARTS[name]}
+            if all(read.values()):                        # never a country put together from part of its zones
+                given = forecasts_of(name, read, day)
+                kept = {zone: actuals[zone].get(day) or {} for zone in PARTS[name]}
+                block = day_block(day, {technology: values for technology, (values, _zones) in given.items()},
+                                  {technology: actual_hours(name, technology, day, kept, zones)
+                                   for technology, (_values, zones) in given.items()})
+                if block:
+                    blocks.setdefault(day, {})[name] = block
+                    count += 1
+            day += timedelta(days=1)
+        print(f'  {name}: {count} days [{time.monotonic() - started:.0f}s]')
+
+    written = sum(write_record(day, zones) for day, zones in sorted(blocks.items()))
+    print(f'{written} records of the archive written; zones not filled in: {failed or "none"}')
+    if commit and written and commit(f'Fill in the forecast error of wind and solar of {first} to {last}') is False:
+        print('The records were written here but NOT published: start the run again')
+        return 1
+    return 1 if failed else 0
+
+
 if __name__ == '__main__':
+    if '--fill-days' in sys.argv:
+        import backfill_archive
+        if not fe.API_KEY:
+            sys.exit('ERROR: ENTSOE_API_KEY environment variable is not set')
+        backfill_archive._run_git(['config', 'user.name', 'github-actions[bot]'])
+        backfill_archive._run_git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
+        sys.exit(fill_days(fe.ALT_URLS[0], commit=backfill_archive._commit_and_push))
     sys.exit(main())
