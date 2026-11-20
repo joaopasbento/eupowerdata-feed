@@ -79,7 +79,12 @@ file is only rewritten when a run brings something new.
      entsoe: {license, source, delivery_date, fetched_at, zones: {DE: {day:
          {resolution_minutes, periods, hours, negative_h, zero_h, low_h,
          min, basis}, year: {days, hours, negative_h, ..., negative_or_zero_pct,
-         market_resolution_days, hourly_days}}}}}
+         market_resolution_days, hourly_days},
+         months: {"2026-01": {...as year...}}}}}}
+
+`months` has, for each zone, the months of the year in course that it has
+days counted in, added up from the same records and in the same way as its
+`year`: the months of a zone add up to its year, hour for hour.
 
 `omie.days` has the day in course, the day before and, once published, the
 day after. `omie.version_check` is the day OMIE was last asked for newer
@@ -586,7 +591,10 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
 
     had_prices = (previous.get(ENTSOE) or {}).get('fetched_at')
     new_prices = prices_obtained is not None and prices_obtained != had_prices
-    if not read and not new_prices and not written and version_check == checked_before:
+    # A file written before the zones had their months (20 Nov 2026) is written again, even with nothing new.
+    without_months = any(isinstance(entry, dict) and 'months' not in entry
+                         for entry in ((previous.get(ENTSOE) or {}).get('zones') or {}).values())
+    if not read and not new_prices and not written and version_check == checked_before and not without_months:
         print(f'Nothing new in this run: {OUT_PATH} is left exactly as it was')
         return 0
 
@@ -602,7 +610,8 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
     # (the records of the year were filled in once, before this file existed).
     omie_read = stamp if read else (previous.get(OMIE) or {}).get('fetched_at')
     year_zones = entsoe_totals(records, days)
-    last = [at for day in (tomorrow, today) if (at := _last_period(records.get(day), day))]
+    month_zones = {month: entsoe_totals(records, month_days) for month, month_days in months.items()}
+    last =[at for day in (tomorrow, today) if (at := _last_period(records.get(day), day))]
     doc = {
         'updated': stamp,
         'data_time': latest(([iso(max(last))] if last else [])
@@ -626,7 +635,8 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, limit=None):
             'delivery_date': today.isoformat(),
             'fetched_at': prices_obtained or had_prices,
             'year': {'year': today.year, 'from': year_start.isoformat(), 'to': today.isoformat()},
-            'zones': {zone: {**({'day': today_zones[zone]} if zone in today_zones else {}), 'year': year_zones[zone]}
+            'zones': {zone: {**({'day': today_zones[zone]} if zone in today_zones else {}), 'year': year_zones[zone],
+                             'months': {month: totals[zone] for month, totals in month_zones.items() if zone in totals}}
                       for zone in fe.PRICE_ORDER if zone in year_zones},
         },
     }

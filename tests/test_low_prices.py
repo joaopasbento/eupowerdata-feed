@@ -400,6 +400,48 @@ class TheOtherZones(InADirectory):
         zones = self.doc()['entsoe']['zones']
         self.assertEqual((zones['MD']['year']['days'], zones['RO']['year']['days']), (1, 3))
 
+    def test_each_zone_has_its_months_and_they_add_up_to_its_year(self):
+        # Germany: 31 Jan with 2 hours negative, 1 at zero and 3 low; 1 Feb with 1 negative and 2 low.
+        # France: 31 Jan with 4 hours at zero; nothing on 1 Feb. Spain, on 2 Mar (the day in course), by the
+        # quarter-hour: 3 quarters negative, 2 at zero and 1 low.
+        self.archive('2026-01-31', {'DE': self.prices('DE', [(h, p) for h, p in enumerate([-1, -2, 0, 1, 2, 5] + [50] * 18)],
+                                                     '2026-01-31'),
+                                    'FR': self.prices('FR', [(h, 0 if h < 4 else 70) for h in range(24)], '2026-01-31')})
+        self.archive('2026-02-01', {'DE': self.prices('DE', [(h, p) for h, p in enumerate([-3, 4, 4.5] + [60] * 21)])})
+        quarter, start = timedelta(minutes=15), at('2026-03-01 23:00')
+        spain = [(start + quarter * i, quarter, Decimal('-1') if i < 3 else Decimal('0') if i < 5 else
+                  Decimal('2') if i < 6 else Decimal('40')) for i in range(96)]
+        pi.save({'ES': spain}, date(2026, 3, 2), at('2026-03-02 09:00:00'))
+        self.run_at(at('2026-03-02 09:00:00'))
+        zones = self.doc()['entsoe']['zones']
+        self.assertEqual(list(zones['DE']), ['year', 'months'])
+        self.assertEqual(list(zones['DE']['months']), ['2026-01', '2026-02'])
+        january, february = zones['DE']['months']['2026-01'], zones['DE']['months']['2026-02']
+        self.assertEqual((january['days'], january['hours'], january['negative_h'], january['zero_h'], january['low_h']),
+                         (1, 24, 2, 1, 3))
+        self.assertEqual((february['negative_h'], february['zero_h'], february['low_h'], february['negative_pct']),
+                         (1, 0, 2, 4.17))
+        self.assertEqual(list(zones['FR']['months']), ['2026-01'])        # a month with no day of it is not there
+        march = zones['ES']['months']['2026-03']
+        self.assertEqual((march['negative_h'], march['zero_h'], march['low_h'], march['market_resolution_days']),
+                         (0.75, 0.5, 0.25, 1))
+        # The months of each zone add up to its year, hour for hour and day for day.
+        for code, zone in zones.items():
+            for name in ('days', 'hours', 'negative_h', 'zero_h', 'low_h', 'market_resolution_days', 'hourly_days'):
+                self.assertEqual(sum(month[name] for month in zone['months'].values()), zone['year'][name], (code, name))
+
+    def test_a_file_written_before_the_months_is_written_again_with_nothing_new(self):
+        self.archive('2026-02-01', {'DE': self.prices('DE', [(h, 50) for h in range(24)])})
+        self.run_at(MORNING)
+        doc = self.doc()
+        for zone in doc['entsoe']['zones'].values():
+            del zone['months']
+        with open(lp.OUT_PATH, 'w', encoding='utf-8') as f:
+            json.dump(doc, f)
+        _code, _omie, log = self.run_at(MORNING + timedelta(minutes=15))
+        self.assertNotIn('left exactly as it was', log)
+        self.assertIn('2026-02', self.doc()['entsoe']['zones']['DE']['months'])
+
     def test_a_record_written_before_that_rule_does_not_count_for_the_total(self):
         count = {'resolution_minutes': 60, 'periods': 24, 'hours': 24, 'negative_h': 24, 'zero_h': 0, 'low_h': 0,
                  'min': -5, 'basis': 'hourly-means'}
