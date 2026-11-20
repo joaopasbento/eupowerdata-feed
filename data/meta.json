@@ -1,43 +1,43 @@
 {
-  "last_update": "2026-11-20T08:56:31+00:00",
+  "last_update": "2026-11-20T09:12:17+00:00",
   "trigger": "feed_workflow_dispatch",
   "datasets": {
     "spot-prices": {
       "exists": true,
-      "updated": "2026-11-20T08:53:09.609338+00:00",
+      "updated": "2026-11-20T09:08:18.102817+00:00",
       "size": 30677,
       "zones": 26
     },
     "generation-mix": {
       "exists": true,
-      "updated": "2026-11-20T08:53:33.776943+00:00",
-      "size": 11258,
+      "updated": "2026-11-20T09:08:49.293009+00:00",
+      "size": 11240,
       "zones": 31
     },
     "cross-border-flows": {
       "exists": true,
-      "updated": "2026-11-20T08:53:54.784759+00:00",
-      "size": 53616,
+      "updated": "2026-11-20T09:09:11.534963+00:00",
+      "size": 54713,
       "corridors": 92
     },
     "ren-generation": {
       "exists": true,
-      "updated": "2026-11-20T08:53:33.776943+00:00",
+      "updated": "2026-11-20T09:08:49.293009+00:00",
       "size": 495
     },
     "ree-generation": {
       "exists": true,
-      "updated": "2026-11-20T08:53:33.776943+00:00",
+      "updated": "2026-11-20T09:08:49.293009+00:00",
       "size": 693
     },
     "omie-prices": {
       "exists": true,
-      "updated": "2026-11-20T08:54:38+00:00",
+      "updated": "2026-11-20T09:10:09+00:00",
       "size": 10051
     },
     "forward-curves": {
       "exists": true,
-      "updated": "2026-11-20T08:53:05.230528+00:00",
+      "updated": "2026-11-20T09:08:13.832466+00:00",
       "size": 22712
     },
     "capacity-installed": {
@@ -47,7 +47,7 @@
     },
     "renewablenodes-capacity": {
       "exists": true,
-      "updated": "2026-11-19T21:09:38+00:00",
+      "updated": "2026-11-20T09:10:09+00:00",
       "size": 17609
     },
     "transition": {
@@ -61,7 +61,7 @@
       "size": 241894
     }
   },
-  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44706059182",
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44708095273",
   "steps": {
     "balancing": "success",
     "capacity": "success",
