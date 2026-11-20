@@ -1,43 +1,43 @@
 {
-  "last_update": "2026-11-20T04:41:02+00:00",
+  "last_update": "2026-11-20T04:55:29+00:00",
   "trigger": "feed_workflow_dispatch",
   "datasets": {
     "spot-prices": {
       "exists": true,
-      "updated": "2026-11-20T04:38:09.489786+00:00",
+      "updated": "2026-11-20T04:53:06.520165+00:00",
       "size": 30476,
       "zones": 26
     },
     "generation-mix": {
       "exists": true,
-      "updated": "2026-11-20T04:38:27.282303+00:00",
-      "size": 10888,
+      "updated": "2026-11-20T04:53:20.127859+00:00",
+      "size": 10875,
       "zones": 30
     },
     "cross-border-flows": {
       "exists": true,
-      "updated": "2026-11-20T04:38:42.456653+00:00",
-      "size": 37948,
+      "updated": "2026-11-20T04:53:33.001754+00:00",
+      "size": 38622,
       "corridors": 92
     },
     "ren-generation": {
       "exists": true,
-      "updated": "2026-11-20T04:38:27.282303+00:00",
+      "updated": "2026-11-20T04:53:20.127859+00:00",
       "size": 494
     },
     "ree-generation": {
       "exists": true,
-      "updated": "2026-11-20T04:38:27.282303+00:00",
+      "updated": "2026-11-20T04:53:20.127859+00:00",
       "size": 691
     },
     "omie-prices": {
       "exists": true,
-      "updated": "2026-11-20T04:39:28+00:00",
+      "updated": "2026-11-20T04:54:15+00:00",
       "size": 10051
     },
     "forward-curves": {
       "exists": true,
-      "updated": "2026-11-20T04:38:06.859782+00:00",
+      "updated": "2026-11-20T04:53:04.682694+00:00",
       "size": 22712
     },
     "capacity-installed": {
@@ -61,7 +61,7 @@
       "size": 241894
     }
   },
-  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44675709247",
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44677320732",
   "steps": {
     "balancing": "success",
     "capacity": "success",
