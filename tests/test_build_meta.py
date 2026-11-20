@@ -30,7 +30,9 @@ class BuildMeta(unittest.TestCase):
                    'STEP_OMIE': 'failure', 'STEP_ENTSOE': 'success', 'STEP_EMPTY': ''}
         meta = build_meta.build(environ, datetime(2026, 11, 19, 17, 30, tzinfo=timezone.utc), self.folder)
 
-        self.assertEqual(list(meta['datasets']), list(build_meta.FILES))
+        # The eleven of the PHP first, in its order; then the other files the site reads
+        self.assertEqual(list(meta['datasets']), list(build_meta.FILES) + ['fx-rates', 'low-prices', 'balancing-prices',
+                                                                           'weather', 'outages', 'forecast'])
         self.assertEqual((meta['last_update'], meta['trigger']), ('2026-11-19T17:30:00+00:00', 'feed_workflow_dispatch'))
         spot = meta['datasets']['spot-prices']
         self.assertEqual((spot['exists'], spot['updated'], spot['zones']), (True, '2026-11-19T17:00:00+00:00', 2))
@@ -40,6 +42,25 @@ class BuildMeta(unittest.TestCase):
         self.assertEqual(meta['datasets']['datacenters'], {'exists': False, 'updated': None, 'size': 0})
         self.assertEqual(meta['run'], 'https://github.com/joaopasbento/eupowerdata-feed/actions/runs/42')
         self.assertEqual(meta['steps'], {'entsoe': 'success', 'omie': 'failure'})
+
+    def test_the_other_files_the_site_reads_are_described_as_the_others(self):
+        self.put('low-prices', {'updated': '2026-11-20T17:43:01+00:00', 'entsoe': {}})
+        meta = build_meta.build({}, None, self.folder)
+        low = meta['datasets']['low-prices']
+        self.assertEqual(low, {'exists': True, 'updated': '2026-11-20T17:43:01+00:00',
+                               'size': os.path.getsize(os.path.join(self.folder, 'low-prices.json'))})
+        self.assertEqual(meta['datasets']['weather'], {'exists': False, 'updated': None, 'size': 0})
+
+    def test_a_dataset_kept_in_one_file_per_zone_is_one_entry_made_from_its_index(self):
+        os.makedirs(os.path.join(self.folder, 'outages'))
+        files = {'index': {'updated': '2026-11-20T17:41:13+00:00', 'zones': ['PT', 'ES', 'EE']},
+                 'PT': {'zone': 'PT'}, 'ES': {'zone': 'ES', 'generation': {}}, 'FR': {'zone': 'FR'}}   # EE has no file; FR is not listed
+        for name, doc in files.items():
+            self.put(f'outages/{name}', doc)
+        size = sum(os.path.getsize(os.path.join(self.folder, 'outages', f'{n}.json')) for n in ('index', 'PT', 'ES'))
+        meta = build_meta.build({}, None, self.folder)
+        self.assertEqual(meta['datasets']['outages'], {'exists': True, 'updated': '2026-11-20T17:41:13+00:00', 'zones': 3, 'size': size})
+        self.assertEqual(meta['datasets']['forecast'], {'exists': False, 'updated': None, 'zones': 0, 'size': 0})
 
     def test_an_unreadable_file_counts_as_present_with_nothing_in_it(self):
         with open(os.path.join(self.folder, 'generation-mix.json'), 'w') as f:
