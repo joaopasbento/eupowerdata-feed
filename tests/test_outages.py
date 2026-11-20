@@ -21,7 +21,7 @@ import feed_common as fc
 import fetch_outages as fo
 from entsoe_real import ASKED_AT, KEY, Entsoe, sample
 
-PATH = fo.OUT_PATH
+PATH = None          # what was published, read back as one document (fo.read_published)
 PT, ES, FR, DE = (fo.ZONES[code] for code in ('PT', 'ES', 'FR', 'DE'))
 
 
@@ -190,8 +190,13 @@ class Feed(unittest.TestCase):
         return code, entsoe, log.getvalue()
 
     def doc(self, path=PATH):
+        if path is None:
+            return fo.read_published()
         with open(path, encoding='utf-8') as f:
             return json.load(f)
+
+    def zone(self, code):
+        return self.doc(fo.ZONE_PATH.format(zone=code))
 
 
 class ARun(Feed):
@@ -211,13 +216,12 @@ class ARun(Feed):
         self.assertNotIn(KEY, log)
         self.assertNotIn('entsoe.eu', log)
 
-    def test_portugal_has_its_generation_units_withdrawn_ones_included(self):
+    def test_portugal_has_its_generation_units_in_force_only(self):
         self.run_at(ASKED_AT)
         portugal = self.doc()['generation']['zones']['PT']
-        # 37 active and 9 cancelled in the answer, 73 in the answer for the withdrawn.
-        self.assertEqual(len(portugal['outages']), 119)
-        self.assertEqual(sum(o['status'] == 'withdrawn' for o in portugal['outages']), 73)
-        self.assertEqual(sum(o['status'] == 'cancelled' for o in portugal['outages']), 9)
+        # 37 active and 9 cancelled in the answer, 73 in the answer for the withdrawn: only the 37 are published.
+        self.assertEqual(len(portugal['outages']), 37)
+        self.assertTrue(all(o['status'] == 'active' for o in portugal['outages']))
         # Counted over the active ones only.
         self.assertEqual(portugal['counts'], {'ongoing': 9, 'upcoming': 17, 'ended': 11})
         self.assertEqual((portugal['fetched_at'], portugal['data_time']),
@@ -234,13 +238,15 @@ class ARun(Feed):
         self.run_at(ASKED_AT)
         spain = self.doc()['generation']['zones']['ES']
         kinds = [o['asset_type'] for o in spain['outages']]
-        self.assertEqual((kinds.count('generation_unit'), kinds.count('production_unit')), (39, 28))
+        # 39 and 28 in the answers; one of the 39 (ARCOS1) is cancelled (docStatus A09) and is not published.
+        self.assertEqual((kinds.count('generation_unit'), kinds.count('production_unit')), (38, 28))
         self.assertEqual(spain['counts'], {'ongoing': 41, 'upcoming': 19, 'ended': 6})
 
     def test_the_border_has_one_outage_for_each_pair_of_documents(self):
         self.run_at(ASKED_AT)
         border = self.doc()['transmission']['borders']['ES-PT']
-        self.assertEqual((border['zones'], len(border['outages'])), (['ES', 'PT'], 38))
+        # 38 outages, 24 of them cancelled (see ALine): 14 published.
+        self.assertEqual((border['zones'], len(border['outages'])), (['ES', 'PT'], 14))
         self.assertTrue(all(o['border'] == 'ES-PT' and o['asset_type'] == 'transmission' for o in border['outages']))
         self.assertEqual(border['data_time'], '2026-11-18T15:13:22+00:00')
 
@@ -321,7 +327,7 @@ class TheNextRuns(Feed):
         spain = self.doc()['generation']['zones']['ES']
         self.assertEqual(code, 0)
         self.assertEqual((spain['fetched_at'], spain.get('carried_over'), len(spain['outages'])),
-                         ('2026-11-18T18:07:42+00:00', True, 67))
+                         ('2026-11-18T18:07:42+00:00', True, 66))
         self.assertNotIn('carried_over', self.doc()['generation']['zones']['PT'])
         self.assertIn('Kept, not obtained in this run: ES', log)
         _code, _entsoe, log = self.run_at(ASKED_AT + timedelta(hours=3, minutes=1), silent)
@@ -334,7 +340,7 @@ class TheNextRuns(Feed):
                     + self.ANSWERS)
         border = self.doc()['transmission']['borders']['ES-PT']
         self.assertEqual((border['fetched_at'], border.get('carried_over'), len(border['outages'])),
-                         ('2026-11-18T18:07:42+00:00', True, 38))
+                         ('2026-11-18T18:07:42+00:00', True, 14))
 
     def test_on_a_slow_day_portugal_and_spain_are_whole_before_anything_else_is_asked_for(self):
         # Every request costs 6 of the 90 seconds: there is time for 15.
@@ -352,7 +358,7 @@ class TheNextRuns(Feed):
         doc = self.doc()
         self.assertEqual(code, 0)
         self.assertEqual(list(doc['generation']['zones']), ['PT', 'ES'])
-        self.assertEqual(len(doc['generation']['zones']['PT']['outages']), 119)      # the withdrawn ones included
+        self.assertEqual(len(doc['generation']['zones']['PT']['outages']), 37)       # those in force
         self.assertEqual(list(doc['transmission']['borders']), ['ES-PT'])
         self.assertIn('left for the next run', log.getvalue())
         # The 14 requests of Portugal, Spain and their borders went first; then one batch of the rest began.
@@ -383,13 +389,17 @@ class TheNextRuns(Feed):
         reached = set(first) - {PT, ES}
         self.assertTrue(reached and set(second) - {PT, ES} and not (set(second) - {PT, ES}) & reached)
 
-    def test_with_nothing_obtained_the_file_is_not_touched(self):
+    def test_with_nothing_obtained_the_files_are_not_touched(self):
         self.run_at(ASKED_AT)
-        with open(PATH, 'rb') as f:
-            before = (f.read(), os.stat(PATH).st_ino)
+        paths = [fo.INDEX_PATH, fo.ZONE_PATH.format(zone='ES')]
+        before = []
+        for path in paths:
+            with open(path, 'rb') as f:
+                before.append((f.read(), os.stat(path).st_ino))
         code, _entsoe, log = self.run_at(ASKED_AT + timedelta(minutes=15), [({}, None)])
-        with open(PATH, 'rb') as f:
-            self.assertEqual((f.read(), os.stat(PATH).st_ino), before)
+        for path, was in zip(paths, before):
+            with open(path, 'rb') as f:
+                self.assertEqual((f.read(), os.stat(path).st_ino), was)
         self.assertEqual(code, 1)
         self.assertIn('left exactly as it was', log)
 
@@ -400,6 +410,134 @@ class TheNextRuns(Feed):
         france = self.doc()['generation']['zones']['FR']
         self.assertEqual((france['outages'], france['counts'], france['fetched_at']),
                          ([], {'ongoing': 0, 'upcoming': 0, 'ended': 0}, '2026-11-18T19:07:42+00:00'))
+
+
+class WhatIsOutNow(unittest.TestCase):
+    """unavailable_now: each unit counted once, with the largest of its outages in force."""
+
+    NOW = at('2026-11-20T12:00:00')
+
+    def outage(self, eic, mw, start='2026-11-19T00:00:00+00:00', end='2026-11-25T00:00:00+00:00', status='active',
+               name=None):
+        return {'id': f'{eic}-{mw}-{start}', 'asset_eic': eic, 'name': name or eic, 'unavailable_mw': mw,
+                'start': start, 'end': end, 'status': status}
+
+    def test_two_outages_of_one_unit_that_overlap_count_once_with_the_larger(self):
+        # Two notices of Ascó 2 of 991.7 MW each, and a plant with two of 855.6 and 455.3 MW.
+        outages = [self.outage('18WASC2-12345-B3', 991.7), self.outage('18WASC2-12345-B3', 991.7),
+                   self.outage('18WPGR5-123456-J', 855.6), self.outage('18WPGR5-123456-J', 455.3)]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 1847.3, 'units': 2})
+
+    def test_only_what_is_in_force_at_that_moment(self):
+        outages = [self.outage('a', 100),
+                   self.outage('b', 200, start='2026-11-21T00:00:00+00:00'),              # still to come
+                   self.outage('c', 300, end='2026-11-20T12:00:00+00:00'),                # over at that minute
+                   self.outage('d', 400, status='cancelled'),
+                   self.outage('e', 500, status='withdrawn')]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 100, 'units': 1})
+
+    def test_a_unit_with_no_eic_goes_by_its_name_and_a_unit_that_loses_nothing_counts(self):
+        outages = [self.outage(None, 50, name='Unit X'), self.outage(None, 70, name='Unit X'),
+                   self.outage('z', 0)]
+        self.assertEqual(fo.unavailable_now(outages, self.NOW), {'unavailable_mw': 70, 'units': 2})
+
+    def test_nothing_out(self):
+        self.assertEqual(fo.unavailable_now([], self.NOW), {'unavailable_mw': 0, 'units': 0})
+
+
+class ThePublishedFiles(Feed):
+
+    def test_every_zone_has_a_file_with_its_units_and_the_borders_that_touch_it(self):
+        self.run_at(ASKED_AT)
+        self.assertEqual(sorted(os.listdir(fo.OUT_DIR)), sorted([f'{zone}.json' for zone in fo.ZONES] + ['index.json']))
+        spain, portugal, france = self.zone('ES'), self.zone('PT'), self.zone('FR')
+        self.assertEqual(list(spain), ['zone', 'data_time', 'generation', 'transmission'])
+        self.assertEqual((spain['generation']['license'], spain['transmission']['license']), ('source-terms', 'cc-by-4.0'))
+        self.assertEqual(list(spain['generation']), ['license', 'source', 'known_issue', 'eic', 'outages', 'counts',
+                                                     'data_time', 'unavailable_now'])
+        self.assertIn('since 22 Oct 2026', spain['generation']['known_issue'])
+        self.assertEqual(list(spain['transmission']['borders']), ['ES-PT'])          # ES-FR had no outages
+        self.assertEqual(list(portugal['transmission']['borders']), ['ES-PT'])
+        self.assertEqual(france['transmission']['borders'], {})
+        self.assertTrue(all(o['zone'] == 'ES' for o in spain['generation']['outages']))
+        # The border's outages are the same in the files of both its zones.
+        self.assertEqual(spain['transmission']['borders']['ES-PT'], portugal['transmission']['borders']['ES-PT'])
+        self.assertEqual(portugal['data_time'], '2026-11-18T15:13:22+00:00')       # the line of the border
+        self.assertEqual(portugal['generation']['data_time'], '2026-11-18T14:48:12+00:00')
+
+    def test_no_cancelled_nor_withdrawn_outage_is_published(self):
+        self.run_at(ASKED_AT)
+        for zone in fo.ZONES:
+            doc = self.zone(zone)
+            outages = doc['generation']['outages'] + [o for border in doc['transmission']['borders'].values()
+                                                      for o in border['outages']]
+            self.assertTrue(all(o['status'] == 'active' for o in outages), zone)
+
+    def test_a_zone_with_nothing_published_has_an_empty_file(self):
+        self.run_at(ASKED_AT)
+        estonia = self.zone('EE')
+        self.assertEqual((estonia['generation']['outages'], estonia['generation']['counts'],
+                          estonia['generation']['data_time'], estonia['generation']['unavailable_now'], estonia['data_time']),
+                         ([], {'ongoing': 0, 'upcoming': 0, 'ended': 0}, None, {'unavailable_mw': 0, 'units': 0}, None))
+
+    def test_a_zone_of_a_country_with_several_zones_has_the_borders_of_its_country(self):
+        self.assertTrue(fo.touches('DE-DK', 'DK1') and fo.touches('DE-DK', 'DK2') and fo.touches('DE-DK', 'DE'))
+        self.assertTrue(fo.touches('NO-SE', 'SE3') and fo.touches('NO-SE', 'NO2'))
+        self.assertFalse(fo.touches('DE-DK', 'NO1') or fo.touches('ES-PT', 'FR'))
+
+    def test_the_index_has_the_zones_the_counts_and_the_times(self):
+        self.run_at(ASKED_AT)
+        index = self.doc(fo.INDEX_PATH)
+        self.assertEqual(list(index), ['updated', 'data_time', 'window', 'zones', 'generation', 'transmission'])
+        self.assertEqual(index['zones'], fo.ZONE_ORDER)
+        self.assertEqual((index['generation']['license'], index['transmission']['license']), ('source-terms', 'cc-by-4.0'))
+        portugal = index['generation']['zones']['PT']
+        self.assertEqual((portugal['outages'], portugal['counts'], portugal['fetched_at']),
+                         (37, {'ongoing': 9, 'upcoming': 17, 'ended': 11}, '2026-11-18T18:07:42+00:00'))
+        self.assertEqual(portugal['unavailable_now'], self.zone('PT')['generation']['unavailable_now'])
+        self.assertEqual(index['transmission']['borders']['ES-PT']['outages'], 14)
+        self.assertEqual(index['generation']['not_published']['A77']['PT'], '2026-11-18T18:07:42+00:00')
+        # The times of the run are in the index only, not in the files of the zones.
+        self.assertNotIn('fetched_at', json.dumps(self.zone('ES')))
+
+    def test_the_summary_counts_each_unit_once(self):
+        # Two outages of one unit that overlap, as Ascó 2 has: 800 and 900 MW of 1 000.
+        france = {'documentType': 'A80', 'biddingZone_Domain': FR}
+        both = packed([unit('fr-1', nominal=1000, available=200, name='Tricastin 1'),
+                       unit('fr-2', nominal=1000, available=100, name='Tricastin 1', start='2026-11-18T12:00Z'),
+                       unit('fr-3', nominal=300, available=0, name='Cruas 2')])
+        self.run_at(ASKED_AT, [(france, both)] + self.ANSWERS)
+        self.assertEqual(self.zone('FR')['generation']['unavailable_now'], {'unavailable_mw': 1200, 'units': 2})
+
+    def test_only_the_files_that_changed_are_written(self):
+        self.run_at(ASKED_AT)
+        inodes = {zone: os.stat(fo.ZONE_PATH.format(zone=zone)).st_ino for zone in ('PT', 'ES', 'FR')}
+        index = os.stat(fo.INDEX_PATH).st_ino
+        # A quarter of an hour later Portugal and Spain are obtained again, with the same outages.
+        self.run_at(ASKED_AT + timedelta(minutes=15))
+        for zone in ('PT', 'ES', 'FR'):
+            self.assertEqual(os.stat(fo.ZONE_PATH.format(zone=zone)).st_ino, inodes[zone], zone)
+        self.assertNotEqual(os.stat(fo.INDEX_PATH).st_ino, index)                         # the times of the run
+        # An hour later France is asked for again and has a new outage.
+        france = {'documentType': 'A80', 'biddingZone_Domain': FR}
+        later = [(france, packed([unit('fr-1', name='Tricastin 1'), unit('fr-9', name='Bugey 2')]))]
+        self.run_at(ASKED_AT + timedelta(minutes=60), later + self.ANSWERS)
+        self.assertNotEqual(os.stat(fo.ZONE_PATH.format(zone='FR')).st_ino, inodes['FR'])
+        self.assertEqual(os.stat(fo.ZONE_PATH.format(zone='PT')).st_ino, inodes['PT'])
+
+    def test_the_single_file_of_before_is_read_once_and_taken_out(self):
+        self.run_at(ASKED_AT)
+        old = fo.read_published()
+        for path in os.listdir(fo.OUT_DIR):
+            os.remove(os.path.join(fo.OUT_DIR, path))
+        with open(fo.OLD_PATH, 'w', encoding='utf-8') as f:
+            json.dump(old, f)
+        _code, entsoe, log = self.run_at(ASKED_AT + timedelta(minutes=15))
+        # It said when France was obtained: France is not asked for again within the hour.
+        self.assertEqual(entsoe.asked_for(documentType='A80', biddingZone_Domain=FR), [])
+        self.assertIn('FR', self.doc()['generation']['zones'])
+        self.assertFalse(os.path.exists(fo.OLD_PATH))
+        self.assertIn('Took out data/outages.json', log)
 
 
 class TheArchive(Feed):

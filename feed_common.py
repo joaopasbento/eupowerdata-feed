@@ -141,9 +141,19 @@ def write_json(path, payload, **dump_args):
         raise
 
 
+def write_json_if_changed(path, payload, **dump_args):
+    """Write the file only when what it holds would change, so that a file of
+    which a run brings nothing new is not rewritten and does not go into the
+    commit. Returns whether it was written."""
+    if load_json(path) == payload:
+        return False
+    write_json(path, payload, **dump_args)
+    return True
+
+
 # --- What the newer datasets share ---
 #
-# balancing-prices.json, outages.json, wind-solar-forecast.json and
+# balancing-prices.json, the files of outages/, wind-solar-forecast.json and
 # low-prices.json (fetch_balancing.py, fetch_outages.py, fetch_forecast.py,
 # fetch_low_prices.py) are made by steps of their own, after the files the
 # site already reads have been published, each with its own time budget. What
