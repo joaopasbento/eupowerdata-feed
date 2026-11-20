@@ -1,43 +1,43 @@
 {
-  "last_update": "2026-11-20T12:43:44+00:00",
+  "last_update": "2026-11-20T12:57:26+00:00",
   "trigger": "feed_workflow_dispatch",
   "datasets": {
     "spot-prices": {
       "exists": true,
-      "updated": "2026-11-20T12:38:10.133690+00:00",
-      "size": 30844,
+      "updated": "2026-11-20T12:53:10.405539+00:00",
+      "size": 30845,
       "zones": 26
     },
     "generation-mix": {
       "exists": true,
-      "updated": "2026-11-20T12:38:54.957384+00:00",
-      "size": 11280,
-      "zones": 31
+      "updated": "2026-11-20T12:53:39.324654+00:00",
+      "size": 10855,
+      "zones": 30
     },
     "cross-border-flows": {
       "exists": true,
-      "updated": "2026-11-20T12:39:24.446806+00:00",
-      "size": 67530,
+      "updated": "2026-11-20T12:54:01.127994+00:00",
+      "size": 68258,
       "corridors": 92
     },
     "ren-generation": {
       "exists": true,
-      "updated": "2026-11-20T12:38:54.957384+00:00",
+      "updated": "2026-11-20T12:53:39.324654+00:00",
       "size": 497
     },
     "ree-generation": {
       "exists": true,
-      "updated": "2026-11-20T12:38:54.957384+00:00",
-      "size": 692
+      "updated": "2026-11-20T12:53:39.324654+00:00",
+      "size": 691
     },
     "omie-prices": {
       "exists": true,
-      "updated": "2026-11-20T12:40:51+00:00",
+      "updated": "2026-11-20T12:55:04+00:00",
       "size": 10051
     },
     "forward-curves": {
       "exists": true,
-      "updated": "2026-11-20T12:38:05.891006+00:00",
+      "updated": "2026-11-20T12:53:06.049186+00:00",
       "size": 22712
     },
     "capacity-installed": {
@@ -57,11 +57,11 @@
     },
     "datacenters": {
       "exists": true,
-      "updated": "2026-11-19T12:44:21.765772+00:00",
-      "size": 241894
+      "updated": "2026-11-20T12:41:40.201344+00:00",
+      "size": 242240
     }
   },
-  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44737389034",
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/44739477888",
   "steps": {
     "balancing": "success",
     "capacity": "success",
