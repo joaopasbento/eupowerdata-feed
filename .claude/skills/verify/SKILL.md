@@ -60,9 +60,10 @@ A run has two halves. The steps that make the three files above come first and a
 | File | Made by | What must hold |
 | --- | --- | --- |
 | `data/balancing-prices.json` | `fetch_balancing.py` | blocks `afrr_activated` (`cc-by-4.0`) and `afrr_cbmp` (`source-terms`); each day of a zone has one value for each period; a zone not in euros has, in each day, `up_eur` and `down_eur` of the same length, with `fx_rate` and `fx_date` (a day with no rate is a note); a zone asked for by more than one area says which in `area`; the note gives Italy's area, its process (the one with more periods priced, A16 when they tie) and how many periods priced it has |
-| `data/outages.json` | `fetch_outages.py` | blocks `generation` (`source-terms`) and `transmission` (`cc-by-4.0`); every outage has its fields |
+| `data/outages/index.json` and the file of each zone it lists, `data/outages/<ZONE>.json` | `fetch_outages.py` | blocks `generation` (`source-terms`) and `transmission` (`cc-by-4.0`) in the index and in each file; every outage has its fields and none is cancelled or withdrawn; each file has `unavailable_now` (MW and units, each unit counted once) and no time of the run, and the index says how many outages each file has; `data/outages.json` is no longer published. The note gives what is out now in Spain and Portugal, with the outages in force added up beside it |
 | `data/wind-solar-forecast.json` | `fetch_forecast.py` | block `wind_solar` (`source-terms`); each day has forecast, actual and error for each hour |
-| `data/low-prices.json` | `fetch_low_prices.py` | blocks `omie` (`omie`) and `entsoe` (`source-terms`); the total of the year for Portugal and Spain; the note says when OMIE's later versions were last looked for (`omie.version_check`) and which zones still have days of the year counted on hourly means |
+| `data/forecast/index.json` and the file of each zone it lists, `data/forecast/<ZONE>.json` | `fetch_forecast.py` | block `wind_solar` (`source-terms`); `days` of the index is the day in course and the 30 before it; each file has its days in order, within them, each with forecast, actual and error for each hour; the note gives how many days Spain and Portugal have |
+| `data/low-prices.json` | `fetch_low_prices.py` | blocks `omie` (`omie`) and `entsoe` (`source-terms`); the total of the year for Portugal and Spain; each zone of `entsoe` has its `months`, which add up to its year; the note says when OMIE's later versions were last looked for (`omie.version_check`) and which zones still have days of the year counted on hourly means |
 | `data/wind-solar-actual.json`, `data/spot-prices-intervals.json` | `fetch_entsoe.py`, for the two above | one block each, `source-terms` |
 
 Every one of them must have `updated`, `data_time` and the licence of each block: a file that lost one of these, or its shape, is `REAL RUN BROKEN`. A file that was not written in the run is only a note ("not written in this run"): its step found nothing new or its source did not answer, and the file stays as it was by the rule above. A file that is not there at all is a note too, the first time its step runs.
@@ -77,7 +78,7 @@ Three files are read by a run, or rewritten by it only now and then, so their ti
 
 Two more things are read off the run itself: the result of each of the newer steps, and how long the whole job took. The job must fit in the cadence of 15 minutes; over 13 it is `REAL RUN BROKEN`, whatever the files say.
 
-The records of the archive (`data/archive/outages-*.json`, `wind-solar-forecast-*.json`, `low-prices-*.json`) have no time of their own and only change when their numbers do: they are checked by part 1 (they parse) and by the tests.
+The files of the zones (`data/outages/<ZONE>.json`, `data/forecast/<ZONE>.json`) are only written when what they say changes: one not written in a run is not a note. The records of the archive (`data/archive/outages-*.json`, `wind-solar-forecast-*.json`, `low-prices-*.json`) have no time of their own and only change when their numbers do: they are checked by part 1 (they parse) and by the tests.
 
 The script checks the shape that every change must leave intact. What a particular change is meant to do (a new field, a pair that should now appear, a value that should match another source) is checked by reading the published file for exactly that, from `origin/main`:
 

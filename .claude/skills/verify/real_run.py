@@ -209,31 +209,97 @@ def check_balancing(doc, path, broken):
 OUTAGE = ('id', 'revision', 'asset_type', 'name', 'start', 'end', 'planned', 'status', 'published', 'phase')
 
 
+def _in_force_now(outages, moment):
+    return [o for o in outages if carry_over.parse_time(o['start']) <= moment < carry_over.parse_time(o['end'])]
+
+
 def check_outages(doc, path, broken):
+    """data/outages/index.json and the file of each zone it lists (since 20 Nov 2026 there is no single file)."""
     if not _blocks(doc, path, {'generation': 'source-terms', 'transmission': 'cc-by-4.0'}, broken):
         return 'broken'
-    total = 0
-    for block, key, more in (('generation', 'zones', ('zone', 'nominal_mw', 'unavailable_mw')),
-                             ('transmission', 'borders', ('border', 'ids', 'available_mw'))):
-        for name, entry in doc[block][key].items():
-            outages = entry.get('outages')
-            if 'fetched_at' not in entry or not isinstance(outages, list) or any(
-                    field not in outage for outage in outages for field in OUTAGE + more):
-                broken.append(f'{path} {block} {name}: an outage lost a field, or the entry its time')
-            total += len(outages or [])
-    return f"{len(doc['generation']['zones'])} zones, {len(doc['transmission']['borders'])} borders, {total} outages"
+    if exists('data/outages.json'):
+        broken.append('data/outages.json is still published: the step should have taken it out')
+    zones, total, said = doc.get('zones') or [], 0, []
+    moment = carry_over.parse_time(doc['updated'])
+    for zone in zones:
+        where = f'data/outages/{zone}.json'
+        file = published(where) if exists(where) else None
+        if not isinstance(file, dict) or file.get('zone') != zone or 'data_time' not in file:
+            broken.append(f'{where}: missing, or not the file of the zone')
+            continue
+        generation, transmission = file.get('generation') or {}, file.get('transmission') or {}
+        if generation.get('license') != 'source-terms' or transmission.get('license') != 'cc-by-4.0' \
+                or 'known_issue' not in generation or not isinstance(transmission.get('borders'), dict):
+            broken.append(f'{where}: a block is missing, or its licence is not the one it must have')
+            continue
+        now_out = generation.get('unavailable_now') or {}
+        if not number(now_out.get('unavailable_mw')) or not isinstance(now_out.get('units'), int):
+            broken.append(f'{where}: no summary of what is out now (unavailable_now)')
+        if 'fetched_at' in json.dumps(file):
+            broken.append(f'{where}: a time of the run is in the file of the zone (it belongs in the index)')
+        lists = [('generation', generation.get('outages'), ('zone', 'nominal_mw', 'unavailable_mw'))] + [
+            (f'border {name}', border.get('outages'), ('border', 'ids', 'available_mw'))
+            for name, border in transmission['borders'].items()]
+        for what, outages, more in lists:
+            if not isinstance(outages, list) or any(field not in o for o in outages for field in OUTAGE + more):
+                broken.append(f'{where} {what}: an outage lost a field')
+            elif any(o['status'] != 'active' for o in outages):
+                broken.append(f'{where} {what}: a cancelled or withdrawn outage is published')
+        listed = (doc['generation'].get('zones') or {}).get(zone)
+        if listed and (listed.get('outages') != len(generation.get('outages') or [])
+                       or listed.get('unavailable_now') != now_out or 'fetched_at' not in listed):
+            broken.append(f'{path} {zone}: the index does not say what the file of the zone has, or has no fetched_at')
+        total += len(generation.get('outages') or [])
+        if zone in ('ES', 'PT') and moment is not None and isinstance(generation.get('outages'), list):
+            each = sum(o.get('unavailable_mw') or 0 for o in _in_force_now(generation['outages'], moment))
+            said.append(f"{zone} {now_out.get('unavailable_mw')} MW out now in {now_out.get('units')} units "
+                        f"(the outages in force added up: {each:.1f} MW)")
+    return (f"{len(zones)} files of zones, {len(doc['generation'].get('zones') or {})} with outages of units, "
+            f"{len(doc['transmission'].get('borders') or {})} borders, {total} outages of units; " + '; '.join(said))
+
+
+def _day_is_whole(day):
+    series = [day[name] for name in ('solar', 'wind_onshore', 'wind_offshore') if name in day]
+    return bool(series) and 'summary' in day and all(
+        _same_length([one.get('forecast'), one.get('actual'), one.get('error')], day.get('hours')) for one in series)
 
 
 def check_forecast(doc, path, broken):
     if not _blocks(doc, path, {'wind_solar': 'source-terms'}, broken):
         return 'broken'
     for zone, entry in doc['wind_solar']['zones'].items():
-        for day in (entry.get('days') or {}).values():
-            series = [day[name] for name in ('solar', 'wind_onshore', 'wind_offshore') if name in day]
-            if not series or 'summary' not in day or not all(
-                    _same_length([one.get('forecast'), one.get('actual'), one.get('error')], day.get('hours')) for one in series):
-                broken.append(f'{path} {zone}: a day does not have forecast, actual and error for each hour')
+        if not all(_day_is_whole(day) for day in (entry.get('days') or {}).values()):
+            broken.append(f'{path} {zone}: a day does not have forecast, actual and error for each hour')
     return f"{len(doc['wind_solar']['zones'])} zones"
+
+
+def check_forecast_days(doc, path, broken):
+    """data/forecast/index.json and the file of each zone it lists: the day in course and the 30 before it."""
+    if not _blocks(doc, path, {'wind_solar': 'source-terms'}, broken):
+        return 'broken'
+    window = doc.get('days') or {}
+    first, last = window.get('from'), window.get('to')
+    if not first or not last or (datetime.fromisoformat(last) - datetime.fromisoformat(first)).days != 30:
+        broken.append(f'{path}: `days` is not the day in course and the 30 before it')
+        return 'broken'
+    said = []
+    for zone in doc.get('zones') or []:
+        where = f'data/forecast/{zone}.json'
+        file = published(where) if exists(where) else None
+        block = (file or {}).get('wind_solar') if isinstance(file, dict) else None
+        if not isinstance(block, dict) or block.get('license') != 'source-terms' or not isinstance(block.get('days'), dict):
+            broken.append(f'{where}: missing, or no block wind_solar with its licence and days')
+            continue
+        days = list(block['days'])
+        if days != sorted(days) or not all(first <= day <= last for day in days):
+            broken.append(f'{where}: days out of order or out of the window {first} to {last}')
+        if not all(_day_is_whole(day) for day in block['days'].values()):
+            broken.append(f'{where}: a day does not have forecast, actual and error for each hour')
+        if (doc['wind_solar'].get('zones') or {}).get(zone, {}).get('days') != len(days):
+            broken.append(f'{path} {zone}: the index does not say how many days the file of the zone has')
+        if zone in ('ES', 'PT'):
+            said.append(f"{zone} {len(days)} days ({days[0] if days else '-'} to {days[-1] if days else '-'})")
+    return f"{len(doc.get('zones') or [])} files of zones, days {first} to {last}; " + '; '.join(said)
 
 
 def check_low_prices(doc, path, broken):
@@ -247,8 +313,18 @@ def check_low_prices(doc, path, broken):
     checked = doc['omie'].get('version_check') or {}
     hourly = sorted(zone for zone, entry in (doc['entsoe'].get('zones') or {}).items()
                     if ((entry.get('year') or {}).get('hourly_days') or 0) > 0)
+    # Since 20 Nov 2026 each zone of ENTSO-E has its months, which add up to its year.
+    zones = doc['entsoe'].get('zones') or {}
+    for zone, entry in zones.items():
+        months = entry.get('months')
+        if not isinstance(months, dict) or not months or any(
+                abs(sum(month.get(name) or 0 for month in months.values()) - (entry.get('year') or {}).get(name, -1)) > 1e-6
+                for name in ('days', 'hours', 'negative_h', 'zero_h', 'low_h')):
+            broken.append(f'{path} entsoe {zone}: no months, or they do not add up to the year')
+    spain = (zones.get('ES') or {}).get('months') or {}
     return (f"OMIE {year.get('days')} days of the year, negative or zero {year['PT']['negative_or_zero_pct']} % in "
-            f"Portugal and {year['ES']['negative_or_zero_pct']} % in Spain; {len(doc['entsoe'].get('zones') or {})} zones of ENTSO-E"
+            f"Portugal and {year['ES']['negative_or_zero_pct']} % in Spain; {len(zones)} zones of ENTSO-E, "
+            f"each with its months ({len(spain)} for Spain)"
             + (f"; OMIE's later versions looked for on {checked.get('date')}" if checked.get('date') else '')
             + (f"; zones whose year still has days counted on hourly means: {', '.join(hourly)}" if hourly else ''))
 
@@ -317,8 +393,9 @@ NEWER = {
     'data/wind-solar-actual.json': check_kept('actual_generation'),
     'data/spot-prices-intervals.json': check_kept('day_ahead_prices'),
     'data/balancing-prices.json': check_balancing,
-    'data/outages.json': check_outages,
+    'data/outages/index.json': check_outages,
     'data/wind-solar-forecast.json': check_forecast,
+    'data/forecast/index.json': check_forecast_days,
     'data/low-prices.json': check_low_prices,
 }
 NEWER_STEPS = ('Balancing prices', 'Outages of power plants', 'Forecast error', 'Negative, zero and low prices',
