@@ -57,7 +57,9 @@ per fuel type, and hardly any solar, and its forecast splits wind between
 onshore and offshore otherwise (over 30 days the actual was 0.29 times the
 forecast onshore, 3.5 times offshore and 0.02 times for solar). The numbers
 are published as ENTSO-E has them, and the zone's entry, its file and its line
-of the index say so in `known_issue` (KNOWN_ISSUES).
+of the index say so in `known_issue` (KNOWN_ISSUES). Denmark has one too, of
+the feed's own, as the source gave no notice: the actual generation of DK1 and
+DK2 has not been published since 4 Nov 2026, so its days have no error.
 
     {updated, data_time, timezone,
      wind_solar: {license, source, zones: {PT: {eic[, known_issue], days: {"2026-11-18":
@@ -139,9 +141,14 @@ STAMP = '%Y%m%d%H%M'
 SOURCE = ('ENTSO-E Transparency Platform, items 14.1.D (day-ahead forecast of wind and solar generation) and '
           '16.1.B&C (actual generation per production type)')
 
-# Zones whose forecast and actual, as ENTSO-E publishes them, are not of the same plants. The numbers are
-# published as they are; the zone's entry, its file and the index repeat this in `known_issue`.
+# Zones whose numbers, as ENTSO-E publishes them, cannot be compared as the others: the forecast and the actual
+# are not of the same plants (NL), or the actual is no longer published (DK). The numbers are published as they
+# are; the zone's entry, its file and the index say so in `known_issue`.
 KNOWN_ISSUES = {
+    'DK': ('No notice from ENTSO-E or Energinet: the actual generation per production type (16.1.B&C) of DK1 '
+           'and DK2 has not been published since 4 Nov 2026, around 09:00 Brussels time, as the Transparency '
+           'Platform itself shows. The forecast is still published, so the days since then have a forecast and '
+           'no actual, and no error.'),
     'NL': ('TenneT NL notice on the ENTSO-E Transparency Platform: the actual generation covers only what can be '
            'identified per fuel type (the rest is published as "other" or not at all), and solar is mostly not '
            'available. The day-ahead forecast does not match that split: since at least Oct 2026 it puts most of '

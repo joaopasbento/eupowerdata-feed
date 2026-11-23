@@ -490,6 +490,12 @@ class TheFilesOfTheZones(Feed):
             self.assertNotIn('known_issue', self.zone(code)['wind_solar'])
             self.assertNotIn('known_issue', listed[code])
 
+    def test_denmark_says_its_actuals_are_no_longer_published(self):
+        self.put_record('2026-11-17', {'DK': {'start': '2026-11-16T23:00:00+00:00', 'hours': 24, 'summary': {}}})
+        self.run_at(ASKED_AT)
+        self.assertIn('since 4 Nov 2026', self.zone('DK')['wind_solar']['known_issue'])
+        self.assertEqual(self.doc(ff.INDEX_PATH)['wind_solar']['zones']['DK']['known_issue'], ff.KNOWN_ISSUES['DK'])
+
     def test_only_the_files_that_changed_are_written(self):
         self.run_at(ASKED_AT)
         inodes = {code: os.stat(ff.ZONE_PATH.format(zone=code)).st_ino for code in ('PT', 'ES', 'BE')}
