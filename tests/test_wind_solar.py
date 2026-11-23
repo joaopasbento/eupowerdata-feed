@@ -472,6 +472,24 @@ class TheFilesOfTheZones(Feed):
         self.assertEqual(code, 1)
         self.assertEqual(self.zone('ES')['wind_solar']['days'], before)
 
+    def test_the_netherlands_carry_the_known_issue_of_the_source_and_their_numbers_as_published(self):
+        netherlands = fe.GEN_ZONES['NL']
+        ws.save({'NL': generation('BE')}, ASKED_AT)                   # Belgium's answers, as if they were of NL
+        self.run_at(ASKED_AT, [({'documentType': 'A69', 'in_Domain': netherlands}, 'forecast_A69_BE.xml')]
+                    + self.ANSWERS)
+        entry, belgium = self.zones()['NL'], self.zones()['BE']
+        self.assertIn('TenneT NL', entry['known_issue'])
+        self.assertEqual(entry['days'], belgium['days'])             # nothing taken out or changed
+        block = self.zone('NL')['wind_solar']
+        self.assertEqual(list(block), ['license', 'source', 'error', 'eic', 'known_issue', 'forecast_zones', 'days'])
+        self.assertEqual(block['known_issue'], ff.KNOWN_ISSUES['NL'])
+        listed = self.doc(ff.INDEX_PATH)['wind_solar']['zones']
+        self.assertEqual(listed['NL']['known_issue'], ff.KNOWN_ISSUES['NL'])
+        for code in ('PT', 'ES', 'BE'):
+            self.assertNotIn('known_issue', self.zones()[code])
+            self.assertNotIn('known_issue', self.zone(code)['wind_solar'])
+            self.assertNotIn('known_issue', listed[code])
+
     def test_only_the_files_that_changed_are_written(self):
         self.run_at(ASKED_AT)
         inodes = {code: os.stat(ff.ZONE_PATH.format(zone=code)).st_ino for code in ('PT', 'ES', 'BE')}

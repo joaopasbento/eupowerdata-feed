@@ -50,8 +50,17 @@ brings the actuals up to date.
 The licence is the source's terms: neither 14.1.D nor 16.1.B&C is on ENTSO-E's
 list of data free to reuse.
 
+In the Netherlands the forecast and the actual are not of the same plants
+(checked on the Transparency Platform on 23 Nov 2026, which shows the same
+numbers): TenneT NL publishes as actual only the generation it can identify
+per fuel type, and hardly any solar, and its forecast splits wind between
+onshore and offshore otherwise (over 30 days the actual was 0.29 times the
+forecast onshore, 3.5 times offshore and 0.02 times for solar). The numbers
+are published as ENTSO-E has them, and the zone's entry, its file and its line
+of the index say so in `known_issue` (KNOWN_ISSUES).
+
     {updated, data_time, timezone,
-     wind_solar: {license, source, zones: {PT: {eic, days: {"2026-11-18":
+     wind_solar: {license, source, zones: {PT: {eic[, known_issue], days: {"2026-11-18":
          {start, hours, solar: {forecast: [...], actual: [...], error: [...]},
           wind_onshore: {...}, wind_offshore: {...},
           summary: {solar: {hours, forecast_mwh, actual_mwh, mean_error_mw,
@@ -73,14 +82,14 @@ The last 30 days, one file for each zone (for the "Radar" page, decided on
 
     data/forecast/ES.json:
     {zone, timezone, data_time,
-     wind_solar: {license, source, error, eic, forecast_zones,
+     wind_solar: {license, source, error, eic[, known_issue], forecast_zones,
          days: {"2026-10-21": {start, hours, solar: {forecast, actual,
              error}, ..., summary: {...}}, ... "2026-11-20": {...}}}}
 
     data/forecast/index.json:
     {updated, data_time, timezone, days: {from, to}, zones: [zones with a file],
      wind_solar: {license, source, zones: {ES: {days, first, last, data_time,
-         fetched_at, actual_updated[, carried_over]}}, not_published}}
+         fetched_at, actual_updated[, carried_over][, known_issue]}}, not_published}}
 
 `days` has the day in course and the 30 before it, each as in the file above,
 oldest first. They come from the records of the archive, which already keep
@@ -129,6 +138,16 @@ KEEP_DAYS = 1830
 STAMP = '%Y%m%d%H%M'
 SOURCE = ('ENTSO-E Transparency Platform, items 14.1.D (day-ahead forecast of wind and solar generation) and '
           '16.1.B&C (actual generation per production type)')
+
+# Zones whose forecast and actual, as ENTSO-E publishes them, are not of the same plants. The numbers are
+# published as they are; the zone's entry, its file and the index repeat this in `known_issue`.
+KNOWN_ISSUES = {
+    'NL': ('TenneT NL notice on the ENTSO-E Transparency Platform: the actual generation covers only what can be '
+           'identified per fuel type (the rest is published as "other" or not at all), and solar is mostly not '
+           'available. The day-ahead forecast does not match that split: since at least Oct 2026 it puts most of '
+           'the wind onshore, while the actual puts most of it offshore, and the actual solar is a small part of '
+           'the forecast. The error of each technology shows that difference, not the quality of the forecast.'),
+}
 
 # The zones asked for, as the generation is: {published name: [zone codes]}.
 _ASKED = [code for code in fe.GEN_COUNTRIES if code in fe.ZONES and code not in fe.ELEXON_ZONES]
@@ -257,6 +276,8 @@ def build(name, forecasts, kept, stamps, now):
     if not days:
         return None
     entry = {'eic': ', '.join(fe.GEN_ZONES[zone] for zone in PARTS[name]), 'days': days, 'forecast_zones': zones_of}
+    if name in KNOWN_ISSUES:
+        entry['known_issue'] = KNOWN_ISSUES[name]
     if last is not None:
         entry[DATA_TIME] = iso(last)
     updated = [stamps[zone] for zone in PARTS[name] if stamps.get(zone)]
@@ -445,13 +466,15 @@ def publish(doc, now):
                 'source': doc[BLOCK]['source'],
                 'error': doc[BLOCK]['error'],
                 'eic': ', '.join(fe.GEN_ZONES[zone] for zone in PARTS[name]),
+                **({'known_issue': KNOWN_ISSUES[name]} if name in KNOWN_ISSUES else {}),
                 **({'forecast_zones': entry['forecast_zones']} if entry.get('forecast_zones') else {}),
                 'days': days,
             },
         }
         written += write_json_if_changed(ZONE_PATH.format(zone=name), zone_file, separators=(',', ':'))
         listed[name] = {'days': len(days), 'first': min(days), 'last': max(days), DATA_TIME: data_time,
-                        **{key: entry[key] for key in (FETCHED_AT, 'actual_updated', CARRIED_OVER) if key in entry}}
+                        **{key: entry[key] for key in (FETCHED_AT, 'actual_updated', CARRIED_OVER) if key in entry},
+                        **({'known_issue': KNOWN_ISSUES[name]} if name in KNOWN_ISSUES else {})}
     write_json(INDEX_PATH, {
         'updated': doc['updated'],
         DATA_TIME: latest(entry[DATA_TIME] for entry in listed.values()),
