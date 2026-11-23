@@ -6,8 +6,8 @@
 Waits for the first run of fetch.yml that started from a commit (HEAD unless
 --commit says another) and actually fetched, then checks the files on
 origin/main: the three the site has always read, and the newer datasets
-(balancing prices, outages, forecast error, low prices and the two files
-fetch_entsoe.py keeps for them), each block with its licence, and the shape
+(balancing prices, outages, forecast error, low prices, the open prices of
+the alerts and the two files fetch_entsoe.py keeps for them), each block with its licence, and the shape
 of the files a run reads or rewrites only now and then (the exchange rates,
 Ember's yearly figures, the installed capacity). Exit 0 REAL RUN
 OK, 1 REAL RUN BROKEN, 2 REAL RUN INCONCLUSIVE (a source was down: says
@@ -329,6 +329,48 @@ def check_low_prices(doc, path, broken):
             + (f"; zones whose year still has days counted on hourly means: {', '.join(hourly)}" if hourly else ''))
 
 
+OPEN_SMARD = ('DE-LU', 'AT', 'BE', 'CH', 'CZ', 'DK1', 'DK2', 'FR', 'HU', 'IT-North', 'NL', 'NO2', 'PL', 'SE4', 'SI')
+OPEN_LICENCES = {**{zone: 'cc-by-4.0' for zone in OPEN_SMARD}, 'GB': 'elexon', 'PT': 'omie', 'ES': 'omie'}
+
+
+def check_open_prices(doc, path, broken):
+    """data/open-prices.json: the prices of open sources for the alerts, one licence for each zone."""
+    if not isinstance(doc, dict) or 'updated' not in doc or 'data_time' not in doc:
+        broken.append(f'{path}: no `updated` or no `data_time`')
+        return 'broken'
+    zones = doc.get('zones') if isinstance(doc.get('zones'), dict) else {}
+    updated = carry_over.parse_time(doc.get('updated'))
+    today = carry_over.delivery_day(updated) if updated else None
+    allowed = {today.isoformat(), (today + timedelta(days=1)).isoformat()} if today else set()
+    for zone, entry in zones.items():
+        if zone not in OPEN_LICENCES or entry.get('license') != OPEN_LICENCES[zone] or entry.get('currency') != 'EUR':
+            broken.append(f'{path} {zone}: not a zone of the alerts, or its licence is not {OPEN_LICENCES.get(zone)}')
+            continue
+        if zone in OPEN_SMARD and entry.get('attribution') != 'Bundesnetzagentur | SMARD.de':
+            broken.append(f'{path} {zone}: no attribution to SMARD')
+        if zone == 'GB' and (entry.get('currency_original') != 'GBP' or not number(entry.get('fx_rate'))):
+            broken.append(f'{path} GB: no pounds or no exchange rate beside the euros')
+        days = entry.get('days') or {}
+        if not days or not set(days) <= allowed:
+            broken.append(f'{path} {zone}: days {sorted(days)}, not today and tomorrow of {today}')
+        for name, day in days.items():
+            start, end = carry_over.day_bounds(datetime.fromisoformat(name).date())
+            step = day.get('step_minutes')
+            prices = day.get('prices')
+            if step not in (15, 30, 60) or not isinstance(prices, list) \
+                    or len(prices) != int((end - start).total_seconds() // 60 // step) \
+                    or day.get('start') != start.isoformat():
+                broken.append(f'{path} {zone} {name}: not one price for each interval of the day from its start')
+            elif zone != 'GB' and any(not number(v) for v in prices):
+                broken.append(f'{path} {zone} {name}: a day with an interval with no price')
+    missing = [zone for zone in OPEN_LICENCES if zone not in zones]
+    kept = [zone for zone, entry in zones.items() if entry.get('carried_over')]
+    tomorrow = [zone for zone, entry in zones.items() if len(entry.get('days') or {}) == 2]
+    return (f"{len(zones)} zones; tomorrow for {len(tomorrow)} ({', '.join(tomorrow) or 'none'})"
+            + (f"; kept because the source did not answer: {', '.join(kept)}" if kept else '')
+            + (f"; not in the file (no answer for 24 hours): {', '.join(missing)}" if missing else ''))
+
+
 def check_kept(block):
     def check(doc, path, broken):
         if not _blocks(doc, path, {block: 'source-terms'}, broken):
@@ -397,9 +439,10 @@ NEWER = {
     'data/wind-solar-forecast.json': check_forecast,
     'data/forecast/index.json': check_forecast_days,
     'data/low-prices.json': check_low_prices,
+    'data/open-prices.json': check_open_prices,
 }
 NEWER_STEPS = ('Balancing prices', 'Outages of power plants', 'Forecast error', 'Negative, zero and low prices',
-               'Commit and push the newer datasets')
+               'Open-source day-ahead prices', 'Commit and push the newer datasets')
 CADENCE_MINUTES = 15
 
 

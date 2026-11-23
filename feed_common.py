@@ -166,13 +166,17 @@ def write_json_if_changed(path, payload, **dump_args):
 #   cc-by-4.0      on ENTSO-E's "List of data available for free re-use"
 #                  (version of 18 October 2023): the prices of activated
 #                  balancing energy (17.1.F) and the unavailability of
-#                  transmission (10.1.A and B);
+#                  transmission (10.1.A and B); and SMARD's day-ahead
+#                  prices (fetch_open_prices.py), which the Bundesnetzagentur
+#                  publishes under that licence;
+#   elexon         Elexon's data (Great Britain), under Elexon's own terms;
 #   omie           everything that comes from OMIE's files;
 #   source-terms   ENTSO-E data that are not on that list (the PICASSO
 #                  series, the unavailability of generation and production
 #                  units, the forecasts, actual generation, day-ahead prices):
 #                  the terms of the source apply.
 CC_BY = 'cc-by-4.0'
+ELEXON_TERMS = 'elexon'
 OMIE_TERMS = 'omie'
 SOURCE_TERMS = 'source-terms'
 

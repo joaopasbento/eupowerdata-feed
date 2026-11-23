@@ -13,7 +13,7 @@ description: Confirm that a change to the feed works - the offline tests and val
 | A workflow (`.github/workflows/*.yml`) | Part 1 |
 | `scheduler/` (the Cloudflare Worker) | Part 1 with `--scheduler` |
 | What the feed publishes in `data/`: a file's shape or values, or the steps of `fetch.yml` | Part 1, then part 2 after the push |
-| The newer datasets: `fetch_balancing.py`, `fetch_outages.py`, `fetch_forecast.py`, `fetch_low_prices.py`, `wind_solar_actual.py`, `price_intervals.py`, or what `feed_common.py` gives them | Part 1, then part 2 after the push |
+| The newer datasets: `fetch_balancing.py`, `fetch_outages.py`, `fetch_forecast.py`, `fetch_low_prices.py`, `fetch_open_prices.py`, `wind_solar_actual.py`, `price_intervals.py`, or what `feed_common.py` gives them | Part 1, then part 2 after the push |
 | The exchange rates or what is converted with them (`fx_rates.py`), Ember's figures and the capacity file (`fetch_ember.py`, `merge_capacity.py`) | Part 1, then part 2 after the push |
 | The state of the files for the site's status page (`build_meta.py`, `data/meta.json`) | Part 1, then part 2 after the push |
 | How the negative, zero and low prices are counted, or a rewrite of their daily records | Part 1, part 2 after the push, and the proof of part 3 |
@@ -35,7 +35,7 @@ Add `--scheduler` when the change touches `scheduler/` (it is added by itself wh
 
 It prints one line for each check and `OFFLINE OK` at the end. Anything else is a failure of the change: fix the code, not the test.
 
-The tests of the newer datasets run on real answers of ENTSO-E and real files of OMIE, kept in `tests/fixtures/entsoe` and `tests/fixtures/omie` (the larger ones gzipped). A change to how an answer is read is checked against them; a new kind of answer needs a new sample, taken on GitHub, where the key is.
+The tests of the newer datasets run on real answers of ENTSO-E and real files of OMIE, kept in `tests/fixtures/entsoe` and `tests/fixtures/omie` (the larger ones gzipped), and those of the open prices on real answers of SMARD and Elexon, in `tests/fixtures/smard` (gzipped) and `tests/fixtures/elexon`. A change to how an answer is read is checked against them; a new kind of answer needs a new sample, taken on GitHub for ENTSO-E, where the key is (SMARD and Elexon need no key).
 
 ## Part 2: a real run, for what the feed publishes
 
@@ -64,6 +64,7 @@ A run has two halves. The steps that make the three files above come first and a
 | `data/wind-solar-forecast.json` | `fetch_forecast.py` | block `wind_solar` (`source-terms`); each day has forecast, actual and error for each hour |
 | `data/forecast/index.json` and the file of each zone it lists, `data/forecast/<ZONE>.json` | `fetch_forecast.py` | block `wind_solar` (`source-terms`); `days` of the index is the day in course and the 30 before it; each file has its days in order, within them, each with forecast, actual and error for each hour; the note gives how many days Spain and Portugal have |
 | `data/low-prices.json` | `fetch_low_prices.py` | blocks `omie` (`omie`) and `entsoe` (`source-terms`); the total of the year for Portugal and Spain; each zone of `entsoe` has its `months`, which add up to its year; the note says when OMIE's later versions were last looked for (`omie.version_check`) and which zones still have days of the year counted on hourly means |
+| `data/open-prices.json` | `fetch_open_prices.py` | the 18 zones of the paid alerts and no other, each with its own licence: the 15 of SMARD `cc-by-4.0` with the attribution `Bundesnetzagentur \| SMARD.de`, GB `elexon` with the pounds and the exchange rate beside the euros, PT and ES `omie`; each zone has today and, once it is out, tomorrow (no other day), each day with one price for each interval from its start, none missing but in GB (whose half-hours still to come are null); the note says which zones have tomorrow, which were kept and which are not in the file |
 | `data/wind-solar-actual.json`, `data/spot-prices-intervals.json` | `fetch_entsoe.py`, for the two above | one block each, `source-terms` |
 
 Every one of them must have `updated`, `data_time` and the licence of each block: a file that lost one of these, or its shape, is `REAL RUN BROKEN`. A file that was not written in the run is only a note ("not written in this run"): its step found nothing new or its source did not answer, and the file stays as it was by the rule above. A file that is not there at all is a note too, the first time its step runs.

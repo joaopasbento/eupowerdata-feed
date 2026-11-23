@@ -182,6 +182,18 @@ jobs:
         continue-on-error: true
         timeout-minutes: 2
         run: python fetch_low_prices.py
+      # Prices of open sources only, for the paid alerts: SMARD (cc-by-4.0) for 15
+      # zones, Elexon for GB and OMIE (data/omie-prices.json, written above) for
+      # PT and ES. No request to ENTSO-E. Tomorrow's prices are asked for again in
+      # every run from 12:30 Brussels time until they are out.
+      - name: Open-source day-ahead prices (SMARD, Elexon, OMIE)
+        id: open_prices
+        if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          OPEN_PRICES_BUDGET_SECONDS: '60'
+        run: python fetch_open_prices.py
       # The state of the files the site reads, for its status page: whether
       # each is there, when its data are of, its size and counts, and how each
       # step of this run ended (see build_meta.py). No request; never fails.
@@ -203,6 +215,7 @@ jobs:
           STEP_OUTAGES: ${{ steps.outages.outcome }}
           STEP_FORECAST: ${{ steps.forecast.outcome }}
           STEP_LOW_PRICES: ${{ steps.low_prices.outcome }}
+          STEP_OPEN_PRICES: ${{ steps.open_prices.outcome }}
         run: python build_meta.py
       - name: Commit and push the newer datasets
         if: ${{ always() && steps.fresh.outputs.skip != 'true' }}
@@ -224,7 +237,7 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Update balancing, outage, forecast and low-price data $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git commit -m "Update balancing, outage, forecast, low-price and open-price data $(date -u '+%Y-%m-%d %H:%M UTC')"
           for attempt in 1 2 3; do
             if git pull --rebase origin main && git push; then
               exit 0

@@ -24,8 +24,9 @@ feed's files, so the feed writes this one too, with the same shape:
 
 After the eleven files of the PHP's list, in its order and shape (the status
 page and the widget read them), come the other files the site reads (since
-20 Nov 2026, known issue N87): fx-rates, low-prices, balancing-prices and
-weather, described as the others, and the two datasets kept in one file per
+20 Nov 2026, known issue N87): fx-rates, low-prices, balancing-prices,
+weather and (since 23 Nov 2026) open-prices, with how many zones it has,
+described as the others, and the two datasets kept in one file per
 zone, outages and forecast, one entry each, made from their index:
 
         "outages": {"exists": true, "updated": "...", "zones": 35, "size": 968123},
@@ -61,8 +62,9 @@ FILES = (
     'omie-prices', 'forward-curves', 'capacity-installed', 'renewablenodes-capacity',
     'transition', 'datacenters',
 )
-# The other files the site reads (20 Nov 2026), after those of the PHP.
-MORE_FILES = ('fx-rates', 'low-prices', 'balancing-prices', 'weather')
+# The other files the site reads (20 Nov 2026), after those of the PHP; and, since 23 Nov 2026, the prices
+# of open sources for the alerts (fetch_open_prices.py).
+MORE_FILES = ('fx-rates', 'low-prices', 'balancing-prices', 'weather', 'open-prices')
 # The datasets kept in one file per zone: data/<name>/index.json and data/<name>/<ZONE>.json.
 ZONED = ('outages', 'forecast')
 
@@ -81,7 +83,7 @@ def describe(name, folder='data'):
     if name == 'cross-border-flows':
         corridors = doc.get('corridors') if isinstance(doc, dict) else None
         info['corridors'] = len(corridors) if isinstance(corridors, (list, dict)) else 0
-    elif name in ('spot-prices', 'generation-mix'):
+    elif name in ('spot-prices', 'generation-mix', 'open-prices'):
         zones = doc.get('zones') if isinstance(doc, dict) else None
         info['zones'] = len(zones) if isinstance(zones, (list, dict)) else 0
     return info

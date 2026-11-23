@@ -32,7 +32,7 @@ class BuildMeta(unittest.TestCase):
 
         # The eleven of the PHP first, in its order; then the other files the site reads
         self.assertEqual(list(meta['datasets']), list(build_meta.FILES) + ['fx-rates', 'low-prices', 'balancing-prices',
-                                                                           'weather', 'outages', 'forecast'])
+                                                                           'weather', 'open-prices', 'outages', 'forecast'])
         self.assertEqual((meta['last_update'], meta['trigger']), ('2026-11-19T17:30:00+00:00', 'feed_workflow_dispatch'))
         spot = meta['datasets']['spot-prices']
         self.assertEqual((spot['exists'], spot['updated'], spot['zones']), (True, '2026-11-19T17:00:00+00:00', 2))
@@ -50,6 +50,11 @@ class BuildMeta(unittest.TestCase):
         self.assertEqual(low, {'exists': True, 'updated': '2026-11-20T17:43:01+00:00',
                                'size': os.path.getsize(os.path.join(self.folder, 'low-prices.json'))})
         self.assertEqual(meta['datasets']['weather'], {'exists': False, 'updated': None, 'size': 0})
+
+    def test_the_open_prices_say_how_many_zones_they_have(self):
+        self.put('open-prices', {'updated': '2026-11-23T17:00:00+00:00', 'zones': {'DE-LU': {}, 'GB': {}, 'PT': {}}})
+        info = build_meta.build({}, None, self.folder)['datasets']['open-prices']
+        self.assertEqual((info['exists'], info['updated'], info['zones']), (True, '2026-11-23T17:00:00+00:00', 3))
 
     def test_a_dataset_kept_in_one_file_per_zone_is_one_entry_made_from_its_index(self):
         os.makedirs(os.path.join(self.folder, 'outages'))
