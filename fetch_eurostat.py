@@ -266,7 +266,7 @@ def build_ghg(geo):
         extra["target_2030_value"] = round(base_1990 * (1 + GHG_TARGET_2030_PCT / 100.0), 2)
         latest_year = sorted(series_mt.keys())[-1]
         extra["change_vs_1990_pct"] = round((series_mt[latest_year] / base_1990 - 1) * 100, 1)
-    return _shape(series_mt, "Mt CO2e", extra)
+    return _shape(series_mt, "Mt CO₂e", extra)   # with the subscript ₂, as the rest of the site writes it
 
 
 def build_heat_pumps(geo):
