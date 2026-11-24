@@ -92,6 +92,8 @@ DAILY_DAYS = 4                       # the days asked for again each day: data c
 SPIKE_RATIO = 1.25
 SPIKE_PP = 15.0
 CAPACITY_MARGIN = 1.05
+STORAGE = {'B10', 'B25'}             # pumped storage and other storage: they report only when they generate
+SMALL_SHARE = 0.01                   # a technology under 1 % of the day's total is 0 where it has no value
 MIN_SHARE_OF_TOTAL = 0.5             # an interval whose total is under half the day's median is not a share record
 A_YEAR = timedelta(days=365)
 
@@ -200,10 +202,15 @@ def day_numbers(techs, day, capacity=None):
         return None
     step = min(s for s, _v in present.values())
     grid = [start + step * i for i in range(int((end - start) / step))]
-    # A technology with a value in at least half the day is required in each interval; one that reports only now
-    # and then (pumped storage, in some zones) is 0 where it has none.
+    # Every technology is required in each interval, but storage, which reports only when it generates (pumped
+    # storage in Belgium), and a small one (under SMALL_SHARE of the total, as Hungary's oil, which leaves out some
+    # quarter-hours): those are 0 where they have no value. When a zone's data stop in the middle of the day (Italy
+    # on 19 Nov 2026, at 09:45), the rest of the day is missing, not 0.
     seen = {psr: [_at(values, s, start, moment) for moment in grid] for psr, (s, values) in present.items()}
-    required = {psr for psr, values in seen.items() if sum(v is not None for v in values) >= len(grid) / 2}
+    medians = {psr: sorted(v for v in values if v is not None)[sum(v is not None for v in values) // 2]
+               for psr, values in seen.items()}
+    whole = sum(medians.values())
+    required = {psr for psr in seen if psr not in STORAGE and medians[psr] >= SMALL_SHARE * whole}
     rows = []
     for i in range(len(grid)):
         if any(seen[psr][i] is None for psr in required):
@@ -300,9 +307,10 @@ def load_days(zone, year):
     return ((load_json(days_path(zone, year)) or {}).get('days')) or {}
 
 
-def store(zone, part, numbers):
-    """Puts {day: numbers} of a part (gen or price) into the zone's days files; returns the years written. A day
-    already complete is not replaced by an incomplete one."""
+def store(zone, part, numbers, keep_complete=True):
+    """Puts {day: numbers} of a part (gen or price) into the zone's days files; returns the years written. With
+    `keep_complete` (the daily update), a day already complete is not replaced by an incomplete one; the fill
+    replaces what was there."""
     by_year = defaultdict(dict)
     for name, value in numbers.items():
         by_year[int(name[:4])][name] = value
@@ -311,7 +319,7 @@ def store(zone, part, numbers):
         days = load_days(zone, year)
         for name, value in new.items():
             before = (days.get(name) or {}).get(part)
-            if before and before.get('complete') and not value.get('complete', True):
+            if keep_complete and before and before.get('complete') and not value.get('complete', True):
                 continue
             days.setdefault(name, {})[part] = value
         if write_json_if_changed(days_path(zone, year), {'zone': zone, 'year': year, 'days': dict(sorted(days.items()))},
@@ -551,7 +559,7 @@ def fill(zones=None, now=None, get=http_get, publish=None):
             last = min(date(year, 12, 31), today - timedelta(days=1))
             found.update(generation_days(zone, first, last, Budget(1800), get, caps.get(zone)))
             asked += len(SUBZONES.get(zone, [zone]))
-        written = store(zone, 'gen', found)
+        written = store(zone, 'gen', found, keep_complete=False)
         build(now, load_json(EMBER_PATH))
         print(f"{zone}: {len(found)} days, {sum(1 for n in found.values() if n.get('complete'))} complete, "
               f"years written {written or 'none'} [{time.monotonic() - zone_started:.0f}s]")

@@ -5,7 +5,8 @@
     (25 hours) and on 29 Mar 2026 (23 hours), Germany on 20 Nov 2026 (by the
     quarter-hour), and Norway's two zones of the feed, NO1 and NO2, that day;
     and the 24-hour answer of Belgium of tests/fixtures/entsoe, whose pumped
-    storage reports only now and then;
+    storage reports only now and then; and, taken the same way, Belgium and
+    Hungary on 20 Nov 2026 and Italy on 19 Nov 2026 (whose data stopped at 09:45);
   - the feed's archive of the hourly prices on those days and its count of the
     low prices of 20 Nov 2026;
   - Ember's Monthly Electricity Data, the rows of Portugal and Latvia.
@@ -121,6 +122,25 @@ class TheGenerationOfADay(unittest.TestCase):
         self.assertNotIn('ren_day', numbers)
         self.assertIn('solar', numbers)                            # the records of an interval still count
 
+    def test_when_the_data_stop_in_the_middle_of_the_day_the_rest_is_missing_not_zero(self):
+        # Italy on 19 Nov 2026, as ENTSO-E had it on the 24th: every technology up to 09:45 only.
+        numbers = fr.day_numbers(techs('generation_A75_IT_2026-11-19.xml.gz'), date(2026, 11, 19), NO_LIMIT)
+        self.assertFalse(numbers['complete'])
+        self.assertNotIn('ren_day', numbers)
+        self.assertLess(numbers['ren'][1], '2026-11-19T09:45:00+00:00')
+
+    def test_a_small_technology_that_leaves_out_some_quarter_hours_does_not_spoil_the_day(self):
+        # Hungary's oil (B06) on 20 Nov 2026: 84 of the 96 quarter-hours.
+        day = date(2026, 11, 20)
+        self.assertEqual(len(by_psr('generation_A75_HU_2026-11-20.xml.gz', day)['B06']), 84)
+        self.assertTrue(fr.day_numbers(techs('generation_A75_HU_2026-11-20.xml.gz'), day, NO_LIMIT)['complete'])
+
+    def test_a_large_technology_with_hours_missing_spoils_the_day(self):
+        # Belgium's offshore wind (B18) on 20 Nov 2026: 21 of the 24 hours.
+        day = date(2026, 11, 20)
+        self.assertEqual(len(by_psr('generation_A75_BE_2026-11-20.xml.gz', day)['B18']), 21)
+        self.assertFalse(fr.day_numbers(techs('generation_A75_BE_2026-11-20.xml.gz'), day, NO_LIMIT)['complete'])
+
     def test_a_technology_that_reports_now_and_then_does_not_spoil_the_day(self):
         with open(os.path.join(HERE, 'fixtures', 'entsoe', 'generation_A75_BE.xml.gz'), 'rb') as f:
             found = fr.technologies([gzip.decompress(f.read())])
@@ -213,10 +233,12 @@ class TheRecords(InAFolder):
         self.assertEqual(doc['zones']['MD']['solar_mw_max']['value'], 30)
         self.assertEqual(doc['recent'], [])
 
-    def test_a_complete_day_is_not_replaced_by_an_incomplete_one(self):
+    def test_a_complete_day_is_not_replaced_by_an_incomplete_one_but_by_the_fill(self):
         fr.store('PT', 'gen', {'2026-11-20': {'complete': True, 'ren_day': 70.0}})
         fr.store('PT', 'gen', {'2026-11-20': {'complete': False}})
         self.assertEqual(fr.load_days('PT', 2026)['2026-11-20']['gen']['ren_day'], 70.0)
+        fr.store('PT', 'gen', {'2026-11-20': {'complete': False}}, keep_complete=False)
+        self.assertEqual(fr.load_days('PT', 2026)['2026-11-20']['gen'], {'complete': False})
 
     def test_the_months_of_ember(self):
         rows = raw('ember_monthly_PT_LV.csv.gz')
