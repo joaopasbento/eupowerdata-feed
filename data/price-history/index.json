@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-24T17:17:06+00:00",
+ "updated": "2026-11-24T17:19:24+00:00",
  "unit": "EUR/MWh",
  "timezone": "UTC",
  "zones": {
@@ -103,7 +103,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-05",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -129,16 +129,16 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
   "CH": {
    "license": "cc-by-4.0",
-   "attribution": "Bundesnetzagentur | SMARD.de",
+   "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-01",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -160,6 +160,12 @@
      "from": "2015-01-01",
      "to": "2026-11-24",
      "days": 4346
+    },
+    {
+     "source": "energy-charts",
+     "from": "2026-11-25",
+     "to": "2026-11-25",
+     "days": 1
     }
    ]
   },
@@ -167,7 +173,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-01",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -193,8 +199,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -202,7 +208,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-01",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -228,8 +234,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -237,7 +243,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-01",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -263,8 +269,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -272,7 +278,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-05",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -298,8 +304,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -307,7 +313,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-01",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -345,8 +351,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -354,7 +360,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-05",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -380,8 +386,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -389,7 +395,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-05",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -427,8 +433,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -436,7 +442,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-01",
-   "last": "2026-11-24",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -462,8 +468,8 @@
     {
      "source": "energy-charts",
      "from": "2026-11-24",
-     "to": "2026-11-24",
-     "days": 1
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
@@ -471,7 +477,7 @@
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "first": "2015-01-07",
-   "last": "2026-11-23",
+   "last": "2026-11-25",
    "years": [
     2015,
     2016,
@@ -504,6 +510,12 @@
      "from": "2016-10-12",
      "to": "2026-11-23",
      "days": 2611
+    },
+    {
+     "source": "energy-charts",
+     "from": "2026-11-24",
+     "to": "2026-11-25",
+     "days": 2
     }
    ]
   },
