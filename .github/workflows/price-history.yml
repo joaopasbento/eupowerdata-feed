@@ -2,7 +2,7 @@ name: Price history (daily)
 # The history of the day-ahead prices for the Pro plan, data/price-history/
 # (see fetch_price_history.py): once a day, the days of the last 10 up to
 # tomorrow that are still missing, from SMARD (and Energy-Charts for the days
-# SMARD lacks, 2 requests at most) and OMIE. At 15:10 UTC tomorrow's prices are
+# SMARD lacks, one request a zone, 31 seconds apart) and OMIE. At 15:10 UTC tomorrow's prices are
 # out at both. The first fill is fill-price-history.yml, started by hand.
 on:
   schedule:

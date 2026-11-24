@@ -272,7 +272,7 @@ class TheRuns(InAFolder):
                  for day in window}
         ph.store('PT', whole, now, self.folder)                  # Portugal has every day of the window
         sources = Sources()
-        self.quiet(ph.update, now=now, get=sources, budget=fc.Budget(60), folder=self.folder, pause=0)
+        self.quiet(ph.update, now=now, get=sources, budget=fc.Budget(60), folder=self.folder, pause=0, ec_gap_s=0)
         self.assertIn('2026-11-23', self.doc('DE-LU', '2026.json')['days'])
         self.assertEqual(len(ph.missing_days('ES', window, self.folder)), len(window))   # OMIE: no file then
         asked_for_pt = [u for u in sources.asked if 'marginalpdbc' in u]
@@ -282,8 +282,18 @@ class TheRuns(InAFolder):
     def test_energy_charts_is_asked_ec_per_run_times_at_most_in_a_daily_update(self):
         sources = Sources()
         self.quiet(ph.update, now=datetime(2026, 11, 24, 15, 0, tzinfo=timezone.utc), get=sources,
-                   budget=fc.Budget(60), folder=self.folder, pause=0)
+                   budget=fc.Budget(60), folder=self.folder, pause=0, ec_gap_s=0)
         self.assertEqual(len([u for u in sources.asked if 'energy-charts' in u]), ph.EC_PER_RUN)
+
+    def test_the_requests_to_energy_charts_are_31_seconds_apart_whatever_the_zone(self):
+        ph._ec_last[0] = None
+        sources, waits = Sources(), []
+        with mock.patch.object(ph.time, 'sleep', side_effect=lambda s: waits.append(s)):
+            self.quiet(ph.update, now=datetime(2026, 11, 24, 15, 0, tzinfo=timezone.utc), get=sources,
+                       budget=fc.Budget(60), folder=self.folder, pause=0, ec_gap_s=ph.EC_GAP_S)
+        asked = len([u for u in sources.asked if 'energy-charts' in u])
+        long_waits = [w for w in waits if w > 30]
+        self.assertEqual(len(long_waits), asked - 1)             # before each request but the first
 
     def test_the_fill_publishes_a_zone_at_a_time_and_fails_when_a_push_fails(self):
         now = datetime(2025, 10, 2, 12, 0, tzinfo=timezone.utc)

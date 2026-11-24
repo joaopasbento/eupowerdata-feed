@@ -21,8 +21,9 @@ the hour. Germany-Luxembourg and Austria were one bidding zone until 30 Sep
 filter 251), and each of those days says so (`series`). A day SMARD has with a
 missing price is not taken: it is asked of Energy-Charts, with the rules of
 data/open-prices.json (taken only under CC BY 4.0 and whole; see
-fetch_open_prices.py), at most EC_PER_RUN ranges of days a run in the daily
-update, and 2 a minute in the first fill (its limit).
+fetch_open_prices.py), one request for each run of days, 31 seconds apart (its
+limit is 2 a minute): up to 15 a daily update, one a zone, so that a zone
+SMARD lacks for weeks is still filled within its window of UPDATE_DAYS.
 
 OMIE. Its public files of the day-ahead prices of Portugal and Spain go back to
 2018: a zip a year from 2018 to 2022 (marginalpdbc_YYYY.zip) and a file a day
@@ -90,8 +91,8 @@ JOINT = (251, 'DE')                          # SMARD's DE-AT-LU, for DE-LU and A
 JOINT_UNTIL = date(2018, 9, 30)
 QUARTERS_FROM = date(2025, 9, 29)            # the week of the move to quarter-hours (1 Oct 2025)
 UPDATE_DAYS = 10
-EC_PER_RUN = 2
-EC_GAP_S = 31                                # between requests to Energy-Charts in the first fill
+EC_PER_RUN = 15                              # requests to Energy-Charts in a daily update: one a zone, EC_GAP_S apart
+EC_GAP_S = 31                                # between requests to Energy-Charts (2 a minute at most)
 EC_LONGEST = 31                              # days in one request to Energy-Charts
 OMIE_PAUSE_S = fetch_omie.PAUSE_S            # between requests to OMIE
 UNIT = 'EUR/MWh'
@@ -164,16 +165,21 @@ def ranges(days, longest=EC_LONGEST):
     return runs
 
 
+_ec_last = [None]       # when this run last asked Energy-Charts (time.monotonic)
+
+
 def energy_charts_days(zone, days, get, budget, at_most, gap_s=0, log=print):
     """({day: block}, asked) of the days of `days` that Energy-Charts has whole for a SMARD zone under CC BY 4.0,
-    in at most `at_most` requests (one for each run of days), `gap_s` apart; stops at the first 429."""
+    in at most `at_most` requests (one for each run of days), each at least `gap_s` after the run's last request to
+    it, whatever the zone; stops at the first 429."""
     found, asked = {}, 0
     for run in ranges(days):
         if asked >= at_most:
             log(f'  {zone}: Energy-Charts not asked for {run[0]}..{run[-1]} in this run ({at_most} requests at most)')
             continue
-        if asked and gap_s:
-            time.sleep(gap_s)
+        if gap_s and _ec_last[0] is not None:
+            time.sleep(max(0.0, gap_s - (time.monotonic() - _ec_last[0])))
+        _ec_last[0] = time.monotonic()
         asked += 1
         try:
             got = op.ec_days(zone, run, get, budget)
@@ -441,7 +447,7 @@ def store(zone, found, now, folder=OUT_DIR):
     return written
 
 
-def update(now=None, get=http_get, budget=None, folder=OUT_DIR, pause=op.PAUSE_S):
+def update(now=None, get=http_get, budget=None, folder=OUT_DIR, pause=op.PAUSE_S, ec_gap_s=EC_GAP_S):
     """The daily update: the missing days of the last UPDATE_DAYS up to tomorrow."""
     now = now or datetime.now(timezone.utc)
     budget = budget or Budget(float(os.environ.get('PRICE_HISTORY_BUDGET_SECONDS', '600')))
@@ -452,7 +458,7 @@ def update(now=None, get=http_get, budget=None, folder=OUT_DIR, pause=op.PAUSE_S
         lacking = missing_days(zone, window, folder)
         if not lacking:
             continue
-        found, asked = fetch_zone(zone, lacking, get, budget, ec_left, pause=pause)
+        found, asked = fetch_zone(zone, lacking, get, budget, ec_left, ec_gap_s, pause=pause)
         ec_left -= asked
         written = store(zone, found, now, folder)
         print(f"  {zone}: {len(found)} of the {len(lacking)} missing days"
