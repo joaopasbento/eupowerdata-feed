@@ -619,13 +619,13 @@
     2025,
     2026
    ],
-   "missing_days": 3,
+   "missing_days": 0,
    "sources": [
     {
      "source": "omie",
      "from": "2018-01-01",
      "to": "2026-11-24",
-     "days": 3247
+     "days": 3250
     }
    ]
   }
