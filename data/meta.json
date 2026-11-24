@@ -1,43 +1,43 @@
 {
-  "last_update": "2026-11-24T00:26:51+00:00",
+  "last_update": "2026-11-24T00:42:36+00:00",
   "trigger": "feed_workflow_dispatch",
   "datasets": {
     "spot-prices": {
       "exists": true,
-      "updated": "2026-11-24T00:23:08.379377+00:00",
+      "updated": "2026-11-24T00:38:09.920607+00:00",
       "size": 37684,
       "zones": 32
     },
     "generation-mix": {
       "exists": true,
-      "updated": "2026-11-24T00:23:35.577077+00:00",
-      "size": 11442,
+      "updated": "2026-11-24T00:38:30.318628+00:00",
+      "size": 11451,
       "zones": 32
     },
     "cross-border-flows": {
       "exists": true,
-      "updated": "2026-11-24T00:23:55.704603+00:00",
-      "size": 22335,
+      "updated": "2026-11-24T00:38:54.623234+00:00",
+      "size": 23243,
       "corridors": 92
     },
     "ren-generation": {
       "exists": true,
-      "updated": "2026-11-24T00:23:35.577077+00:00",
+      "updated": "2026-11-24T00:38:30.318628+00:00",
       "size": 495
     },
     "ree-generation": {
       "exists": true,
-      "updated": "2026-11-24T00:23:35.577077+00:00",
+      "updated": "2026-11-24T00:38:30.318628+00:00",
       "size": 694
     },
     "omie-prices": {
       "exists": true,
-      "updated": "2026-11-24T00:24:41+00:00",
+      "updated": "2026-11-24T00:39:40+00:00",
       "size": 10177
     },
     "forward-curves": {
       "exists": true,
-      "updated": "2026-11-24T00:23:03.843003+00:00",
+      "updated": "2026-11-24T00:38:05.623976+00:00",
       "size": 23078
     },
     "capacity-installed": {
@@ -67,39 +67,39 @@
     },
     "low-prices": {
       "exists": true,
-      "updated": "2026-11-24T00:26:09+00:00",
+      "updated": "2026-11-24T00:41:51+00:00",
       "size": 98078
     },
     "balancing-prices": {
       "exists": true,
-      "updated": "2026-11-24T00:24:45+00:00",
-      "size": 232140
+      "updated": "2026-11-24T00:40:16+00:00",
+      "size": 231578
     },
     "weather": {
       "exists": true,
-      "updated": "2026-11-23T21:25:50+00:00",
-      "size": 20257
+      "updated": "2026-11-24T00:39:41+00:00",
+      "size": 20241
     },
     "open-prices": {
       "exists": true,
-      "updated": "2026-11-24T00:26:10+00:00",
-      "size": 3698,
+      "updated": "2026-11-24T00:41:52+00:00",
+      "size": 3702,
       "zones": 4
     },
     "outages": {
       "exists": true,
-      "updated": "2026-11-24T00:25:02+00:00",
+      "updated": "2026-11-24T00:40:32+00:00",
       "zones": 35,
-      "size": 821697
+      "size": 819863
     },
     "forecast": {
       "exists": true,
-      "updated": "2026-11-24T00:26:07+00:00",
+      "updated": "2026-11-24T00:41:42+00:00",
       "zones": 30,
-      "size": 1194343
+      "size": 1195365
     }
   },
-  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/45296681934",
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/45298724338",
   "steps": {
     "balancing": "success",
     "capacity": "success",
