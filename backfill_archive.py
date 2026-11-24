@@ -739,8 +739,8 @@ def _run_git(args, check=False):
         return 1, str(e)
 
 
-def _commit_and_push(message):
-    """Stage data/archive/, commit, and push with rebase-and-retry.
+def _commit_and_push(message, path='data/archive/'):
+    """Stage `path` (data/archive/, or the folder of fetch_price_history.py), commit, and push with rebase-and-retry.
 
     The regular fetch_entsoe.py cron runs every 15 minutes and commits to the
     same branch. If it commits during our batch, our push is rejected with
@@ -752,7 +752,7 @@ def _commit_and_push(message):
     checkout stays on its branch; the files are not merged by guessing.
     """
     print(f'  -> committing batch: {message}')
-    code, out = _run_git(['add', 'data/archive/'])
+    code, out = _run_git(['add', path])
     if code != 0:
         print(f'    git add failed: {out.strip()}')
         return False

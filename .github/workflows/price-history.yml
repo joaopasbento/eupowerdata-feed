@@ -1,0 +1,53 @@
+name: Price history (daily)
+# The history of the day-ahead prices for the Pro plan, data/price-history/
+# (see fetch_price_history.py): once a day, the days of the last 10 up to
+# tomorrow that are still missing, from SMARD (and Energy-Charts for the days
+# SMARD lacks, 2 requests at most) and OMIE. At 15:10 UTC tomorrow's prices are
+# out at both. The first fill is fill-price-history.yml, started by hand.
+on:
+  schedule:
+    - cron: '10 15 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+# The fill writes the same files: one at a time.
+concurrency:
+  group: price-history
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Bring the price history up to date
+        env:
+          PRICE_HISTORY_BUDGET_SECONDS: '600'
+        run: python fetch_price_history.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/price-history/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update the price history $(date -u '+%Y-%m-%d %H:%M UTC')"
+          # The 15-minute fetch pushes to main too: rebase on top of it, then push.
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "Push attempt $attempt failed - retrying"
+            sleep 5
+          done
+          echo "::error::Could not push the price history after 3 attempts"
+          exit 1

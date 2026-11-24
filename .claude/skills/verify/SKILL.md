@@ -16,6 +16,7 @@ description: Confirm that a change to the feed works - the offline tests and val
 | The newer datasets: `fetch_balancing.py`, `fetch_outages.py`, `fetch_forecast.py`, `fetch_low_prices.py`, `fetch_open_prices.py`, `wind_solar_actual.py`, `price_intervals.py`, or what `feed_common.py` gives them | Part 1, then part 2 after the push |
 | The exchange rates or what is converted with them (`fx_rates.py`), Ember's figures and the capacity file (`fetch_ember.py`, `merge_capacity.py`) | Part 1, then part 2 after the push |
 | The state of the files for the site's status page (`build_meta.py`, `data/meta.json`) | Part 1, then part 2 after the push |
+| The price history of the Pro plan (`fetch_price_history.py`, `price-history.yml`, `fill-price-history.yml`) | Part 1, then the reading of the history after a run of one of those workflows (end of part 2) |
 | How the negative, zero and low prices are counted, or a rewrite of their daily records | Part 1, part 2 after the push, and the proof of part 3 |
 | Documentation only (`*.md`, comments) | Nothing here |
 
@@ -88,6 +89,16 @@ git fetch -q && git show origin/main:data/cross-border-flows.json | python3 -c "
 ```
 
 Say in the report which run was read and what was seen in it.
+
+### The price history
+
+`data/price-history/` is written by its own workflows, not by `fetch.yml`: `price-history.yml` once a day and `fill-price-history.yml` by hand (the first fill). After a run of either, read what it published:
+
+```bash
+python3 .claude/skills/verify/real_run.py --price-history
+```
+
+It ends `REAL RUN OK` or `REAL RUN BROKEN`. What must hold: `index.json` lists only the 17 zones of the history (the 15 of SMARD, `cc-by-4.0` with the attribution `Bundesnetzagentur \| SMARD.de`, and PT and ES, `omie` with the attribution `OMIE`), each with its first day and years; the last year of each zone has every day whole (one price for each interval from its start, none missing) and each day's `source` (`smard`, `energy-charts` or `omie`) is under the zone's licence, a day of Energy-Charts with a `license_info` that says CC BY 4.0; the daily means of those years and `monthly.json` are there. The note gives, for each zone, its first and last day, its sources in spans and how many days are missing. The same reading is a line of every real run of part 2 (a note while the history has not been filled). The tests run on real answers of SMARD, Energy-Charts and OMIE in `tests/fixtures/price_history`, `tests/fixtures/smard` and `tests/fixtures/energy_charts`.
 
 ## Part 3: the proof of the low prices
 

@@ -1,0 +1,42 @@
+name: Fill the price history
+# Started by hand. The first fill of data/price-history/ (see
+# fetch_price_history.py): every day of each zone from its first one (SMARD
+# from 1 Jan 2015, OMIE from 1 Jan 2018) up to today, a zone at a time, each
+# committed and pushed before the next. About 10,000 requests to SMARD, 1,500
+# to OMIE and a few to Energy-Charts (2 a minute). Ends in error if it
+# published nothing or a push failed; a second start takes up where the first
+# left off.
+on:
+  workflow_dispatch:
+    inputs:
+      zones:
+        description: Zones to fill, separated by spaces. Empty for all 17
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: price-history
+  cancel-in-progress: false
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 10    # enough for pull --rebase to put a zone on top of the feed's commits
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Fill the price history
+        env:
+          ZONES: ${{ inputs.zones }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python fetch_price_history.py --fill $ZONES

@@ -435,6 +435,53 @@ def check_capacity(doc, path, broken):
     return f"{len(countries)} countries, capacity from {', '.join(sources)}"
 
 
+HISTORY_ZONES = {**{zone: 'cc-by-4.0' for zone in OPEN_SMARD}, 'PT': 'omie', 'ES': 'omie'}
+HISTORY_SOURCES = {'smard': 'cc-by-4.0', 'energy-charts': 'cc-by-4.0', 'omie': 'omie'}
+
+
+def check_price_history(doc, path, broken):
+    """data/price-history/: the index, each zone's last year (every day whole, with its source under the zone's
+    licence), the daily means of that year and the monthly means."""
+    zones = doc.get('zones') if isinstance(doc, dict) else None
+    if not isinstance(zones, dict) or not zones or not set(zones) <= set(HISTORY_ZONES):
+        broken.append(f'{path}: no zones, or a zone that is not one of the 17 of the history')
+        return 'broken'
+    notes, last_years = [], set()
+    for zone, entry in zones.items():
+        smard = HISTORY_ZONES[zone] == 'cc-by-4.0'
+        if entry.get('license') != HISTORY_ZONES[zone] or not entry.get('years') or not entry.get('first') \
+                or not str(entry.get('attribution', '')).startswith('Bundesnetzagentur | SMARD.de' if smard else 'OMIE'):
+            broken.append(f'{path} {zone}: not its licence, attribution, first day or years')
+            continue
+        year = entry['years'][-1]
+        last_years.add(year)
+        file_path = f'data/price-history/{zone}/{year}.json'
+        days = (published(file_path) or {}).get('days')
+        if not isinstance(days, dict) or not days:
+            broken.append(f'{file_path}: missing, or no days')
+            continue
+        for name, day in days.items():
+            start, end = carry_over.day_bounds(datetime.fromisoformat(name).date())
+            step, prices = day.get('step_minutes'), day.get('prices')
+            if step not in (15, 60) or day.get('start') != start.isoformat() or not isinstance(prices, list) \
+                    or len(prices) != int((end - start).total_seconds() // 60 // step) \
+                    or any(not number(v) for v in prices):
+                broken.append(f'{file_path} {name}: not one price for each interval of the day from its start')
+            if HISTORY_SOURCES.get(day.get('source')) != HISTORY_ZONES[zone] or (
+                    day.get('source') == 'energy-charts'
+                    and not str(day.get('license_info', '')).lstrip().startswith('CC BY 4.0')):
+                broken.append(f'{file_path} {name}: source {day.get("source")} not under the licence of the zone')
+        spans = ', '.join(f"{s['source']}{' ' + s['series'] if s.get('series') else ''} {s['from']}..{s['to']}"
+                          for s in entry.get('sources') or [])
+        notes.append(f"{zone} {entry['first']}..{entry.get('last')} ({spans}; {entry.get('missing_days')} days missing)")
+    for year in sorted(last_years):
+        if not ((published(f'data/price-history/daily/{year}.json') or {}).get('zones')):
+            broken.append(f'data/price-history/daily/{year}.json: missing, or no zones')
+    if not ((published('data/price-history/monthly.json') or {}).get('zones')):
+        broken.append('data/price-history/monthly.json: missing, or no zones')
+    return f"{len(zones)} zones: " + '; '.join(notes)
+
+
 # Files a run reads, or rewrites only now and then: their shape is checked, not their time.
 STANDING = {
     'data/fx-rates.json': check_rates,
@@ -476,7 +523,17 @@ def main():
     parser = argparse.ArgumentParser(description='Read what a real run of fetch.yml published.')
     parser.add_argument('--commit', default='HEAD', help='the pushed commit the run must include (default HEAD)')
     parser.add_argument('--wait', type=int, default=25, help='minutes to wait for the run (default 25)')
+    parser.add_argument('--price-history', action='store_true',
+                        help='only read the published price history (after price-history.yml or fill-price-history.yml)')
     args = parser.parse_args()
+    if args.price_history:
+        git('fetch', '-q', 'origin')
+        broken = []
+        doc = published('data/price-history/index.json') if exists('data/price-history/index.json') else None
+        if doc is None:
+            finish(['data/price-history/index.json is missing or is not valid JSON'], [], [])
+        finish(broken, [], [f"data/price-history: {check_price_history(doc, 'data/price-history/index.json', broken)}, "
+                            f"updated {str(doc.get('updated'))[:19]}"])
     commit = git('rev-parse', args.commit).stdout.strip()
     git('fetch', '-q', 'origin')
     if git('merge-base', '--is-ancestor', commit, 'origin/main').returncode != 0:
@@ -524,6 +581,12 @@ def main():
             broken.append(f'{path} is missing or is not valid JSON')
             continue
         notes.append(f'{path}: {check(doc, path, broken)}, updated {str(doc.get("updated"))[:19]}')
+
+    if exists('data/price-history/index.json'):
+        doc = published('data/price-history/index.json')
+        notes.append(f"data/price-history: {check_price_history(doc or {}, 'data/price-history/index.json', broken)}")
+    else:
+        notes.append('data/price-history: not published yet (fill-price-history.yml has not run)')
 
     # The whole run must fit in the cadence: the next one starts 15 minutes after this one was asked for.
     ended = datetime.fromisoformat(job['completed_at'].replace('Z', '+00:00')) if job.get('completed_at') else None
