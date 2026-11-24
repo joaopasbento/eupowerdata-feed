@@ -1,0 +1,122 @@
+{
+ "updated": "2026-11-24T17:53:28+00:00",
+ "source": "OMIP",
+ "url": "https://www.omip.pt/en/dados-mercado",
+ "license": "source-terms",
+ "unit": "EUR/MWh",
+ "product": "5-year baseload PPA futures: the reference price of the first trading day of each quarter, for the delivery that starts the year after (Spain: FTB PPA; Portugal has none at OMIP)",
+ "points": [
+  {
+   "date": "2023-01",
+   "trading_day": "2023-01-02",
+   "contract": "FTB PPA 24/28",
+   "es": 80.92,
+   "pt": null
+  },
+  {
+   "date": "2023-04",
+   "trading_day": "2023-04-03",
+   "contract": "FTB PPA 24/28",
+   "es": 74.8,
+   "pt": null
+  },
+  {
+   "date": "2023-07",
+   "trading_day": "2023-07-03",
+   "contract": "FTB PPA 24/28",
+   "es": 67.18,
+   "pt": null
+  },
+  {
+   "date": "2023-10",
+   "trading_day": "2023-10-02",
+   "contract": "FTB PPA 24/28",
+   "es": 75.96,
+   "pt": null
+  },
+  {
+   "date": "2024-01",
+   "trading_day": "2024-01-02",
+   "contract": "FTB PPA 25/29",
+   "es": 62.11,
+   "pt": null
+  },
+  {
+   "date": "2024-04",
+   "trading_day": "2024-04-02",
+   "contract": "FTB PPA 25/29",
+   "es": 52.58,
+   "pt": null
+  },
+  {
+   "date": "2024-07",
+   "trading_day": "2024-07-01",
+   "contract": "FTB PPA 25/29",
+   "es": 57.97,
+   "pt": null
+  },
+  {
+   "date": "2024-10",
+   "trading_day": "2024-10-01",
+   "contract": "FTB PPA 25/29",
+   "es": 60.35,
+   "pt": null
+  },
+  {
+   "date": "2025-01",
+   "trading_day": "2025-01-02",
+   "contract": "FTB PPA 26/30",
+   "es": 61.62,
+   "pt": null
+  },
+  {
+   "date": "2025-04",
+   "trading_day": "2025-04-01",
+   "contract": "FTB PPA 26/30",
+   "es": 57.18,
+   "pt": null
+  },
+  {
+   "date": "2025-07",
+   "trading_day": "2025-07-01",
+   "contract": "FTB PPA 26/30",
+   "es": 59.5,
+   "pt": null
+  },
+  {
+   "date": "2025-10",
+   "trading_day": "2025-10-01",
+   "contract": "FTB PPA 26/30",
+   "es": 58.79,
+   "pt": null
+  },
+  {
+   "date": "2026-01",
+   "trading_day": "2026-01-02",
+   "contract": "FTB PPA 27/31",
+   "es": 53.86,
+   "pt": null
+  },
+  {
+   "date": "2026-04",
+   "trading_day": "2026-04-01",
+   "contract": "FTB PPA 27/31",
+   "es": 54.27,
+   "pt": null
+  },
+  {
+   "date": "2026-07",
+   "trading_day": "2026-07-01",
+   "contract": "FTB PPA 27/31",
+   "es": 54.87,
+   "pt": null
+  },
+  {
+   "date": "2026-10",
+   "trading_day": "2026-10-01",
+   "contract": "FTB PPA 27/31",
+   "es": 64.32,
+   "pt": null
+  }
+ ]
+}
