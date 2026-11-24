@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-24T13:05:00+00:00",
+ "updated": "2026-11-24T16:52:20+00:00",
  "unit": "EUR/MWh",
  "timezone": "UTC",
  "zones": {
@@ -593,13 +593,13 @@
     2025,
     2026
    ],
-   "missing_days": 4,
+   "missing_days": 0,
    "sources": [
     {
      "source": "omie",
      "from": "2018-01-01",
      "to": "2026-11-24",
-     "days": 3246
+     "days": 3250
     }
    ]
   },
