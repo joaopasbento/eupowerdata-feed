@@ -29,10 +29,10 @@ OMIE. Its public files of the day-ahead prices of Portugal and Spain go back to
 from 2023 (marginalpdbc_YYYYMMDD.N); of a day with more than one version, the
 last one is taken. Hours up to 30 Sep 2025, quarter-hours from 1 Oct 2025.
 
-Ember (European Wholesale Electricity Price Data) is not used: on 24 Nov 2026
-its page gave no licence of its own for these prices, which it says it takes
-from ENTSO-E, whose day-ahead prices are not free to reuse (see feed_common.py).
-A decision for the owner of the site.
+Ember (European Wholesale Electricity Price Data) is not used, by the owner's
+decision of 24 Nov 2026: its page gave no licence of its own for these prices,
+which it says it takes from ENTSO-E, whose day-ahead prices are not free to
+reuse (see feed_common.py), and the history is sold in the Pro plan.
 
 The files (times in UTC, prices in EUR/MWh; a day is a delivery day on the
 market's clock, so it has 23, 24 or 25 hours, or 92, 96 or 100 quarter-hours):
