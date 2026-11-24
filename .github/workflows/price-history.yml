@@ -2,7 +2,8 @@ name: Price history (daily)
 # The history of the day-ahead prices for the Pro plan, data/price-history/
 # (see fetch_price_history.py): once a day, the days of the last 10 up to
 # tomorrow that are still missing, from SMARD (and Energy-Charts for the days
-# SMARD lacks, one request a zone, 31 seconds apart) and OMIE. At 15:10 UTC tomorrow's prices are
+# SMARD lacks, one request a zone, 31 seconds apart) and OMIE; and the PPA
+# index of OMIP (data/ppa-index.json), a new point each quarter. At 15:10 UTC tomorrow's prices are
 # out at both. The first fill is fill-price-history.yml, started by hand.
 on:
   schedule:
@@ -35,16 +36,22 @@ jobs:
         env:
           PRICE_HISTORY_BUDGET_SECONDS: '600'
         run: python fetch_price_history.py
+      # The PPA index of the Insights (see fetch_ppa_index.py): a request to OMIP
+      # only when the quarter has no point yet. Never fails the run.
+      - name: PPA price index (OMIP)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: python fetch_ppa_index.py
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/price-history/
+          git add data/price-history/ data/ppa-index.json
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Update the price history $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git commit -m "Update the price history and the PPA index $(date -u '+%Y-%m-%d %H:%M UTC')"
           # The 15-minute fetch pushes to main too: rebase on top of it, then push.
           for attempt in 1 2 3; do
             if git pull --rebase origin main && git push; then

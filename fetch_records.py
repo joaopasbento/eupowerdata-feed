@@ -96,7 +96,9 @@ MIN_SHARE_OF_TOTAL = 0.5             # an interval whose total is under half the
 A_YEAR = timedelta(days=365)
 
 SUBZONES = fe.CONSOLIDATE                                    # NO, SE, DK: the sum of their zones
-GEN_ZONES = [code for code in fe.GEN_COUNTRIES if code in SUBZONES or fe.ZONES.get(code)]
+# The site's zones of generation: fetch_entsoe's countries asked of ENTSO-E (not GB, which is Elexon's), and
+# Norway, Sweden and Denmark, which it makes from their zones.
+GEN_ZONES = [code for code in fe.GEN_COUNTRIES if fe.ZONES.get(code) and code not in fe.ELEXON_ZONES] + list(SUBZONES)
 RENEWABLE = {code for code, name in fe.PSR_MAP.items() if name in fe.RENEWABLE_TYPES}
 
 TYPES = {

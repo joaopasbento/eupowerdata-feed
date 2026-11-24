@@ -17,6 +17,7 @@ description: Confirm that a change to the feed works - the offline tests and val
 | The exchange rates or what is converted with them (`fx_rates.py`), Ember's figures and the capacity file (`fetch_ember.py`, `merge_capacity.py`) | Part 1, then part 2 after the push |
 | The state of the files for the site's status page (`build_meta.py`, `data/meta.json`) | Part 1, then part 2 after the push |
 | The price history of the Pro plan (`fetch_price_history.py`, `price-history.yml`, `fill-price-history.yml`) | Part 1, then the reading of the history after a run of one of those workflows (end of part 2) |
+| The records and the PPA index (`fetch_records.py`, `records.yml`, `fill-records.yml`, `fetch_ppa_index.py`) | Part 1, then the reading of the records after a run of one of those workflows (end of part 2) |
 | How the negative, zero and low prices are counted, or a rewrite of their daily records | Part 1, part 2 after the push, and the proof of part 3 |
 | Documentation only (`*.md`, comments) | Nothing here |
 
@@ -99,6 +100,16 @@ python3 .claude/skills/verify/real_run.py --price-history
 ```
 
 It ends `REAL RUN OK` or `REAL RUN BROKEN`. What must hold: `index.json` lists only the 17 zones of the history (the 15 of SMARD, `cc-by-4.0` with the attribution `Bundesnetzagentur \| SMARD.de`, and PT and ES, `omie` with the attribution `OMIE`), each with its first day and years; the last year of each zone has every day whole (one price for each interval from its start, none missing) and each day's `source` (`smard`, `energy-charts` or `omie`) is under the zone's licence, a day of Energy-Charts with a `license_info` that says CC BY 4.0; the daily means of those years and `monthly.json` are there. The note gives, for each zone, its first and last day, its sources in spans and how many days are missing. The same reading is a line of every real run of part 2 (a note while the history has not been filled). The tests run on real answers of SMARD, Energy-Charts and OMIE in `tests/fixtures/price_history`, `tests/fixtures/smard` and `tests/fixtures/energy_charts`.
+
+### The records and the PPA index
+
+`data/records.json` is written by `records.yml` (daily) and `fill-records.yml` (by hand: the one-off fill of the generation since 2021, or, with `sample`, real answers of ENTSO-E for the tests as an artifact); `data/ppa-index.json` by a step of `price-history.yml`. After a run, read both:
+
+```bash
+python3 .claude/skills/verify/real_run.py --records
+```
+
+What must hold: the ten types with their stable names (`solar_mw_max`, `wind_mw_max`, `renewable_share_interval_max`, `renewable_share_day_max`, `price_interval_min`, `price_day_avg_min`, `negative_zero_hours_day_max` by zone, licence `source-terms`; `solar_share_month_max`, `wind_share_month_max`, `renewable_share_month_max` by country, `cc-by-4.0`), each record with its value, unit, moment, source and `previous`, and `recent` the most recent first; the PPA index has a point a quarter from 2023-01, each with its trading day, `FTB PPA` contract and price. The tests run on real answers in `tests/fixtures/records` (ENTSO-E's A75 of whole days, the clock changes among them, the archives' prices and Ember's monthly rows) and `tests/fixtures/ppa` (OMIP's pages).
 
 ## Part 3: the proof of the low prices
 

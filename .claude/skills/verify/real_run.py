@@ -482,6 +482,56 @@ def check_price_history(doc, path, broken):
     return f"{len(zones)} zones: " + '; '.join(notes)
 
 
+RECORD_TYPES = {'solar_mw_max': 'MW', 'wind_mw_max': 'MW', 'renewable_share_interval_max': '%',
+                'renewable_share_day_max': '%', 'price_interval_min': 'EUR/MWh', 'price_day_avg_min': 'EUR/MWh',
+                'negative_zero_hours_day_max': 'h'}
+RECORD_COUNTRY_TYPES = {'solar_share_month_max', 'wind_share_month_max', 'renewable_share_month_max'}
+
+
+def check_records(doc, path, broken):
+    """data/records.json: the types with their stable names and licences, each record with its value, unit, moment,
+    source and the one it beat, and the records beaten in the last 12 months, the most recent first."""
+    types, zones, countries = (doc.get(k) if isinstance(doc, dict) else None for k in ('types', 'zones', 'countries'))
+    if not isinstance(types, dict) or set(types) != set(RECORD_TYPES) | RECORD_COUNTRY_TYPES \
+            or not isinstance(zones, dict) or not isinstance(countries, dict) or 'updated' not in doc:
+        broken.append(f'{path}: not the ten types, or no zones, countries or updated')
+        return 'broken'
+    if any(types[t].get('license') != 'source-terms' for t in RECORD_TYPES) \
+            or any(types[t].get('license') != 'cc-by-4.0' for t in RECORD_COUNTRY_TYPES):
+        broken.append(f'{path}: a type without its licence (ENTSO-E source-terms, Ember cc-by-4.0)')
+    count = 0
+    for area, records in list(zones.items()) + list(countries.items()):
+        for kind, record in records.items():
+            count += 1
+            unit = RECORD_TYPES.get(kind, '%')
+            if not number(record.get('value')) or record.get('unit') != unit or not record.get('at') \
+                    or not record.get('source') or 'previous' not in record:
+                broken.append(f'{path} {area} {kind}: no value, unit {unit}, moment, source or previous')
+    recent = doc.get('recent') or []
+    moments = [r.get('at', '') if len(r.get('at', '')) > 7 else r.get('at', '') + '-99' for r in recent]
+    if moments != sorted(moments, reverse=True):
+        broken.append(f'{path}: the records beaten are not the most recent first')
+    latest = ', '.join(f"{r['area']} {r['type']} {r['value']} {r['unit']} ({r['at'][:10]})" for r in recent[:3])
+    return (f"{len(zones)} zones and {len(countries)} countries, {count} records, data until {doc.get('data_until')}; "
+            f"{len(recent)} beaten in the last 12 months" + (f', the latest {latest}' if latest else ''))
+
+
+def check_ppa_index(doc, path, broken):
+    """data/ppa-index.json: a point a quarter since January 2023, each with its trading day, contract and price."""
+    points = doc.get('points') if isinstance(doc, dict) else None
+    if not isinstance(points, list) or not points or points[0].get('date') != '2023-01' or any(
+            not number(p.get('es')) or not str(p.get('contract', '')).startswith('FTB PPA') or not p.get('trading_day')
+            for p in points):
+        broken.append(f'{path}: no points from 2023-01, or a point without its price, contract or trading day')
+        return 'broken'
+    dates = [p['date'] for p in points]
+    if dates != sorted(set(dates)):
+        broken.append(f'{path}: the quarters are not in order, or one is twice')
+    last = points[-1]
+    return (f"{len(points)} quarters, the last {last['date']} {last['contract']} {last['es']} EUR/MWh; "
+            f"Portugal in {sum(1 for p in points if p.get('pt') is not None)}")
+
+
 # Files a run reads, or rewrites only now and then: their shape is checked, not their time.
 STANDING = {
     'data/fx-rates.json': check_rates,
@@ -523,9 +573,21 @@ def main():
     parser = argparse.ArgumentParser(description='Read what a real run of fetch.yml published.')
     parser.add_argument('--commit', default='HEAD', help='the pushed commit the run must include (default HEAD)')
     parser.add_argument('--wait', type=int, default=25, help='minutes to wait for the run (default 25)')
+    parser.add_argument('--records', action='store_true',
+                        help='only read the published records and PPA index (after records.yml or fill-records.yml)')
     parser.add_argument('--price-history', action='store_true',
                         help='only read the published price history (after price-history.yml or fill-price-history.yml)')
     args = parser.parse_args()
+    if args.records:
+        git('fetch', '-q', 'origin')
+        broken, notes = [], []
+        for path, check in (('data/records.json', check_records), ('data/ppa-index.json', check_ppa_index)):
+            doc = published(path) if exists(path) else None
+            if doc is None:
+                broken.append(f'{path} is missing or is not valid JSON')
+                continue
+            notes.append(f"{path}: {check(doc, path, broken)}, updated {str(doc.get('updated'))[:19]}")
+        finish(broken, [], notes)
     if args.price_history:
         git('fetch', '-q', 'origin')
         broken = []
