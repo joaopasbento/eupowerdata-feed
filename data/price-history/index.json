@@ -1,0 +1,66 @@
+{
+ "updated": "2026-11-24T13:05:00+00:00",
+ "unit": "EUR/MWh",
+ "timezone": "UTC",
+ "zones": {
+  "DE-LU": {
+   "license": "cc-by-4.0",
+   "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "first": "2015-01-05",
+   "last": "2026-11-24",
+   "years": [
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ],
+   "missing_days": 0,
+   "sources": [
+    {
+     "source": "smard",
+     "from": "2015-01-05",
+     "to": "2018-09-30",
+     "days": 1365,
+     "series": "DE-AT-LU"
+    },
+    {
+     "source": "smard",
+     "from": "2018-10-01",
+     "to": "2026-11-19",
+     "days": 2972
+    },
+    {
+     "source": "energy-charts",
+     "from": "2026-11-20",
+     "to": "2026-11-21",
+     "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-22",
+     "to": "2026-11-23",
+     "days": 2
+    },
+    {
+     "source": "energy-charts",
+     "from": "2026-11-24",
+     "to": "2026-11-24",
+     "days": 1
+    }
+   ]
+  }
+ },
+ "files": {
+  "zone_year": "data/price-history/<ZONE>/<YEAR>.json",
+  "daily": "data/price-history/daily/<YEAR>.json",
+  "monthly": "data/price-history/monthly.json"
+ }
+}
