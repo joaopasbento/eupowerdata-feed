@@ -346,8 +346,16 @@ def check_open_prices(doc, path, broken):
         if zone not in OPEN_LICENCES or entry.get('license') != OPEN_LICENCES[zone] or entry.get('currency') != 'EUR':
             broken.append(f'{path} {zone}: not a zone of the alerts, or its licence is not {OPEN_LICENCES.get(zone)}')
             continue
-        if zone in OPEN_SMARD and entry.get('attribution') != 'Bundesnetzagentur | SMARD.de':
-            broken.append(f'{path} {zone}: no attribution to SMARD')
+        if zone in OPEN_SMARD:
+            sources = {name: (day or {}).get('source') for name, day in (entry.get('days') or {}).items()}
+            through = 'energy-charts' in sources.values()
+            if entry.get('attribution') != 'Bundesnetzagentur | SMARD.de' + (', energy-charts.info' if through else ''):
+                broken.append(f'{path} {zone}: not attributed to SMARD (and to energy-charts.info for a day from there)')
+            for name, day in (entry.get('days') or {}).items():
+                if sources[name] not in ('smard', 'energy-charts') or day.get('license') != 'cc-by-4.0' \
+                        or (sources[name] == 'energy-charts'
+                            and not str(day.get('license_info', '')).lstrip().startswith('CC BY 4.0')):
+                    broken.append(f'{path} {zone} {name}: no source, or not under CC BY 4.0 as its source said')
         if zone == 'GB' and (entry.get('currency_original') != 'GBP' or not number(entry.get('fx_rate'))):
             broken.append(f'{path} GB: no pounds or no exchange rate beside the euros')
         days = entry.get('days') or {}
@@ -366,7 +374,10 @@ def check_open_prices(doc, path, broken):
     missing = [zone for zone in OPEN_LICENCES if zone not in zones]
     kept = [zone for zone, entry in zones.items() if entry.get('carried_over')]
     tomorrow = [zone for zone, entry in zones.items() if len(entry.get('days') or {}) == 2]
+    through = [f'{zone} {name}' for zone, entry in zones.items() for name, day in (entry.get('days') or {}).items()
+               if (day or {}).get('source') == 'energy-charts']
     return (f"{len(zones)} zones; tomorrow for {len(tomorrow)} ({', '.join(tomorrow) or 'none'})"
+            + (f"; from Energy-Charts (SMARD did not have them): {', '.join(through)}" if through else '')
             + (f"; kept because the source did not answer: {', '.join(kept)}" if kept else '')
             + (f"; not in the file (no answer for 24 hours): {', '.join(missing)}" if missing else ''))
 

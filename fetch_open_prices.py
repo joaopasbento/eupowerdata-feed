@@ -29,6 +29,26 @@ wholesale prices (its HEDWIG determination) and means to set a new concept.
 SMARD names ENTSO-E as the source of these prices; on 23 Nov 2026 they matched
 ENTSO-E's, interval by interval, in the 14 zones the feed also has.
 
+Energy-Charts, the stand-in for SMARD (since 24 Nov 2026). SMARD sometimes
+stops publishing for a while: on 24 Nov 2026 it had not put out that day's
+prices of the 14 coupled zones (as from 2 to 9 Mar 2026, and when it moved to
+quarter-hours in Oct 2025). Energy-Charts (Fraunhofer ISE) republishes SMARD's
+prices unchanged, and says the licence of each answer in `license_info`: CC BY
+4.0 from Bundesnetzagentur | SMARD.de for the 15 zones of SMARD, private and
+internal use only for the others. So, for a SMARD zone that is asked for and
+lacks today (or, from 12:30 Brussels time, tomorrow) in SMARD, the missing days
+are asked of Energy-Charts' /price, in one request for the zone, and taken only
+when the answer says CC BY 4.0 and has the whole day; under another licence, or
+incomplete, the zone stays without that day and the log says so. /price allows
+2 requests a minute from one address, in a burst of 2 (api.energy-charts.info,
+checked on 24 Nov 2026), so a run asks it for 2 zones at most (EC_PER_RUN),
+those without today first, and stops at its first 429. A day from Energy-Charts
+is final: when SMARD still lacks it an hour later, it is kept as it was, with
+no new request. Each day of a SMARD zone says where it came from (`source`,
+smard or energy-charts) and its licence, a day of Energy-Charts with the words
+it was given under (`license_info`); the zone's attribution adds
+"energy-charts.info" while one of its days came from there.
+
 GB. The values fetch_gb.py reads from Elexon: the Market Index Data (MID), a
 half-hourly, volume-weighted index of the short-term market (N2EX and APX),
 not a day-ahead auction. Each half-hour is the volume-weighted mean of the two
@@ -44,7 +64,7 @@ writes earlier in the same run: no request is made for them here.
 
     {updated, data_time, timezone, unit,
      zones: {"DE-LU": {source, license[, attribution], currency, days:
-                {"2026-11-23": {start, step_minutes, prices: [...]},
+                {"2026-11-23": {start, step_minutes, prices: [...], source, license[, license_info]},
                  "2026-11-24": {...}},
               data_time, fetched_at[, carried_over]},
              ...,
@@ -62,7 +82,8 @@ with a price, `fetched_at` when the zone's prices were obtained.
 
 When it asks. A SMARD zone is asked for once an hour, and in every run from
 12:30 Brussels time (the auction's results come out at about 12:45) until it
-has tomorrow; GB in every run (one request); PT and ES are read in every run. A
+has tomorrow, of SMARD and, for the days SMARD lacks, of Energy-Charts (2 zones
+a run at most); GB in every run (one request); PT and ES are read in every run. A
 zone that was asked for and did not answer keeps what was published, with
 the time it was obtained and the mark carried_over, for 24 hours from then
 (MAX_AGE); the other zones are published all the same. The days that are no
@@ -73,6 +94,7 @@ are published, and never fails the run.
 """
 
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -104,6 +126,12 @@ SMARD_ZONES = {
     'NL': (256, 'DE'), 'NO2': (4997, 'DE'), 'PL': (257, 'DE'), 'SE4': (258, 'DE'), 'SI': (260, 'DE'),
 }
 RESOLUTIONS = (('quarterhour', 15), ('hour', 60))
+
+# Energy-Charts, for the days SMARD lacks. Its zones have the names of SMARD_ZONES.
+EC_URL = 'https://api.energy-charts.info/price'
+EC_ATTRIBUTION = 'energy-charts.info'
+EC_PER_RUN = 2                       # /price: 2 requests a minute from one address, burst 2
+EC_LICENCE = re.compile(r'\s*CC BY 4\.0\b')     # how license_info starts when the prices may be reused
 
 GB_SOURCE = 'Elexon, Market Index Data (MID, N2EX and APX): a half-hourly index of the short-term market'
 OMIE_SOURCE = 'OMIE, day-ahead market'
@@ -191,27 +219,105 @@ def smard_series(filter_id, region, resolution, first, end, get, budget, pause=P
     return values, problems
 
 
-def smard_zone(zone, days, get, budget, pause=PAUSE_S):
-    """A SMARD zone's entry for `days` (today and tomorrow), at the finest resolution that has today whole. A
-    missing price is null in SMARD's files (a whole day can be), so a day with one is not taken."""
+def smard_days(zone, days, get, budget, pause=PAUSE_S):
+    """(blocks, answered, reasons) of a SMARD zone for `days` (today and tomorrow): {day: block} of the days it
+    has whole, at the finest resolution that has today whole (or, with no today, that has some day); whether
+    SMARD answered at all (an index); and why a day is missing. A missing price is null in SMARD's files (a whole
+    day can be), so a day with one is not taken."""
     filter_id, region = SMARD_ZONES[zone]
     first, end = carry_over.day_bounds(days[0])[0], carry_over.day_bounds(days[-1])[1]
-    reasons = []
+    reasons, answered, best = [], False, {}
     for resolution, minutes in RESOLUTIONS:
         try:
             values, problems = smard_series(filter_id, region, resolution, first, end, get, budget, pause)
         except SourceDown as e:
             reasons.append(f'{resolution}: {e}')
             continue
+        answered = True
         step = timedelta(minutes=minutes)
-        blocks = {day.isoformat(): block for day in days if (block := day_block(day, step, values))}
+        blocks = {day.isoformat(): {**block, 'source': 'smard', 'license': CC_BY}
+                  for day in days if (block := day_block(day, step, values))}
         if days[0].isoformat() in blocks:
-            return {'source': SMARD_SOURCE, 'license': CC_BY, 'attribution': ATTRIBUTION, 'currency': 'EUR',
-                    'filter': filter_id, 'region': region, 'days': blocks}
+            return blocks, True, reasons
+        best = best or blocks
         reasons.append(f'{resolution}: no whole day of {days[0]}' + (f" ({'; '.join(problems)})" if problems else ''))
         if budget.left() <= 0:
             break
-    raise SourceDown('; '.join(reasons) or 'nothing')
+    return best, answered, reasons
+
+
+def smard_zone(zone, days, get, budget, pause=PAUSE_S):
+    """A SMARD zone's entry for `days`, from SMARD alone; raises SourceDown when it has no whole today."""
+    blocks, _answered, reasons = smard_days(zone, days, get, budget, pause)
+    if days[0].isoformat() not in blocks:
+        raise SourceDown('; '.join(reasons) or 'nothing')
+    return smard_entry(zone, blocks)
+
+
+def smard_entry(zone, blocks):
+    """The entry of a SMARD zone with these day blocks, its attribution as their sources ask."""
+    filter_id, region = SMARD_ZONES[zone]
+    entry = {'source': SMARD_SOURCE, 'license': CC_BY, 'attribution': ATTRIBUTION, 'currency': 'EUR',
+             'filter': filter_id, 'region': region, 'days': blocks}
+    return attributed(entry)
+
+
+def attributed(entry):
+    """A SMARD zone's entry with the attribution of the days it has: SMARD's, and Energy-Charts' while one of its
+    days came from there. A day of a file written before the days said their source is SMARD's."""
+    days = {name: {**block, 'source': block.get('source', 'smard'), 'license': block.get('license', CC_BY)}
+            for name, block in (entry.get('days') or {}).items()}
+    through = any(block.get('source') == 'energy-charts' for block in days.values())
+    return {**entry, 'attribution': ATTRIBUTION + (f', {EC_ATTRIBUTION}' if through else ''), 'days': days}
+
+
+# --- Energy-Charts, for the days SMARD lacks ---
+
+class RateLimited(SourceDown):
+    """Energy-Charts answered 429: no more requests to it in this run."""
+
+
+class OtherLicence(SourceDown):
+    """Energy-Charts gave the prices under a licence that does not allow their reuse."""
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def ec_days(zone, wanted, get, budget):
+    """{day: block} of the days of `wanted` (one or two days in a row) that Energy-Charts has whole for a SMARD zone
+    under CC BY 4.0, from one request; {} when it has no price for them yet (404). Raises OtherLicence when the
+    answer is under another licence, RateLimited on 429, SourceDown when it does not answer."""
+    if budget.left() <= 0:
+        raise SourceDown('out of time')
+    url = f'{EC_URL}?bzn={zone}&start={wanted[0].isoformat()}&end={wanted[-1].isoformat()}'
+    response = get(url, timeout=min(20, max(1, budget.left())))
+    if response.status == 404:
+        return {}
+    if response.status == 429:
+        raise RateLimited(f"HTTP 429, retry after {response.headers.get('retry-after', '?')} s")
+    if not response.ok:
+        raise SourceDown(response.describe())
+    try:
+        doc = response.json()
+    except ValueError:
+        raise SourceDown('not JSON')
+    info = doc.get('license_info') if isinstance(doc, dict) else None
+    if not isinstance(info, str) or not EC_LICENCE.match(info):
+        raise OtherLicence(f'under another licence: "{str(info)[:90]}"')
+    if 'EUR' not in str(doc.get('unit')) or 'MWh' not in str(doc.get('unit')):
+        raise SourceDown(f"prices in {doc.get('unit')}, not EUR/MWh")
+    stamps = [s for s in doc.get('unix_seconds') or [] if isinstance(s, int)]
+    values = {datetime.fromtimestamp(s, timezone.utc): _round(p)
+              for s, p in zip(doc.get('unix_seconds') or [], doc.get('price') or [])
+              if isinstance(s, int) and _number(p)}
+    gaps = sorted({b - a for a, b in zip(sorted(stamps), sorted(stamps)[1:])})
+    if not values or not gaps or gaps[0] not in (900, 3600):
+        return {}
+    step = timedelta(seconds=gaps[0])
+    return {day.isoformat(): {**block, 'source': 'energy-charts', 'license': CC_BY, 'license_info': info}
+            for day in wanted if (block := day_block(day, step, values))}
 
 
 # --- GB: Elexon MID, as fetch_gb.py reads it ---
@@ -309,6 +415,8 @@ def _in_window(entry, days):
     if not kept:
         return None
     entry = {**entry, 'days': kept}
+    if 'filter' in entry:                             # a SMARD zone: its attribution as its days now ask
+        entry = attributed(entry)
     last = last_priced(kept)
     if last is not None:
         entry[DATA_TIME] = iso(last)
@@ -325,19 +433,70 @@ def main(now=None, get=http_get, budget=None, pause=PAUSE_S, rates=None):
     print(f'Open prices: delivery days {days[0]} and {days[1]}')
 
     obtained, failed = {}, set()
+    local = now.astimezone(carry_over.MARKET_TZ)
+    tomorrow_due = (local.hour, local.minute) >= TOMORROW_FROM
+    smard = {}                                        # zone -> [blocks, answered, days still missing]
     for zone in SMARD_ZONES:
         if not asked(zone, previous.get(zone), now, days):
             continue
         started = time.monotonic()
-        try:
-            obtained[zone] = smard_zone(zone, days, get, budget, pause)
-            print(f"  {zone}: SMARD, {', '.join(sorted(obtained[zone]['days']))} "
-                  f"by {obtained[zone]['days'][days[0].isoformat()]['step_minutes']} min "
+        blocks, answered, reasons = smard_days(zone, days, get, budget, pause)
+        if blocks:
+            print(f"  {zone}: SMARD, {', '.join(sorted(blocks))} by {next(iter(blocks.values()))['step_minutes']} min "
                   f"[{time.monotonic() - started:.1f}s]")
-        except SourceDown as e:
-            failed.add(zone)
-            print(f'  {zone}: SMARD did not give it ({e})')
+        else:
+            print(f"  {zone}: SMARD did not give it ({'; '.join(reasons) or 'nothing'})")
+        before = ((previous.get(zone) or {}).get('days')) or {}
+        missing = []
+        for day in days if tomorrow_due else days[:1]:
+            name = day.isoformat()
+            if name in blocks:
+                continue
+            if (before.get(name) or {}).get('source') == 'energy-charts':
+                blocks[name] = before[name]           # final: kept as it was, with no new request
+                print(f'  {zone}: {name} as Energy-Charts gave it before (SMARD does not have it yet)')
+            else:
+                missing.append(day)
+        smard[zone] = [blocks, answered, missing]
         time.sleep(pause)
+
+    # Energy-Charts, for the days SMARD lacks: the zones without today first, EC_PER_RUN at most.
+    waiting = sorted((zone for zone, (_b, _a, missing) in smard.items() if missing),
+                     key=lambda zone: (days[0] not in smard[zone][2], ORDER.index(zone)))
+    ec_asked, stopped = 0, None
+    for zone in waiting:
+        blocks, answered, missing = smard[zone]
+        names = ', '.join(day.isoformat() for day in missing)
+        if stopped or ec_asked >= EC_PER_RUN:
+            print(f'  {zone}: Energy-Charts not asked for {names} in this run '
+                  f'({stopped or f"{EC_PER_RUN} zones a run at most"})')
+            continue
+        ec_asked += 1
+        try:
+            got = ec_days(zone, missing, get, budget)
+        except RateLimited as e:
+            stopped = f'Energy-Charts asked to wait: {e}'
+            print(f'  {zone}: Energy-Charts did not give {names} ({e}); no more requests to it in this run')
+            continue
+        except SourceDown as e:
+            print(f'  {zone}: Energy-Charts did not give {names} ({e}); the zone stays without '
+                  f"{'them' if len(missing) > 1 else 'it'}")
+            continue
+        finally:
+            time.sleep(pause)
+        smard[zone][1] = True
+        blocks.update(got)
+        lacking = [day.isoformat() for day in missing if day.isoformat() not in got]
+        print(f"  {zone}: Energy-Charts (CC BY 4.0), {', '.join(sorted(got)) or 'nothing'}"
+              + (f'; no whole day of {", ".join(lacking)} there yet' if lacking else ''))
+
+    for zone, (blocks, answered, _missing) in smard.items():
+        # Obtained when SMARD or Energy-Charts answered and there is today; otherwise the zone keeps what it had.
+        if answered and days[0].isoformat() in blocks:
+            obtained[zone] = smard_entry(zone, {day.isoformat(): blocks[day.isoformat()]
+                                                for day in days if day.isoformat() in blocks})
+        else:
+            failed.add(zone)
     try:
         obtained['GB'] = gb_zone(days, now, get, budget, rates or fx_rates.load())
         print(f"  GB: Elexon MID, {sum(v is not None for v in obtained['GB']['days'][days[0].isoformat()]['prices'])} "

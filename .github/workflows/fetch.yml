@@ -185,7 +185,9 @@ jobs:
       # Prices of open sources only, for the paid alerts: SMARD (cc-by-4.0) for 15
       # zones, Elexon for GB and OMIE (data/omie-prices.json, written above) for
       # PT and ES. No request to ENTSO-E. Tomorrow's prices are asked for again in
-      # every run from 12:30 Brussels time until they are out.
+      # every run from 12:30 Brussels time until they are out. The days SMARD
+      # lacks are asked of Energy-Charts (2 zones a run at most, its limit) and
+      # taken only under CC BY 4.0.
       - name: Open-source day-ahead prices (SMARD, Elexon, OMIE)
         id: open_prices
         if: ${{ !cancelled() && steps.fresh.outputs.skip != 'true' }}

@@ -3,7 +3,11 @@ zones, Elexon's MID for GB and OMIE's file for PT and ES. On real answers of
 SMARD (tests/fixtures/smard, taken on 23 Nov 2026 at about 17:00 UTC, when
 only Switzerland had the prices of 24 Nov), a real answer of Elexon
 (tests/fixtures/elexon) and the feed's own OMIE file of that day
-(tests/fixtures/open_prices). No network.
+(tests/fixtures/open_prices). The stand-in for SMARD, Energy-Charts, on its real
+answers of 24 Nov 2026 at about 08:15 UTC, when SMARD still lacked that day in
+14 zones (tests/fixtures/energy_charts): Germany-Luxembourg under CC BY 4.0,
+Spain under its licence for private and internal use only, and Poland asked
+only up to 11:45, an incomplete day. No network.
 
 Run from the repository root:  python -m unittest discover -s tests -v
 
@@ -22,6 +26,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
+import carry_over
 import feed_common as fc
 import fetch_open_prices as op
 
@@ -29,6 +34,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SMARD = os.path.join(HERE, 'fixtures', 'smard')
 ELEXON = os.path.join(HERE, 'fixtures', 'elexon', 'market_index_2026-11-23.json')
 OMIE = os.path.join(HERE, 'fixtures', 'open_prices', 'omie-prices-2026-11-23.json')
+EC = os.path.join(HERE, 'fixtures', 'energy_charts')
+EC_OPEN = 'price_DE-LU_2026-11-24.json'
+EC_RESTRICTED = 'price_ES_2026-11-24_restricted.json'
+EC_INCOMPLETE = 'price_PL_2026-11-24_until-11h45.json'
 NOW = datetime(2026, 11, 23, 17, 0, tzinfo=timezone.utc)
 LATEST_WEEK = 1795388400000                       # Monday 23 Nov 2026, 00:00 Brussels time
 ZONE_OF_FILTER = {filter_id: zone for zone, (filter_id, _region) in op.SMARD_ZONES.items()}
@@ -44,11 +53,32 @@ def raw_day(name, first_ms, end_ms):
     return [value for at, value in raw(name)['series'] if first_ms <= at < end_ms]
 
 
-class Source:
-    """SMARD, Elexon and nothing else, from the saved answers. `down` makes some URLs answer an error."""
+def ec_raw(name):
+    with open(os.path.join(EC, name), encoding='utf-8') as f:
+        return json.load(f)
 
-    def __init__(self, down=(), missing=()):
+
+class Source:
+    """SMARD, Elexon and Energy-Charts, from the saved answers. `down` makes some URLs answer an error. Energy-Charts
+    gives, for any zone, the answer of Germany-Luxembourg (or the one named in `ec` for the zone), cut to the days
+    asked for, and 404 when nothing is left; `ec_status` makes it answer that status instead."""
+
+    def __init__(self, down=(), missing=(), ec=None, ec_status=None):
         self.down, self.missing, self.asked = down, missing, []
+        self.ec, self.ec_status = ec or {}, ec_status
+
+    def energy_charts(self, url):
+        if self.ec_status:
+            return fc.Response(self.ec_status, {'retry-after': '30'}, b'{"detail":"Too Many Requests"}')
+        found = re.fullmatch(r'https://api\.energy-charts\.info/price\?bzn=([\w-]+)&start=([\d-]+)&end=([\d-]+)', url)
+        doc = ec_raw(self.ec.get(found.group(1), EC_OPEN))
+        first = carry_over.day_bounds(datetime.fromisoformat(found.group(2)).date())[0]
+        end = carry_over.day_bounds(datetime.fromisoformat(found.group(3)).date())[1]
+        kept = [(s, p) for s, p in zip(doc['unix_seconds'], doc['price']) if first.timestamp() <= s < end.timestamp()]
+        if not kept:
+            return fc.Response(404, {}, b'{"detail":"No data"}')
+        doc = {**doc, 'unix_seconds': [s for s, _ in kept], 'price': [p for _, p in kept]}
+        return fc.Response(200, {}, json.dumps(doc).encode())
 
     def __call__(self, url, timeout=30, **_kwargs):
         self.asked.append(url)
@@ -57,6 +87,8 @@ class Source:
         if url.startswith('https://data.elexon.co.uk/'):
             with open(ELEXON, 'rb') as f:
                 return fc.Response(200, {}, f.read())
+        if url.startswith('https://api.energy-charts.info/'):
+            return self.energy_charts(url)
         found = re.fullmatch(r'https://www\.smard\.de/app/chart_data/(\d+)/DE/(.+)\.json', url)
         if not found or any(part in url for part in self.missing):
             return fc.Response(404, {}, b'not found')
@@ -106,8 +138,10 @@ class ARun(InADirectory):
         self.assertEqual(len(doc['zones']), 18)
         for zone in op.SMARD_ZONES:
             entry = doc['zones'][zone]
+            through = any(day['source'] == 'energy-charts' for day in entry['days'].values())
             self.assertEqual((entry['license'], entry['attribution'], entry['currency']),
-                             ('cc-by-4.0', 'Bundesnetzagentur | SMARD.de', 'EUR'))
+                             ('cc-by-4.0', 'Bundesnetzagentur | SMARD.de' + (', energy-charts.info' if through else ''),
+                              'EUR'))
             self.assertEqual(entry['fetched_at'], '2026-11-23T17:00:00+00:00')
             self.assertNotIn('carried_over', entry)
         self.assertEqual(doc['zones']['GB']['license'], 'elexon')
@@ -123,13 +157,24 @@ class ARun(InADirectory):
                              ('2026-11-22T23:00:00+00:00', 15, 96), zone)
             self.assertEqual(day['prices'], raw_day(f'{zone}_{filter_id}_{region}_quarterhour_{LATEST_WEEK}.json',
                                                     start, start + 96 * 900_000), zone)
+            self.assertEqual((day['source'], day['license']), ('smard', 'cc-by-4.0'), zone)
+            self.assertNotIn('license_info', day)
 
-    def test_tomorrow_is_there_only_where_it_is_out(self):
-        self.run_at(NOW)
+    def test_tomorrow_is_there_where_smard_has_it_and_for_two_zones_from_energy_charts(self):
+        _code, source, log = self.run_at(NOW)
         zones = self.doc()['zones']
         with_tomorrow = sorted(zone for zone, entry in zones.items() if '2026-11-24' in entry['days'])
-        self.assertEqual(with_tomorrow, ['CH', 'ES', 'PT'])        # the coupled zones of SMARD: not yet at 17:00 UTC
+        # The coupled zones of SMARD: not yet at 17:00 UTC; Energy-Charts had them, and is asked for two a run.
+        self.assertEqual(with_tomorrow, ['AT', 'CH', 'DE-LU', 'ES', 'PT'])
+        self.assertEqual(zones['CH']['days']['2026-11-24']['source'], 'smard')
         self.assertEqual(len(zones['CH']['days']['2026-11-24']['prices']), 96)
+        for zone in ('DE-LU', 'AT'):
+            self.assertEqual(zones[zone]['days']['2026-11-24']['source'], 'energy-charts')
+            self.assertEqual(zones[zone]['days']['2026-11-23']['source'], 'smard')
+        self.assertEqual([url for url in source.asked if 'energy-charts' in url],
+                         ['https://api.energy-charts.info/price?bzn=DE-LU&start=2026-11-24&end=2026-11-24',
+                          'https://api.energy-charts.info/price?bzn=AT&start=2026-11-24&end=2026-11-24'])
+        self.assertIn('BE: Energy-Charts not asked for 2026-11-24 in this run (2 zones a run at most)', log)
 
     def test_gb_has_the_half_hours_so_far_in_euros_with_the_pounds_beside(self):
         self.run_at(NOW)
@@ -234,7 +279,7 @@ class AZoneThatFails(InADirectory):
 
     def test_with_nothing_at_all_the_file_is_left_as_it_was(self):
         os.remove(op.OMIE_PATH)
-        code, _source, log = self.run_at(NOW, Source(down=('smard.de', 'elexon')))
+        code, _source, log = self.run_at(NOW, Source(down=('smard.de', 'elexon', 'energy-charts')))
         self.assertEqual(code, 1)
         self.assertFalse(os.path.exists(op.OUT_PATH))
         self.assertIn('Nothing to publish', log)
@@ -253,20 +298,118 @@ class TomorrowNotYetOut(InADirectory):
         self.assertEqual(self.smard_asked(source), [])
         self.assertTrue(any('elexon' in url for url in source.asked))       # GB in every run
 
+    def test_before_12_30_tomorrow_is_not_asked_of_energy_charts(self):
+        _code, source, _log = self.run_at(datetime(2026, 11, 23, 9, 0, tzinfo=timezone.utc))
+        self.assertFalse([url for url in source.asked if 'energy-charts' in url])
+
     def test_from_12_30_a_zone_without_tomorrow_is_asked_in_every_run_and_one_with_it_is_not(self):
-        self.run_at(NOW)
-        _code, source, _log = self.run_at(NOW + timedelta(minutes=15))
+        nothing_at_energy_charts = Source(ec_status=404)
+        self.run_at(NOW, nothing_at_energy_charts)
+        _code, source, _log = self.run_at(NOW + timedelta(minutes=15), Source(ec_status=404))
         self.assertEqual(self.smard_asked(source), sorted(set(op.SMARD_ZONES) - {'CH'}))
 
     def test_the_next_day_the_day_before_leaves_and_tomorrow_becomes_today(self):
-        self.run_at(NOW)
+        self.run_at(NOW, Source(ec_status=404))                          # Energy-Charts with nothing either
         _code, _source, _log = self.run_at(datetime(2026, 11, 24, 0, 30, tzinfo=timezone.utc),
-                                           Source(down=('smard.de', 'elexon')))
+                                           Source(down=('smard.de', 'elexon', 'energy-charts')))
         zones = self.doc()['zones']
         self.assertEqual(list(zones['CH']['days']), ['2026-11-24'])
         self.assertTrue(zones['CH']['carried_over'])
         self.assertNotIn('DE-LU', zones)                                 # had only 23 Nov: nothing left to show
         self.assertEqual(list(zones['PT']['days']), ['2026-11-24'])      # OMIE's file still has it, as next_day
+
+
+class EnergyChartsStandsInForSMARD(InADirectory):
+    """24 Nov 2026, 09:00 in Brussels: SMARD's latest week stops at 23 Nov in the coupled zones (only Switzerland has
+    24 Nov), as it did that day."""
+
+    MORNING = datetime(2026, 11, 24, 8, 0, tzinfo=timezone.utc)
+
+    def ec_asked(self, source):
+        return [re.search(r'bzn=([\w-]+)', url).group(1) for url in source.asked if 'energy-charts' in url]
+
+    def test_the_first_two_zones_without_today_get_it_from_energy_charts_as_it_gives_it(self):
+        _code, source, log = self.run_at(self.MORNING)
+        zones = self.doc()['zones']
+        raw_doc = ec_raw(EC_OPEN)
+        self.assertEqual(self.ec_asked(source), ['DE-LU', 'AT'])
+        for zone in ('DE-LU', 'AT'):
+            day = zones[zone]['days']['2026-11-24']
+            self.assertEqual((day['start'], day['step_minutes']), ('2026-11-23T23:00:00+00:00', 15))
+            self.assertEqual(day['prices'], raw_doc['price'])
+            self.assertEqual((day['source'], day['license'], day['license_info']),
+                             ('energy-charts', 'cc-by-4.0', raw_doc['license_info']))
+            self.assertTrue(day['license_info'].startswith('CC BY 4.0'))
+            self.assertEqual(zones[zone]['attribution'], 'Bundesnetzagentur | SMARD.de, energy-charts.info')
+            self.assertEqual((zones[zone]['license'], zones[zone]['fetched_at']), ('cc-by-4.0', '2026-11-24T08:00:00+00:00'))
+        self.assertEqual(zones['CH']['attribution'], 'Bundesnetzagentur | SMARD.de')     # from SMARD itself
+        self.assertEqual(zones['CH']['days']['2026-11-24']['source'], 'smard')
+        self.assertNotIn('BE', zones)                                    # not asked yet: 2 zones a run
+        self.assertIn('BE: Energy-Charts not asked for 2026-11-24 in this run (2 zones a run at most)', log)
+        self.assertIn('DE-LU: Energy-Charts (CC BY 4.0), 2026-11-24', log)
+
+    def test_the_next_run_asks_for_the_next_two_and_not_again_for_those_it_has(self):
+        self.run_at(self.MORNING)
+        _code, source, _log = self.run_at(self.MORNING + timedelta(minutes=15))
+        self.assertEqual(self.ec_asked(source), ['BE', 'CZ'])
+        self.assertFalse([url for url in source.asked if '/4169/' in url or '/4170/' in url])   # DE-LU, AT: done
+        self.assertEqual(list(self.doc()['zones']), ['DE-LU', 'AT', 'BE', 'CH', 'CZ', 'PT', 'ES'])   # GB: not of 24 Nov
+
+    def test_an_hour_later_a_day_from_energy_charts_is_kept_with_no_new_request(self):
+        self.run_at(self.MORNING)
+        first = self.doc()['zones']['DE-LU']['days']['2026-11-24']
+        _code, source, log = self.run_at(self.MORNING + timedelta(hours=1))
+        entry = self.doc()['zones']['DE-LU']
+        self.assertTrue([url for url in source.asked if '/4169/' in url])                # SMARD asked again
+        self.assertNotIn('DE-LU', self.ec_asked(source))                                # Energy-Charts not
+        self.assertEqual(entry['days']['2026-11-24'], first)
+        self.assertNotIn('carried_over', entry)
+        self.assertIn('DE-LU: 2026-11-24 as Energy-Charts gave it before (SMARD does not have it yet)', log)
+
+    def test_under_another_licence_the_day_is_not_taken_and_the_log_says_so(self):
+        code, _source, log = self.run_at(self.MORNING, Source(ec={'DE-LU': EC_RESTRICTED}))
+        zones = self.doc()['zones']
+        self.assertEqual(code, 0)
+        self.assertNotIn('DE-LU', zones)
+        self.assertEqual(zones['AT']['days']['2026-11-24']['source'], 'energy-charts')
+        self.assertIn('DE-LU: Energy-Charts did not give 2026-11-24 (under another licence: '
+                      '"The data provided herein is for private and internal use only.', log)
+
+    def test_another_licence_keeps_what_the_zone_had(self):
+        self.run_at(datetime(2026, 11, 23, 17, 0, tzinfo=timezone.utc), Source(ec={'DE-LU': EC_RESTRICTED}))
+        entry = self.doc()['zones']['DE-LU']
+        self.assertEqual(list(entry['days']), ['2026-11-23'])            # SMARD's today, and no tomorrow
+        self.assertEqual(entry['attribution'], 'Bundesnetzagentur | SMARD.de')
+
+    def test_an_incomplete_day_is_not_taken(self):
+        self.assertEqual(len(ec_raw(EC_INCOMPLETE)['price']), 48)        # up to 11:45 of 24 Nov
+        _code, _source, log = self.run_at(self.MORNING, Source(ec={'DE-LU': EC_INCOMPLETE}))
+        self.assertNotIn('DE-LU', self.doc()['zones'])
+        self.assertIn('DE-LU: Energy-Charts (CC BY 4.0), nothing; no whole day of 2026-11-24 there yet', log)
+
+    def test_when_it_asks_to_wait_no_more_requests_are_made_in_the_run(self):
+        _code, source, log = self.run_at(self.MORNING, Source(ec_status=429))
+        self.assertEqual(self.ec_asked(source), ['DE-LU'])
+        self.assertIn('DE-LU: Energy-Charts did not give 2026-11-24 (HTTP 429, retry after 30 s); '
+                      'no more requests to it in this run', log)
+        self.assertIn('AT: Energy-Charts not asked for 2026-11-24 in this run (Energy-Charts asked to wait', log)
+
+    def test_with_smard_whole_energy_charts_is_not_asked(self):
+        self.run_at(NOW)
+        _code, source, _log = self.run_at(datetime(2026, 11, 23, 10, 0, tzinfo=timezone.utc))
+        self.assertFalse([url for url in source.asked if 'energy-charts' in url])
+
+    def test_a_file_written_before_the_days_said_their_source_is_read_as_smard_s(self):
+        self.run_at(NOW)
+        doc = self.doc()
+        for entry in doc['zones'].values():
+            for day in entry['days'].values():
+                day.pop('source', None), day.pop('license', None), day.pop('license_info', None)
+        with open(op.OUT_PATH, 'w', encoding='utf-8') as f:
+            json.dump(doc, f)
+        self.run_at(NOW + timedelta(minutes=15), Source(down=('smard.de', 'energy-charts')))
+        day = self.doc()['zones']['FR']['days']['2026-11-23']
+        self.assertEqual((day['source'], day['license']), ('smard', 'cc-by-4.0'))
 
 
 if __name__ == '__main__':
