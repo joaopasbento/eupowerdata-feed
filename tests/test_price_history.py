@@ -11,7 +11,8 @@ real answers of the sources, without network:
     2026 under CC BY 4.0, and Spain under a licence for private use only;
   - OMIE (tests/fixtures/price_history): the zip of 2018 (a day of which has a
     second version) and the files of 30 Sep 2025 (hours), 1 Oct 2025 (the first
-    by the quarter-hour) and 26 Oct 2025 (the autumn change, 100 quarter-hours).
+    by the quarter-hour) and 26 Oct 2025 (the autumn change, 100 quarter-hours),
+    and the file of 28 May 2023, which OMIE has only as version 2.
 
 The expected numbers are read from the raw files apart from the code under
 test.
@@ -191,6 +192,12 @@ class OMIE(InAFolder):
         self.assertEqual((found['2025-10-26']['start'], len(found['2025-10-26']['prices'])),
                          ('2025-10-25T22:00:00+00:00', 100))
 
+    def test_a_day_with_no_first_version_is_read_from_the_one_there_is(self):
+        found = self.zone('PT', [date(2023, 5, 28)])
+        with open(os.path.join(FIX, 'omie_marginalpdbc_20230528.2'), encoding='latin-1') as f:
+            rows = omie_rows(f.read())
+        self.assertEqual(found['2023-05-28']['prices'], [round(float(r[4]), 2) for r in rows])
+
     def test_portugal_and_spain_read_each_file_once(self):
         sources = Sources()
         self.zone('PT', [date(2025, 10, 1)], sources)
@@ -269,7 +276,8 @@ class TheRuns(InAFolder):
         self.assertIn('2026-11-23', self.doc('DE-LU', '2026.json')['days'])
         self.assertEqual(len(ph.missing_days('ES', window, self.folder)), len(window))   # OMIE: no file then
         asked_for_pt = [u for u in sources.asked if 'marginalpdbc' in u]
-        self.assertEqual(len(asked_for_pt), len(window))         # one 404 per day, asked for Spain only
+        # Asked for Spain only: for each day, its versions (none there: a 404 for each).
+        self.assertEqual(len(asked_for_pt), len(window) * ph.fetch_omie.MAX_VERSION)
 
     def test_energy_charts_is_asked_ec_per_run_times_at_most_in_a_daily_update(self):
         sources = Sources()

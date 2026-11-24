@@ -229,13 +229,18 @@ def omie_year_zip(year, get):
 
 
 def omie_day(day, get, pause=None):
-    """{(day, zone): block} of one day's file of OMIE (the last version there is), {} when there is none."""
-    found = {}
+    """{(day, zone): block} of one day's file of OMIE (the last version there is), {} when there is none. A day may
+    have no version 1 (28 May 2023 has only .2, 30 Oct 2025 only .3): the versions not there are passed over until
+    one is found, and the first one missing after it ends the search."""
+    found, seen = {}, False
     for version in range(1, fetch_omie.MAX_VERSION + 1):
         response = get(fetch_omie.URL.format(ymd=day.strftime('%Y%m%d'), version=version), timeout=30)
         time.sleep(OMIE_PAUSE_S if pause is None else pause)
         if response.status == 404:
-            break
+            if seen:
+                break
+            continue
+        seen = True
         if not response.ok:
             raise op.SourceDown(f'{day} version {version}: {response.describe()}')
         try:
