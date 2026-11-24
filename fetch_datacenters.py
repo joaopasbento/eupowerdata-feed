@@ -14,6 +14,7 @@ Or import and call:
 
 import os
 import json
+import sys
 import time
 import urllib.request
 import urllib.parse
@@ -263,8 +264,16 @@ _bounds_by_area = sorted(
 )
 
 
-def fetch_overpass():
-    """Fetch worldwide data centres from OpenStreetMap via Overpass API."""
+# When the three quick attempts fail ("Network is unreachable" in 3 of 25 runs
+# up to 24 Nov 2026), the run tries again later: after these waits, in seconds.
+LATER_WAITS = (300, 600, 900)
+MAX_AGE_DAYS = 7                 # a run that obtains nothing fails only when the file kept is older than this
+
+
+def fetch_overpass(urlopen=urllib.request.urlopen, sleep=time.sleep, later_waits=LATER_WAITS):
+    """Fetch worldwide data centres from OpenStreetMap via Overpass API: three
+    attempts 10 seconds apart and, if they all fail, one more after each wait of
+    `later_waits`. Returns [] when every attempt failed."""
 
     # Worldwide bounding box: south, west, north, east
     # Phase 2: full world coverage. Country resolution uses
@@ -299,24 +308,28 @@ out center tags;"""
         'Accept': 'application/json',
     }
 
-    for attempt in range(3):
+    waits = [10, 10] + [wait for wait in later_waits]
+    raw = None
+    for attempt in range(len(waits) + 1):
         try:
             req = urllib.request.Request(url, headers=headers)
             try:
-                with urllib.request.urlopen(req, timeout=90) as r:
+                with urlopen(req, timeout=90) as r:
                     raw = r.read().decode('utf-8')
                     break
             except ssl.SSLError:
-                with urllib.request.urlopen(req, timeout=90, context=ctx) as r:
+                with urlopen(req, timeout=90, context=ctx) as r:
                     raw = r.read().decode('utf-8')
                     break
         except Exception as e:
             print(f'  Attempt {attempt + 1} failed: {e}')
-            if attempt < 2:
-                time.sleep(10)
-            else:
-                print('  All Overpass attempts failed.')
-                return []
+            if attempt < len(waits):
+                if attempt >= 2:
+                    print(f'  Trying again in {waits[attempt] // 60} minutes')
+                sleep(waits[attempt])
+    if raw is None:
+        print('  All Overpass attempts failed.')
+        return []
 
     data = json.loads(raw)
     elements = data.get('elements', [])
@@ -454,11 +467,34 @@ def parse_elements(elements):
     return datacenters
 
 
-def fetch_datacenters():
+def kept_age_days(path='data/datacenters.json', now=None):
+    """How many days old the data of the file kept are (from its `updated`), or None when it cannot be told."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            updated = datetime.fromisoformat(json.load(f)['updated'].replace('Z', '+00:00'))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return ((now or datetime.now(timezone.utc)) - updated).total_seconds() / 86400
+
+
+def exit_code(fetched, path='data/datacenters.json', now=None):
+    """0 when the run wrote the file, or kept one no older than MAX_AGE_DAYS (with a warning); 1 otherwise."""
+    if fetched:
+        return 0
+    age = kept_age_days(path, now)
+    if age is not None and age <= MAX_AGE_DAYS:
+        print(f'::warning::Overpass did not answer; data/datacenters.json kept, its data {age:.1f} days old')
+        return 0
+    print(f'::error::Overpass did not answer and data/datacenters.json is '
+          + (f'{age:.1f} days old (more than {MAX_AGE_DAYS})' if age is not None else 'missing or unreadable'))
+    return 1
+
+
+def fetch_datacenters(fetch=fetch_overpass):
     """Main entry point: fetch OSM data, combine with Ember averages, save JSON."""
     os.makedirs('data', exist_ok=True)
 
-    elements = fetch_overpass()
+    elements = fetch()
 
     if not elements:
         # Try to keep existing data if fetch failed
@@ -539,6 +575,4 @@ def fetch_datacenters():
 
 
 if __name__ == '__main__':
-    success = fetch_datacenters()
-    if not success:
-        exit(1)
+    sys.exit(exit_code(fetch_datacenters()))

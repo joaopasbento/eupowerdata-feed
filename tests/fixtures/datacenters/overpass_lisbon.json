@@ -1,0 +1,64 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-11-24T17:31:28Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "way",
+  "id": 146664358,
+  "center": {
+    "lat": 38.7879102,
+    "lon": -9.1233283
+  },
+  "tags": {
+    "addr:city": "Prior Velho",
+    "addr:housenumber": "14",
+    "addr:postcode": "2685-378",
+    "addr:street": "Avenida Severiano Falcão",
+    "building": "data_center",
+    "building:levels": "3",
+    "name": "Equinix LS1",
+    "operator": "Equinix",
+    "operator:wikidata": "Q851641",
+    "owner": "Equinix",
+    "owner:wikidata": "Q851641",
+    "ref": "LS1",
+    "telecom": "data_center",
+    "website": "https://www.equinix.com/data-centers/europe-colocation/portugal-colocation/lisbon-data-centers/ls1"
+  }
+},
+{
+  "type": "way",
+  "id": 193317921,
+  "center": {
+    "lat": 38.7251192,
+    "lon": -9.2305421
+  },
+  "tags": {
+    "building": "data_center",
+    "name": "NOS Imopolis II",
+    "operator": "NOS",
+    "telecom": "data_center"
+  }
+},
+{
+  "type": "way",
+  "id": 193317940,
+  "center": {
+    "lat": 38.7260219,
+    "lon": -9.2306279
+  },
+  "tags": {
+    "building": "data_center",
+    "name": "NOS Imopolis I",
+    "operator": "NOS",
+    "telecom": "data_center"
+  }
+}
+
+  ]
+}

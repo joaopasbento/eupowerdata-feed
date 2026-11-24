@@ -12,6 +12,10 @@ permissions:
 jobs:
   fetch-datacenters:
     runs-on: ubuntu-latest
+    # When Overpass does not answer, fetch_datacenters.py tries again after 5,
+    # 10 and 15 minutes; it fails the run only when the file kept is more than
+    # 7 days old (a warning otherwise).
+    timeout-minutes: 50
 
     steps:
       - name: Checkout
