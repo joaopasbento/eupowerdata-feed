@@ -1,0 +1,56 @@
+name: Records (daily)
+# data/records.json, the renewable and price records of each zone and the
+# monthly ones of each country (see fetch_records.py): once a day, when the day
+# before is complete at ENTSO-E, the generation of the last 4 days (about 35
+# requests), the prices from the feed's archives (no request) and Ember's
+# monthly data when Ember has changed them. The generation since 2021 comes
+# from fill-records.yml, started by hand.
+on:
+  schedule:
+    - cron: '40 9 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: records
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      # The branch as it is when the job starts, not the commit the run was asked for.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Bring the records up to date
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          RECORDS_BUDGET_SECONDS: '900'
+        run: python fetch_records.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/records.json data/records/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update the records $(date -u '+%Y-%m-%d %H:%M UTC')"
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "Push attempt $attempt failed - retrying"
+            sleep 5
+          done
+          echo "::error::Could not push the records after 3 attempts"
+          exit 1

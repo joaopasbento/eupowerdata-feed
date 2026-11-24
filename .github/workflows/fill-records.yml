@@ -1,0 +1,59 @@
+name: Fill the records
+# Started by hand. The one-off fill of the records (see fetch_records.py): the
+# prices of every day of the feed's archive and Ember's monthly data, then the
+# generation of each zone since 1 Jan 2021, one request to ENTSO-E per zone (or
+# each of its zones: Norway, Sweden, Denmark) and year, a zone at a time, each
+# committed and pushed before the next. Ends in error if it published nothing
+# or a push failed. With `sample`, it only saves real answers of ENTSO-E for
+# the tests, as an artifact of the run.
+on:
+  workflow_dispatch:
+    inputs:
+      zones:
+        description: Zones to fill, separated by spaces. Empty for the prices and every zone
+        required: false
+        default: ''
+      sample:
+        description: Only save real answers of ENTSO-E for the tests
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: records
+  cancel-in-progress: false
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 10
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Fill the records
+        if: ${{ !inputs.sample }}
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          ZONES: ${{ inputs.zones }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python fetch_records.py --fill $ZONES
+      - name: Save real answers for the tests
+        if: ${{ inputs.sample }}
+        env:
+          ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+        run: python fetch_records.py --sample samples
+      - name: Keep the answers
+        if: ${{ inputs.sample }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: entsoe-samples
+          path: samples/
