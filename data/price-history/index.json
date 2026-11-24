@@ -384,6 +384,53 @@
      "days": 1
     }
    ]
+  },
+  "NL": {
+   "license": "cc-by-4.0",
+   "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "first": "2015-01-05",
+   "last": "2026-11-24",
+   "years": [
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ],
+   "missing_days": 1,
+   "sources": [
+    {
+     "source": "smard",
+     "from": "2015-01-05",
+     "to": "2026-11-19",
+     "days": 4337
+    },
+    {
+     "source": "energy-charts",
+     "from": "2026-11-20",
+     "to": "2026-11-20",
+     "days": 1
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-22",
+     "to": "2026-11-23",
+     "days": 2
+    },
+    {
+     "source": "energy-charts",
+     "from": "2026-11-24",
+     "to": "2026-11-24",
+     "days": 1
+    }
+   ]
   }
  },
  "files": {
