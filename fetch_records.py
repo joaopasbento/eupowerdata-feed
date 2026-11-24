@@ -518,8 +518,10 @@ def update(now=None, get=http_get, budget=None):
               f"complete)" + (f"; wrote {written}" if written else ''))
     for zone, numbers in price_days(days_between(today - timedelta(days=10), last)).items():
         store(zone, 'price', numbers)
+    before = load_json(OUT_PATH)
     doc = build(now, ember_monthly(get))
-    print(f"Wrote {OUT_PATH}: {len(doc['zones'])} zones, {len(doc['countries'])} countries, "
+    print(f"{OUT_PATH} {'written' if load_json(OUT_PATH) != before else 'unchanged (nothing new)'}: "
+          f"{len(doc['zones'])} zones, {len(doc['countries'])} countries, "
           f"{len(doc['recent'])} records beaten in the last 12 months")
     return 0
 
@@ -572,7 +574,11 @@ SAMPLES = (('PT', date(2025, 10, 26)), ('PT', date(2026, 3, 29)), ('DE', date(20
 def sample(folder, get=http_get):
     """Saves, gzipped, real answers of A75 for whole days (the clock changes among them), for the tests."""
     os.makedirs(folder, exist_ok=True)
-    for code, day in SAMPLES:
+    asked = SAMPLES
+    if os.environ.get('RECORDS_SAMPLES'):              # "HU:2026-11-20 BE:2026-11-20", to look at an answer
+        asked = [(item.split(':')[0], date.fromisoformat(item.split(':')[1]))
+                 for item in os.environ['RECORDS_SAMPLES'].split()]
+    for code, day in asked:
         answers = generation_answers([code], day, day, Budget(120), get)
         for i, body in enumerate(answers.get(code) or []):
             path = os.path.join(folder, f'generation_A75_{code}_{day.isoformat()}{"_" + str(i) if i else ""}.xml.gz')

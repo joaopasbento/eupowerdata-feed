@@ -17,6 +17,10 @@ on:
         description: Only save real answers of ENTSO-E for the tests
         type: boolean
         default: false
+      sample_days:
+        description: With sample, other zones and days, as ZONE:YYYY-MM-DD separated by spaces
+        required: false
+        default: ''
 permissions:
   contents: write
 concurrency:
@@ -50,6 +54,7 @@ jobs:
         if: ${{ inputs.sample }}
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+          RECORDS_SAMPLES: ${{ inputs.sample_days }}
         run: python fetch_records.py --sample samples
       - name: Keep the answers
         if: ${{ inputs.sample }}
