@@ -24,7 +24,7 @@ names of the types:
       wind_share_month_max            the month with the highest share of wind               %
       renewable_share_month_max       the month with the highest share of renewables         %
 
-    {updated, data_until, attribution, types: {TYPE: {unit, scope, best, source, license}},
+    {updated, data_until, attribution, types: {TYPE: {name, unit, scope, best, source, license}},
      zones: {ZONE: {TYPE: {value, unit, at, source[, step_minutes][, basis],
                            previous: {value, at} | null}}},
      countries: {COUNTRY: {TYPE: {...}}},
@@ -133,6 +133,23 @@ COUNTRY_TYPES = {
     'solar_share_month_max': ('%', 'month', 'max', 0),
     'wind_share_month_max': ('%', 'month', 'max', 1),
     'renewable_share_month_max': ('%', 'month', 'max', 2),
+}
+# A short name of each type, in American English, for the site to show a type it has no sentence for yet. As
+# stable as the keys.
+NAMES = {
+    'solar_mw_max': 'Solar generation record (MW)',
+    'wind_mw_max': 'Wind generation record (MW)',
+    'renewable_share_interval_max': 'Highest renewable share in an interval',
+    'renewable_share_day_max': 'Highest renewable share in a day',
+    'price_interval_min': 'Lowest hourly price',
+    'price_day_avg_min': 'Lowest daily average price',
+    'negative_zero_hours_day_max': 'Most hours of zero or negative prices in a day',
+    'solar_gwh_day_max': 'Solar generation record in a day (GWh)',
+    'wind_gwh_day_max': 'Wind generation record in a day (GWh)',
+    'negative_zero_run_hours_max': 'Longest run of zero or negative prices',
+    'solar_share_month_max': 'Highest monthly solar share',
+    'wind_share_month_max': 'Highest monthly wind share',
+    'renewable_share_month_max': 'Highest monthly renewable share',
 }
 # Where each record of a zone's day is kept: (part, key).
 DAY_KEYS = {'solar_mw_max': ('gen', 'solar'), 'wind_mw_max': ('gen', 'wind'),
@@ -538,9 +555,11 @@ def build(now=None, ember=None):
                     recent.append({'area': country, 'scope': 'country', 'type': kind, 'value': v, 'unit': unit,
                                    'at': a, 'previous': {'value': steps[i - 1][0], 'at': steps[i - 1][1]}})
     recent.sort(key=lambda r: (r['at'] if len(r['at']) > 7 else r['at'] + '-99'), reverse=True)
-    types = {kind: {'unit': unit, 'scope': scope, 'best': best, 'source': ENTSOE_SOURCE, 'license': SOURCE_TERMS}
+    types = {kind: {'name': NAMES[kind], 'unit': unit, 'scope': scope, 'best': best, 'source': ENTSOE_SOURCE,
+                    'license': SOURCE_TERMS}
              for kind, (unit, scope, best, _part) in TYPES.items()}
-    types.update({kind: {'unit': unit, 'scope': scope, 'best': best, 'source': EMBER_SOURCE, 'license': CC_BY}
+    types.update({kind: {'name': NAMES[kind], 'unit': unit, 'scope': scope, 'best': best, 'source': EMBER_SOURCE,
+                         'license': CC_BY}
                   for kind, (unit, scope, best, _i) in COUNTRY_TYPES.items()})
     doc = {'data_until': data_until,
            'attribution': {'entsoe': 'ENTSO-E Transparency Platform', 'ember': 'Ember'},

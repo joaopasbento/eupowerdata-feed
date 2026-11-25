@@ -325,6 +325,9 @@ class TheRecords(InAFolder):
         beaten = [(r['area'], r['type'], r['value']) for r in doc['recent']]
         self.assertEqual(beaten, [('PT', 'solar_mw_max', 1700), ('PT', 'solar_mw_max', 1600)])
         self.assertEqual(doc['types']['solar_mw_max']['license'], 'source-terms')
+        self.assertEqual(set(doc['types']), set(fr.NAMES))
+        self.assertEqual(doc['types']['solar_mw_max']['name'], 'Solar generation record (MW)')
+        self.assertEqual(doc['types']['negative_zero_run_hours_max']['name'], 'Longest run of zero or negative prices')
         for kind, unit in (('solar_gwh_day_max', 'GWh'), ('wind_gwh_day_max', 'GWh'), ('negative_zero_run_hours_max', 'h')):
             self.assertEqual((doc['types'][kind]['unit'], doc['types'][kind]['license']), (unit, 'source-terms'))
 

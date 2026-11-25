@@ -449,6 +449,9 @@ def check_price_history(doc, path, broken):
     notes, last_years = [], set()
     for zone, entry in zones.items():
         smard = HISTORY_ZONES[zone] == 'cc-by-4.0'
+        if entry.get('license_url') != ('https://creativecommons.org/licenses/by/4.0/' if smard
+                                        else 'https://www.omie.es/en/legal-warning'):
+            broken.append(f'{path} {zone}: not the address of its licence')
         if entry.get('license') != HISTORY_ZONES[zone] or not entry.get('years') or not entry.get('first') \
                 or not str(entry.get('attribution', '')).startswith('Bundesnetzagentur | SMARD.de' if smard else 'OMIE'):
             broken.append(f'{path} {zone}: not its licence, attribution, first day or years')
@@ -497,6 +500,8 @@ def check_records(doc, path, broken):
             or not isinstance(zones, dict) or not isinstance(countries, dict) or 'updated' not in doc:
         broken.append(f'{path}: not the thirteen types, or no zones, countries or updated')
         return 'broken'
+    if any(not types[t].get('name') for t in types):
+        broken.append(f'{path}: a type without its name')
     if any(types[t].get('license') != 'source-terms' for t in RECORD_TYPES) \
             or any(types[t].get('license') != 'cc-by-4.0' for t in RECORD_COUNTRY_TYPES):
         broken.append(f'{path}: a type without its licence (ENTSO-E source-terms, Ember cc-by-4.0)')

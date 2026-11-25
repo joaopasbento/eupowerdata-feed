@@ -254,6 +254,8 @@ class TheFiles(InAFolder):
         self.assertEqual((de['first'], de['last'], de['years']), ('2018-03-25', '2026-11-24', [2018, 2026]))
         self.assertEqual([(s['source'], s.get('series'), s['days']) for s in de['sources']],
                          [('smard', 'DE-AT-LU', 1), ('smard', None, 1), ('energy-charts', None, 1)])
+        self.assertEqual(de['license_url'], 'https://creativecommons.org/licenses/by/4.0/')
+        self.assertEqual(index['zones']['PT']['license_url'], 'https://www.omie.es/en/legal-warning')
         self.assertEqual(de['missing_days'], len(ph.days_between(date(2018, 3, 25), date(2026, 11, 24))) - 3)
 
     def test_nothing_new_writes_nothing(self):

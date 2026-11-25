@@ -39,7 +39,7 @@ The files (times in UTC, prices in EUR/MWh; a day is a delivery day on the
 market's clock, so it has 23, 24 or 25 hours, or 92, 96 or 100 quarter-hours):
 
     data/price-history/index.json
-        {updated, unit, timezone, zones: {ZONE: {license, attribution, first, last, years,
+        {updated, unit, timezone, zones: {ZONE: {license, attribution, license_url, first, last, years,
          sources: [{source, from, to, days[, series]}], missing_days}}, files}
     data/price-history/<ZONE>/<YEAR>.json       one zone, one year, every interval
         {zone, year, unit, license, attribution, updated,
@@ -87,6 +87,8 @@ OMIE_FIRST_DAY = date(2018, 1, 1)
 OMIE_ZIP_YEARS = range(2018, 2023)          # a zip a year; from 2023, a file a day
 OMIE_ZIP_URL = 'https://www.omie.es/en/file-download?parents=marginalpdbc&filename=marginalpdbc_{year}.zip'
 OMIE_ATTRIBUTION = 'OMIE'
+CC_BY_URL = 'https://creativecommons.org/licenses/by/4.0/'
+OMIE_TERMS_URL = 'https://www.omie.es/en/legal-warning'     # OMIE's terms of use ("Legal warning"), 25 Nov 2026
 JOINT = (251, 'DE')                          # SMARD's DE-AT-LU, for DE-LU and AT until JOINT_UNTIL
 JOINT_UNTIL = date(2018, 9, 30)
 QUARTERS_FROM = date(2025, 9, 29)            # the week of the move to quarter-hours (1 Oct 2025)
@@ -394,6 +396,7 @@ def build_summaries(now, folder=OUT_DIR):
                          'days': [months[m][2] if m in months else 0 for m in names], 'sources': spans(items)}
         expected = len(days_between(date.fromisoformat(items[0][0]), date.fromisoformat(items[-1][0])))
         index[zone] = {'license': licence(zone), 'attribution': attribution(zone, by_day),
+                       'license_url': OMIE_TERMS_URL if zone in ('PT', 'ES') else CC_BY_URL,
                        'first': items[0][0], 'last': items[-1][0], 'years': zone_years(zone, folder),
                        'missing_days': expected - len(items), 'sources': spans(items)}
     written += write_json_if_changed(os.path.join(folder, 'monthly.json'),
