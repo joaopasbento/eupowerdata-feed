@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-25T10:36:24+00:00",
+ "updated": "2026-11-25T23:35:36+00:00",
  "unit": "EUR/MWh",
  "timezone": "UTC",
  "zones": {
@@ -8,7 +8,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -55,6 +55,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -63,7 +69,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -98,6 +104,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -106,7 +118,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -134,6 +146,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -142,7 +160,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -170,6 +188,12 @@
      "from": "2026-11-25",
      "to": "2026-11-25",
      "days": 1
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -178,7 +202,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -206,6 +230,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -214,7 +244,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -242,6 +272,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -250,7 +286,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -278,6 +314,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -286,7 +328,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -314,6 +356,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -322,7 +370,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -362,6 +410,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -370,7 +424,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -398,6 +452,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -406,7 +466,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -446,6 +506,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -454,7 +520,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -482,6 +548,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -490,7 +562,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-07",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -529,6 +601,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -537,7 +615,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -565,6 +643,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -573,7 +657,7 @@
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
    "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2015,
     2016,
@@ -601,6 +685,12 @@
      "from": "2026-11-24",
      "to": "2026-11-25",
      "days": 2
+    },
+    {
+     "source": "smard",
+     "from": "2026-11-26",
+     "to": "2026-11-26",
+     "days": 1
     }
    ]
   },
@@ -609,7 +699,7 @@
    "attribution": "OMIE",
    "license_url": "https://www.omie.es/en/legal-warning",
    "first": "2018-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2018,
     2019,
@@ -626,8 +716,8 @@
     {
      "source": "omie",
      "from": "2018-01-01",
-     "to": "2026-11-25",
-     "days": 3251
+     "to": "2026-11-26",
+     "days": 3252
     }
    ]
   },
@@ -636,7 +726,7 @@
    "attribution": "OMIE",
    "license_url": "https://www.omie.es/en/legal-warning",
    "first": "2018-01-01",
-   "last": "2026-11-25",
+   "last": "2026-11-26",
    "years": [
     2018,
     2019,
@@ -653,8 +743,8 @@
     {
      "source": "omie",
      "from": "2018-01-01",
-     "to": "2026-11-25",
-     "days": 3251
+     "to": "2026-11-26",
+     "days": 3252
     }
    ]
   }
