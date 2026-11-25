@@ -1,1 +1,6 @@
-reverse_geocoder>=1.5
+# Used by fetch_datacenters.py only (fetch-datacenters.yml). Pinned to the
+# versions the workflow installed on 25 Nov 2026, so that a new release (or a
+# compromised one) is not pulled in without a change here.
+reverse_geocoder==1.5.1
+numpy==2.4.6
+scipy==1.17.1

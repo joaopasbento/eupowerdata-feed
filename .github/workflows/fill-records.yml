@@ -33,12 +33,12 @@ jobs:
     env:
       PYTHONUNBUFFERED: '1'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
         with:
           ref: ${{ github.ref }}
           fetch-depth: 10
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6.3.0
         with:
           python-version: '3.12'
       - name: Fill the records
@@ -58,7 +58,7 @@ jobs:
         run: python fetch_records.py --sample samples
       - name: Keep the answers
         if: ${{ inputs.sample }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
           name: entsoe-samples
           path: samples/

@@ -50,7 +50,6 @@ say whether GB came from this run.
 """
 
 import json
-import ssl
 import sys
 import urllib.request
 import urllib.parse
@@ -93,8 +92,8 @@ RENEWABLE_TYPES = [
 
 
 def http_get_json(url, timeout=30):
-    """GET + parse JSON, with a one-shot relaxed-SSL retry (mirrors
-    fetch_entsoe.py). Returns parsed JSON or None on failure."""
+    """GET + parse JSON, with one more attempt after a failure, both with the
+    certificate verified. Returns parsed JSON or None on failure."""
     req = urllib.request.Request(url, headers={
         'Accept': 'application/json',
         'User-Agent': 'EUPowerData/1.0 (+https://eupowerdata.com)',
@@ -104,10 +103,7 @@ def http_get_json(url, timeout=30):
             return json.loads(r.read().decode('utf-8'))
     except Exception as e1:
         try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read().decode('utf-8'))
         except Exception as e2:
             print(f'  HTTP/JSON error: {e2}')

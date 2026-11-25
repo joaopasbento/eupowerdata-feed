@@ -60,6 +60,18 @@ class TryingAgainLater(unittest.TestCase):
         self.assertIn('All Overpass attempts failed', log)
 
 
+class TheWebsite(unittest.TestCase):
+
+    def test_only_a_web_address_is_kept(self):
+        def one(tags):
+            element = {'type': 'node', 'id': 1, 'lat': 38.7, 'lon': -9.1, 'tags': {'name': 'DC', **tags}}
+            found = fd.parse_elements([element])
+            return found[0]['website'] if found else None
+        self.assertEqual(one({'website': 'https://example.com'}), 'https://example.com')
+        self.assertEqual(one({'website': 'javascript:alert(1)'}), '')
+        self.assertEqual(one({'url': 'data:text/html,x'}), '')
+
+
 class TheEndOfTheRun(unittest.TestCase):
 
     NOW = datetime(2026, 11, 24, 4, 30, tzinfo=timezone.utc)

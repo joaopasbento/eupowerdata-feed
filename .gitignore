@@ -7,3 +7,8 @@ __pycache__/
 # Wrangler's local state and Node packages (scheduler/)
 .wrangler/
 node_modules/
+# Local secrets: environment files and Wrangler's local secrets (scheduler/)
+.env
+.dev.vars
+# Answers of ENTSO-E saved by fetch_records.py --sample when run locally
+samples/

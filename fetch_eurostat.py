@@ -41,7 +41,6 @@ dataset dimensions in the Data Browser.
 """
 
 import json
-import ssl
 import sys
 import urllib.request
 import urllib.parse
@@ -129,7 +128,7 @@ EU_CODES = {"PT", "ES", "DE", "FR", "IT", "NL", "BE", "AT", "PL", "SE", "DK", "F
 TREND_YEARS = 7  # most recent N years for the sparkline-style trend
 
 
-# --- HTTP (stdlib, with SSL fallback like fetch_gb.py) ---------------------
+# --- HTTP (stdlib, one more attempt after a failure, certificate verified) --
 def http_get_json(url, timeout=40):
     req = urllib.request.Request(url, headers={
         "Accept": "application/json",
@@ -139,12 +138,9 @@ def http_get_json(url, timeout=40):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception as e:
-        # Retry once with a relaxed SSL context (some CI egress paths need it)
+        # Retry once, with the certificate verified
         try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read().decode("utf-8"))
         except Exception as e2:
             print(f"  HTTP error for {url}: {e2}")

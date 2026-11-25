@@ -38,11 +38,11 @@ jobs:
       # asked for. A run that waited in the queue was asked for before the run
       # ahead of it pushed its data: left on that older commit, it works on
       # files that are no longer the published ones and cannot push (run 2371).
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
         with:
           ref: ${{ github.ref }}
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6.3.0
         with:
           python-version: '3.12'
       # GitHub sometimes holds a run for 15 to 25 minutes and then lets it go

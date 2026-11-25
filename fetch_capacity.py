@@ -16,7 +16,6 @@ import os
 import json
 import urllib.request
 import urllib.parse
-import ssl
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
@@ -91,12 +90,9 @@ RENEWABLE_GROUPS = ['Solar', 'Wind', 'Hydro', 'Biomass', 'Geothermal', 'Marine',
 
 # --- HTTP ---
 
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
-
-
 def http_get(url, timeout=45):
+    """GET with one more attempt after a failure, both with the certificate verified (the second used to go
+    without verification, with the API key in the address: taken out on 25 Nov 2026)."""
     headers = {
         'Accept': 'application/xml',
         'User-Agent': 'EUPowerData-GitHubAction/1.0',
@@ -108,7 +104,7 @@ def http_get(url, timeout=45):
     except Exception:
         pass
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode('utf-8')
     except Exception as e:
         print(f'  HTTP failed: {e}')

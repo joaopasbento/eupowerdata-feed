@@ -274,10 +274,6 @@ OUT_OF_TIME = 'time budget exhausted'   # why a request was dropped, as shown in
 
 # --- HTTP ---
 
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
-
 _print_lock = threading.Lock()
 
 
@@ -368,7 +364,7 @@ def _get(url, deadline=None, socket_timeout=SOCKET_TIMEOUT_S, max_s=REQUEST_MAX_
             if isinstance(e.reason, TimeoutError):
                 return None, _timeout_reason(reason, deadline)
             if isinstance(e.reason, ssl.SSLCertVerificationError):
-                context = ctx            # as before: retry without certificate verification
+                return None, reason      # a certificate that does not verify is a failure, never retried without it
         except TimeoutError as e:
             # A zone that is not answering: do not wait for it twice.
             return None, _timeout_reason(f'timeout: {e}', deadline)
@@ -1600,10 +1596,10 @@ def fetch_omip(deadline=None):
         for url in urls[:1]:
             if time_left() <= 0:
                 break
-            print(f'  Retry without SSL: {url}')
+            print(f'  Retry: {url}')
             try:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=time_left(), context=ctx) as r:
+                with urllib.request.urlopen(req, timeout=time_left()) as r:
                     html = r.read().decode('utf-8')
                 if html and 'Settlement Price' in html:
                     print(f'  Got HTML with settlement data')

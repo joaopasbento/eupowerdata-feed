@@ -18,7 +18,6 @@ import sys
 import time
 import urllib.request
 import urllib.parse
-import ssl
 from datetime import datetime, timezone
 
 # ─── Ember Climate 2025 annual averages (source: Ember European Electricity Review 2025)
@@ -299,9 +298,6 @@ out center tags;"""
     url = 'https://overpass-api.de/api/interpreter?' + encoded
 
     print('Fetching Overpass API...')
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
 
     headers = {
         'User-Agent': 'EUPowerData-DatacenterFetch/1.0 (eupowerdata.com)',
@@ -313,14 +309,9 @@ out center tags;"""
     for attempt in range(len(waits) + 1):
         try:
             req = urllib.request.Request(url, headers=headers)
-            try:
-                with urlopen(req, timeout=90) as r:
-                    raw = r.read().decode('utf-8')
-                    break
-            except ssl.SSLError:
-                with urlopen(req, timeout=90, context=ctx) as r:
-                    raw = r.read().decode('utf-8')
-                    break
+            with urlopen(req, timeout=90) as r:      # certificate verified; an SSL error is one more failed attempt
+                raw = r.read().decode('utf-8')
+                break
         except Exception as e:
             print(f'  Attempt {attempt + 1} failed: {e}')
             if attempt < len(waits):
@@ -445,6 +436,8 @@ def parse_elements(elements):
 
         # Website
         website = tags.get('website') or tags.get('url') or ''
+        if urllib.parse.urlparse(website.strip()).scheme.lower() not in ('http', 'https'):
+            website = ''                    # an OSM tag anyone can edit: never a javascript: or data: link
 
         datacenters.append({
             'id': f'{el_type}_{el.get("id", "")}',
