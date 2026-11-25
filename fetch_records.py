@@ -14,6 +14,11 @@ names of the types:
       price_interval_min              the lowest day-ahead price of an hour                  EUR/MWh
       price_day_avg_min               the lowest mean day-ahead price of a day               EUR/MWh
       negative_zero_hours_day_max     the most hours with a price below or at zero in a day  h
+      solar_gwh_day_max               the highest solar generation in a day                  GWh
+      wind_gwh_day_max                the highest wind generation (onshore + offshore), day  GWh
+      negative_zero_run_hours_max     the longest run of hours in a row with a price below
+                                      or at zero (across midnight too), with its start
+                                      (`at`) and its end (`end`)                             h
     by country (Ember, Monthly Electricity Data, cc-by-4.0, attributed "Ember")
       solar_share_month_max           the month with the highest share of solar              %
       wind_share_month_max            the month with the highest share of wind               %
@@ -26,7 +31,8 @@ names of the types:
      recent: [{area, scope: zone | country, type, value, unit, at, previous: {value, at} | null}]}
 
 `at` is the start of the interval in UTC, the delivery day (YYYY-MM-DD, on the
-market's clock, Europe/Brussels) or the month (YYYY-MM). `previous` is the
+market's clock, Europe/Brussels), the month (YYYY-MM) or, for a run, its start
+in UTC (and `end` its end). `previous` is the
 record the current one beat. `recent` lists the records beaten in the last 12
 months, the most recent first; a record only counts as beaten once the zone or
 country has a year of data of that type before it (so that the first months of
@@ -44,7 +50,12 @@ Where the numbers come from:
     since 20 Nov 2021) and, for the hours below or at zero, the count of the low
     prices (data/archive/low-prices-*, at the market's resolution, since
     1 Jan 2026; before, counted the same way, fetch_low_prices.zone_count, from
-    the hourly means);
+    the hourly means); the runs of hours below or at zero likewise: from the
+    hourly means up to 2025 and, from 1 Jan 2026, at the market's resolution,
+    from ENTSO-E's day-ahead prices (A44), asked for by the fill (one request
+    per zone) and each day for the last DAILY_DAYS days, Norway, Sweden and
+    Denmark as the mean of their zones, interval by interval, as their price is
+    (`basis` says which);
   - Ember's Monthly Electricity Data, since Jan 2015, kept in
     data/records/ember-monthly.json and downloaded again only when it changes.
 
@@ -54,7 +65,9 @@ intervals around it (SPIKE_PP points for a share), does not count; an interval
 where a technology the day has is missing does not count; a day with an
 interval missing does not count for the records of the day; a day the archive
 leaves out (Moldova before 1 Jul 2026, archive_fixes.WRONG_AT_THE_SOURCE) stays
-out; the days of 23 and 25 hours are counted as they are.
+out; the days of 23 and 25 hours are counted as they are. The production of a day
+counts only when the day is complete and none of its intervals is above the
+capacity or a peak of that kind (by more than a tenth of the day's highest).
 
 Runs:
     python fetch_records.py                   the daily update (records.yml)
@@ -78,6 +91,7 @@ import carry_over
 import fetch_ember
 import fetch_entsoe as fe
 import fetch_low_prices as flp
+import price_intervals
 from feed_common import (CC_BY, SOURCE_TERMS, Budget, entsoe_answer, entsoe_ask, http_get, iso, load_json,
                          write_json_if_changed)
 
@@ -111,6 +125,9 @@ TYPES = {
     'price_interval_min': ('EUR/MWh', 'interval', 'min', 'prices'),
     'price_day_avg_min': ('EUR/MWh', 'day', 'min', 'prices'),
     'negative_zero_hours_day_max': ('h', 'day', 'max', 'prices'),
+    'solar_gwh_day_max': ('GWh', 'day', 'max', 'generation'),
+    'wind_gwh_day_max': ('GWh', 'day', 'max', 'generation'),
+    'negative_zero_run_hours_max': ('h', 'run', 'max', 'prices'),
 }
 COUNTRY_TYPES = {
     'solar_share_month_max': ('%', 'month', 'max', 0),
@@ -121,7 +138,9 @@ COUNTRY_TYPES = {
 DAY_KEYS = {'solar_mw_max': ('gen', 'solar'), 'wind_mw_max': ('gen', 'wind'),
             'renewable_share_interval_max': ('gen', 'ren'), 'renewable_share_day_max': ('gen', 'ren_day'),
             'price_interval_min': ('price', 'min'), 'price_day_avg_min': ('price', 'avg'),
-            'negative_zero_hours_day_max': ('price', 'neg_zero_h')}
+            'negative_zero_hours_day_max': ('price', 'neg_zero_h'),
+            'solar_gwh_day_max': ('gen', 'solar_gwh'), 'wind_gwh_day_max': ('gen', 'wind_gwh')}
+QUARTERS_FROM = date(2026, 1, 1)     # the runs below or at zero at the market's resolution from then on
 
 
 # --- Days ---
@@ -246,7 +265,62 @@ def day_numbers(techs, day, capacity=None):
     if complete and sum(totals) > 0:
         numbers['ren_day'] = round(100 * sum(sum(v for psr, v in r.items() if psr in RENEWABLE) for r in rows)
                                    / sum(totals), 1)
+    hours = step.total_seconds() / 3600
+    for key, series, limit in (('solar_gwh', solar, (capacity or {}).get('solar_mw')),
+                               ('wind_gwh', wind, (capacity or {}).get('wind_mw'))):
+        if complete and all(v is not None for v in series) and max(series) > 0 \
+                and not any(_spoils_the_day(series, i, limit) for i in range(len(series))):
+            numbers[key] = round(sum(series) * hours / 1000, 2)
     return numbers
+
+
+def _spoils_the_day(series, i, limit=None):
+    """Whether an interval keeps a day's production from counting: above the capacity, or a peak (SPIKE_RATIO times
+    both intervals around it) of more than a tenth of the day's highest."""
+    value = series[i]
+    if limit is not None and value > limit * CAPACITY_MARGIN:
+        return True
+    around = [series[j] for j in (i - 1, i + 1) if 0 <= j < len(series) and series[j] is not None]
+    if not around or value <= SPIKE_RATIO * max(around):
+        return False
+    return value - max(around) > 0.1 * max(series)
+
+
+# --- Runs of prices below or at zero ---
+
+def runs_of(starts, hours, prices):
+    """[[start, end, hours]] of the runs of intervals in a row with a price below or at zero, from their starts, the
+    hours each stands for and their prices (None breaks a run)."""
+    runs, current = [], None
+    for at, length, price in zip(starts, hours, prices):
+        end = at + timedelta(hours=length)
+        if price is not None and price <= 0:
+            if current and current[1] == at:
+                current[1], current[2] = end, current[2] + length
+            else:
+                current = [at, end, length]
+                runs.append(current)
+        else:
+            current = None
+    return [[iso(a), iso(b), round(h, 2)] for a, b, h in runs]
+
+
+def merged_runs(days):
+    """[(day of the start, hours, start, end, basis)] of a zone's runs over its days in order, a run that ends at the
+    end of a day joined to one that starts the next day at its start."""
+    out = []
+    for name in sorted(days):
+        own = (days[name] or {}).get('runs')                  # at the market's resolution (2026 on)
+        part = own or (days[name] or {}).get('price') or {}   # else from the hourly means of the archive
+        basis = own.get('basis', 'market-resolution') if own else 'hourly-means'
+        for start, end, hours in part.get('runs') or []:
+            if out and out[-1][3] == start:
+                day, total, first, _end, first_basis = out[-1]
+                out[-1] = (day, round(total + hours, 2), first, end,
+                           first_basis if first_basis == basis else f'{first_basis}, then {basis}')
+            else:
+                out.append((name, hours, start, end, basis))
+    return out
 
 
 # --- Prices: from the feed's archives ---
@@ -269,7 +343,9 @@ def price_numbers(day, zone_entry, low_count=None):
     if not priced:
         return None
     low = min(priced, key=lambda item: item[0])
-    numbers = {'min': [low[0], iso(low[1])], 'step': 60}
+    numbers = {'min': [low[0], iso(low[1])], 'step': 60,
+               'runs': runs_of(starts, weights, [row.get('price') if isinstance(row.get('price'), (int, float))
+                                                 else None for row in rows])}
     if len(rows) == entries and len(priced) == entries:
         numbers['avg'] = round(sum(p * w for (p, _m), w in zip(priced, weights)) / sum(weights), 2)
         count = low_count or flp.zone_count([p for p, _m in priced], 60, 'hourly-means', weights)
@@ -415,6 +491,8 @@ def build(now=None, ember=None):
         if days:
             data_until = max(data_until or '', max(days))
         for kind, (unit, scope, best, part) in TYPES.items():
+            if scope == 'run':
+                continue
             candidates = zone_candidates(days, kind)
             steps = progression(candidates, best)
             if not steps:
@@ -429,6 +507,21 @@ def build(now=None, ember=None):
                 day = a[:10]
                 if i and day >= since and day >= (date.fromisoformat(first) + A_YEAR).isoformat():
                     recent.append({'area': zone, 'scope': 'zone', 'type': kind, 'value': v, 'unit': unit, 'at': a,
+                                   'previous': {'value': steps[i - 1][0], 'at': steps[i - 1][1]}})
+        runs = merged_runs(days)
+        if runs:
+            steps = progression([(day, hours, start, {'end': end, 'basis': basis})
+                                 for day, hours, start, end, basis in runs], 'max')
+            unit = TYPES['negative_zero_run_hours_max'][0]
+            value, at, extra = steps[-1]
+            zones.setdefault(zone, {})['negative_zero_run_hours_max'] = {
+                'value': value, 'unit': unit, 'at': at, 'end': extra['end'], 'source': ENTSOE_SOURCE,
+                'basis': extra['basis'],
+                'previous': {'value': steps[-2][0], 'at': steps[-2][1]} if len(steps) > 1 else None}
+            for i, (v, a, e) in enumerate(steps):
+                if i and a[:10] >= since and a[:10] >= (date.fromisoformat(runs[0][0]) + A_YEAR).isoformat():
+                    recent.append({'area': zone, 'scope': 'zone', 'type': 'negative_zero_run_hours_max', 'value': v,
+                                   'unit': unit, 'at': a, 'end': e['end'],
                                    'previous': {'value': steps[i - 1][0], 'at': steps[i - 1][1]}})
     for country, months in ((ember or {}).get('countries') or {}).items():
         for kind, (unit, scope, best, index) in COUNTRY_TYPES.items():
@@ -505,6 +598,51 @@ def generation_days(zone, first, last, budget, get=http_get, capacity=None, time
     return found
 
 
+def interval_runs(zones, first, last, budget, get=http_get, timeout=120):
+    """{zone: {day: {runs, basis}}} of the runs below or at zero at the market's resolution, from ENTSO-E's
+    day-ahead prices (A44) of the price zones from `first` to `last` (Norway, Sweden and Denmark as the mean of their
+    zones, interval by interval, as their price is). Returns also how many requests were made."""
+    codes = [code for zone in zones for code in SUBZONES.get(zone, [zone])]
+    start, end = carry_over.day_bounds(first)[0], carry_over.day_bounds(last)[1]
+    jobs = [(code, code, {'documentType': 'A44', 'in_Domain': fe.ZONES[code], 'out_Domain': fe.ZONES[code],
+                          'periodStart': _stamp(start), 'periodEnd': _stamp(end)}) for code in codes]
+    responses = entsoe_ask(jobs, budget, get=get, workers=4, timeout=timeout, label='Prices')
+    by_code = {}
+    for code in codes:
+        answer = entsoe_answer(responses.get(code))
+        if answer.problem:
+            print(f'  prices {code} {first}..{last}: {answer.problem}')
+            continue
+        hours = fe._complete_hours([s for body in answer.documents for s in fe.read_series(body)])
+        by_code[code] = {day: price_intervals.zone_entry(
+            [(at, step, value) for _hour, step, values in hs for at, value in sorted(values.items())], day)
+            for day, hs in hours.items() if first <= day <= last}
+    found = defaultdict(dict)
+    for zone in zones:
+        parts = [by_code.get(code) for code in SUBZONES.get(zone, [zone])]
+        if any(part is None for part in parts):
+            continue
+        for day in days_between(first, last):
+            entries = [part.get(day) for part in parts]
+            if left_out(zone, day) or any(e is None for e in entries) \
+                    or len({(e['start'], e['step_minutes'], len(e['prices'])) for e in entries}) != 1:
+                continue
+            prices = [None if any(v is None for v in values) else sum(values) / len(values)
+                      for values in zip(*(e['prices'] for e in entries))]
+            if sum(v is not None for v in prices) * entries[0]['step_minutes'] <= 60:
+                continue                                   # a day of one hour is no day (fetch_entsoe.ONE_HOUR_IS_NO_DAY)
+            step = timedelta(minutes=entries[0]['step_minutes'])
+            begin = datetime.fromisoformat(entries[0]['start'])
+            starts = [begin + step * i for i in range(len(prices))]
+            found[zone][day.isoformat()] = {'runs': runs_of(starts, [step.total_seconds() / 3600] * len(prices),
+                                                            prices), 'basis': 'market-resolution'}
+    return found, len(jobs)
+
+
+PRICE_ZONES = [code for code in fe.ZONES if code not in fe.ELEXON_ZONES
+               and not any(code in parts for parts in SUBZONES.values())] + list(SUBZONES)
+
+
 def capacities():
     return ((load_json('data/capacity-installed.json') or {}).get('countries')) or {}
 
@@ -526,6 +664,10 @@ def update(now=None, get=http_get, budget=None):
               f"complete)" + (f"; wrote {written}" if written else ''))
     for zone, numbers in price_days(days_between(today - timedelta(days=10), last)).items():
         store(zone, 'price', numbers)
+    runs, asked = interval_runs(PRICE_ZONES, first, last, budget, get, timeout=60)
+    for zone, numbers in runs.items():
+        store(zone, 'runs', numbers)
+    print(f'  prices at the market\'s resolution: {len(runs)} zones, {asked} requests')
     before = load_json(OUT_PATH)
     doc = build(now, ember_monthly(get))
     print(f"{OUT_PATH} {'written' if load_json(OUT_PATH) != before else 'unchanged (nothing new)'}: "
@@ -542,15 +684,19 @@ def fill(zones=None, now=None, get=http_get, publish=None):
     today = carry_over.delivery_day(now)
     started = time.monotonic()
     published, failed = 0, 0
+    asked = 0
     if not zones:
         for zone, numbers in price_days(days_between(date(2021, 11, 20), today - timedelta(days=1))).items():
-            store(zone, 'price', numbers)
+            store(zone, 'price', numbers, keep_complete=False)
+        runs, asked = interval_runs(PRICE_ZONES, QUARTERS_FROM, today - timedelta(days=1), Budget(1800), get)
+        for zone, numbers in runs.items():
+            store(zone, 'runs', numbers, keep_complete=False)
+        print(f'Prices at the market\'s resolution since {QUARTERS_FROM}: {len(runs)} zones, {asked} requests')
         build(now, ember_monthly(get))
         if publish:
-            ok = publish('Records: the prices of the archive and Ember\'s months')
+            ok = publish('Records: the prices of the archive, at the market\'s resolution since 2026, and Ember\'s months')
             published, failed = published + ok, failed + (not ok)
     caps = capacities()
-    asked = 0
     for zone in zones or GEN_ZONES:
         zone_started = time.monotonic()
         found = {}
@@ -584,8 +730,22 @@ def sample(folder, get=http_get):
     os.makedirs(folder, exist_ok=True)
     asked = SAMPLES
     if os.environ.get('RECORDS_SAMPLES'):              # "HU:2026-11-20 BE:2026-11-20", to look at an answer
-        asked = [(item.split(':')[0], date.fromisoformat(item.split(':')[1]))
+        asked = [('A44', item.split(':')[1], date.fromisoformat(item.split(':')[2]),
+                  date.fromisoformat(item.split(':')[3])) if item.startswith('A44:')
+                 else (item.split(':')[0], date.fromisoformat(item.split(':')[1]))
                  for item in os.environ['RECORDS_SAMPLES'].split()]
+    for item in [a for a in asked if a[0] == 'A44']:      # ("A44", code, first, last): day-ahead prices
+        _kind, code, first, last = item
+        start, end = carry_over.day_bounds(first)[0], carry_over.day_bounds(last)[1]
+        responses = entsoe_ask([(code, code, {'documentType': 'A44', 'in_Domain': fe.ZONES[code],
+                                              'out_Domain': fe.ZONES[code], 'periodStart': _stamp(start),
+                                              'periodEnd': _stamp(end)})], Budget(120), get=get)
+        for i, body in enumerate(entsoe_answer(responses.get(code)).documents):
+            path = os.path.join(folder, f'prices_A44_{code}_{first}_{last}{"_" + str(i) if i else ""}.xml.gz')
+            with open(path, 'wb') as f:
+                f.write(gzip.compress(body, mtime=0))
+            print(f'  saved {path}')
+    asked = [a for a in asked if a[0] != 'A44']
     for code, day in asked:
         answers = generation_answers([code], day, day, Budget(120), get)
         for i, body in enumerate(answers.get(code) or []):
