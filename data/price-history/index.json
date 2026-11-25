@@ -1,11 +1,12 @@
 {
- "updated": "2026-11-24T17:50:50+00:00",
+ "updated": "2026-11-25T10:36:24+00:00",
  "unit": "EUR/MWh",
  "timezone": "UTC",
  "zones": {
   "DE-LU": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
    "last": "2026-11-25",
    "years": [
@@ -60,6 +61,7 @@
   "AT": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
    "last": "2026-11-25",
    "years": [
@@ -102,6 +104,7 @@
   "BE": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
    "last": "2026-11-25",
    "years": [
@@ -137,6 +140,7 @@
   "CH": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -172,6 +176,7 @@
   "CZ": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -207,6 +212,7 @@
   "DK1": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -242,6 +248,7 @@
   "DK2": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -277,6 +284,7 @@
   "FR": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
    "last": "2026-11-25",
    "years": [
@@ -312,6 +320,7 @@
   "HU": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -359,6 +368,7 @@
   "IT-North": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
    "last": "2026-11-25",
    "years": [
@@ -394,6 +404,7 @@
   "NL": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-05",
    "last": "2026-11-25",
    "years": [
@@ -441,6 +452,7 @@
   "NO2": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -476,6 +488,7 @@
   "PL": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-07",
    "last": "2026-11-25",
    "years": [
@@ -522,6 +535,7 @@
   "SE4": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -557,6 +571,7 @@
   "SI": {
    "license": "cc-by-4.0",
    "attribution": "Bundesnetzagentur | SMARD.de, energy-charts.info",
+   "license_url": "https://creativecommons.org/licenses/by/4.0/",
    "first": "2015-01-01",
    "last": "2026-11-25",
    "years": [
@@ -592,6 +607,7 @@
   "PT": {
    "license": "omie",
    "attribution": "OMIE",
+   "license_url": "https://www.omie.es/en/legal-warning",
    "first": "2018-01-01",
    "last": "2026-11-25",
    "years": [
@@ -618,6 +634,7 @@
   "ES": {
    "license": "omie",
    "attribution": "OMIE",
+   "license_url": "https://www.omie.es/en/legal-warning",
    "first": "2018-01-01",
    "last": "2026-11-25",
    "years": [
