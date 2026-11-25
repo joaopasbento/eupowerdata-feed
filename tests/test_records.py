@@ -9,7 +9,10 @@
     Hungary on 20 Nov 2026 and Italy on 19 Nov 2026 (whose data stopped at 09:45);
   - the feed's archive of the hourly prices on those days and its count of the
     low prices of 20 Nov 2026;
-  - Ember's Monthly Electricity Data, the rows of Portugal and Latvia.
+  - Ember's Monthly Electricity Data, the rows of Portugal and Latvia;
+  - ENTSO-E's day-ahead prices (A44): Finland from 5 to 7 Oct 2026, a run of
+    prices below or at zero across two midnights (tests/fixtures/records), and
+    Spain on 18 Nov 2026, with quarter-hours at zero (tests/fixtures/entsoe).
 
 The expected numbers are read from the raw answers apart from the code under test.
 
@@ -149,6 +152,102 @@ class TheGenerationOfADay(unittest.TestCase):
         self.assertIn('ren', numbers)
 
 
+class TheProductionOfADay(unittest.TestCase):
+
+    def test_the_day_of_25_hours_and_the_quarter_hours_of_germany(self):
+        for name, day, hours in (('generation_A75_PT_2025-10-26.xml.gz', date(2025, 10, 26), 1.0),
+                                 ('generation_A75_DE_2026-11-20.xml.gz', date(2026, 11, 20), 0.25)):
+            values = by_psr(name, day)
+            numbers = fr.day_numbers(techs(name), day, NO_LIMIT)
+            self.assertEqual(numbers['solar_gwh'], round(sum(values['B16'].values()) * hours / 1000, 2), name)
+            wind = sum(values.get('B18', {}).values()) + sum(values['B19'].values())
+            self.assertEqual(numbers['wind_gwh'], round(wind * hours / 1000, 2), name)
+
+    def test_an_incomplete_day_has_no_production(self):
+        numbers = fr.day_numbers(techs('generation_A75_IT_2026-11-19.xml.gz'), date(2026, 11, 19), NO_LIMIT)
+        self.assertNotIn('solar_gwh', numbers)
+        self.assertNotIn('wind_gwh', numbers)
+
+    def test_a_peak_or_a_value_above_the_capacity_keeps_the_day_out(self):
+        day = date(2026, 11, 20)
+        found = techs('generation_A75_DE_2026-11-20.xml.gz')
+        found['B16'][1][datetime(2026, 11, 20, 11, 0, tzinfo=timezone.utc)] = 3 * max(found['B16'][1].values())
+        self.assertNotIn('solar_gwh', fr.day_numbers(found, day, NO_LIMIT))
+        solar = max(by_psr('generation_A75_DE_2026-11-20.xml.gz', day)['B16'].values())
+        numbers = fr.day_numbers(techs('generation_A75_DE_2026-11-20.xml.gz'), day,
+                                 {'solar_mw': solar / fr.CAPACITY_MARGIN - 1, 'wind_mw': 10 ** 6})
+        self.assertNotIn('solar_gwh', numbers)
+        self.assertIn('wind_gwh', numbers)
+
+
+def a44(path):
+    """A fake ENTSO-E that answers every request for prices with the saved answer at `path`."""
+    with open(path, 'rb') as f:
+        body = f.read()
+
+    def get(url, timeout=40, **_kwargs):
+        return fc.Response(200, {}, gzip.decompress(body))
+    return get
+
+
+def raw_runs(path):
+    """[(start, end)] of the runs below or at zero of an A44 answer, read apart from the code under test."""
+    with open(path, 'rb') as f:
+        all_series = [s for s in fe.read_series(gzip.decompress(f.read())) if s['contract'] in (None, 'A01')]
+    first = min(s['sequence'] or 0 for s in all_series)          # one auction, as the feed reads the day
+    points = {}
+    for series in all_series:
+        if (series['sequence'] or 0) != first:
+            continue
+        for period in series['periods']:
+            for at, value in fe._every_interval(period):
+                points[at] = (at, period['step'], value)
+    points = list(points.values())
+    runs = []
+    for at, step, value in sorted(points):
+        if value <= 0:
+            if runs and runs[-1][1] == at:
+                runs[-1][1] = at + step
+            else:
+                runs.append([at, at + step])
+    return runs
+
+
+class TheRunsOfPricesBelowOrAtZero(unittest.TestCase):
+
+    def test_quarter_hours_at_zero_are_a_run_of_quarter_hours(self):
+        path = os.path.join(HERE, 'fixtures', 'entsoe', 'prices_A44_ES.xml.gz')
+        found, asked = fr.interval_runs(['ES'], date(2026, 11, 18), date(2026, 11, 18), fc.Budget(30), a44(path))
+        runs = found['ES']['2026-11-18']
+        expected = raw_runs(path)
+        self.assertEqual(asked, 1)
+        self.assertEqual(runs['basis'], 'market-resolution')
+        self.assertEqual([[r[0], r[1]] for r in runs['runs']], [[fc.iso(a), fc.iso(b)] for a, b in expected])
+        self.assertEqual(sum(r[2] for r in runs['runs']), sum((b - a).total_seconds() / 3600 for a, b in expected))
+
+    def test_a_run_across_midnight_counts_whole_with_its_start_and_end(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(folder.name)
+        os.makedirs('data')
+        path = os.path.join(FIX, 'prices_A44_FI_2026-10-05_2026-10-07.xml.gz')
+        found, _asked = fr.interval_runs(['FI'], date(2026, 10, 5), date(2026, 10, 7), fc.Budget(30), a44(path))
+        fr.store('FI', 'runs', found['FI'])
+        longest = max(raw_runs(path), key=lambda r: r[1] - r[0])
+        self.assertGreater(longest[1].date(), longest[0].date())        # it does cross midnight
+        record = fr.build(datetime(2026, 11, 25, tzinfo=timezone.utc), {})['zones']['FI']['negative_zero_run_hours_max']
+        self.assertEqual((record['at'], record['end']), (fc.iso(longest[0]), fc.iso(longest[1])))
+        self.assertEqual(record['value'], (longest[1] - longest[0]).total_seconds() / 3600)
+        self.assertEqual((record['unit'], record['basis']), ('h', 'market-resolution'))
+
+    def test_the_hourly_runs_of_the_archive_up_to_2025(self):
+        starts = [datetime(2025, 5, 11, 10 + i, tzinfo=timezone.utc) for i in range(6)]
+        runs = fr.runs_of(starts, [1] * 6, [5.0, 0.0, -1.0, None, -2.0, -3.0])
+        self.assertEqual(runs, [['2025-05-11T11:00:00+00:00', '2025-05-11T13:00:00+00:00', 2],
+                                ['2025-05-11T14:00:00+00:00', '2025-05-11T16:00:00+00:00', 2]])
+
+
 class ThePricesOfADay(unittest.TestCase):
 
     def entry(self, day, zone):
@@ -226,6 +325,8 @@ class TheRecords(InAFolder):
         beaten = [(r['area'], r['type'], r['value']) for r in doc['recent']]
         self.assertEqual(beaten, [('PT', 'solar_mw_max', 1700), ('PT', 'solar_mw_max', 1600)])
         self.assertEqual(doc['types']['solar_mw_max']['license'], 'source-terms')
+        for kind, unit in (('solar_gwh_day_max', 'GWh'), ('wind_gwh_day_max', 'GWh'), ('negative_zero_run_hours_max', 'h')):
+            self.assertEqual((doc['types'][kind]['unit'], doc['types'][kind]['license']), (unit, 'source-terms'))
 
     def test_a_zone_with_less_than_a_year_of_data_lists_no_record_beaten(self):
         fr.store('MD', 'gen', self.days({'2026-07-01': 10, '2026-08-01': 20, '2026-09-01': 30}))

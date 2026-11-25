@@ -484,7 +484,8 @@ def check_price_history(doc, path, broken):
 
 RECORD_TYPES = {'solar_mw_max': 'MW', 'wind_mw_max': 'MW', 'renewable_share_interval_max': '%',
                 'renewable_share_day_max': '%', 'price_interval_min': 'EUR/MWh', 'price_day_avg_min': 'EUR/MWh',
-                'negative_zero_hours_day_max': 'h'}
+                'negative_zero_hours_day_max': 'h', 'solar_gwh_day_max': 'GWh', 'wind_gwh_day_max': 'GWh',
+                'negative_zero_run_hours_max': 'h'}
 RECORD_COUNTRY_TYPES = {'solar_share_month_max', 'wind_share_month_max', 'renewable_share_month_max'}
 
 
@@ -494,7 +495,7 @@ def check_records(doc, path, broken):
     types, zones, countries = (doc.get(k) if isinstance(doc, dict) else None for k in ('types', 'zones', 'countries'))
     if not isinstance(types, dict) or set(types) != set(RECORD_TYPES) | RECORD_COUNTRY_TYPES \
             or not isinstance(zones, dict) or not isinstance(countries, dict) or 'updated' not in doc:
-        broken.append(f'{path}: not the ten types, or no zones, countries or updated')
+        broken.append(f'{path}: not the thirteen types, or no zones, countries or updated')
         return 'broken'
     if any(types[t].get('license') != 'source-terms' for t in RECORD_TYPES) \
             or any(types[t].get('license') != 'cc-by-4.0' for t in RECORD_COUNTRY_TYPES):
@@ -507,6 +508,8 @@ def check_records(doc, path, broken):
             if not number(record.get('value')) or record.get('unit') != unit or not record.get('at') \
                     or not record.get('source') or 'previous' not in record:
                 broken.append(f'{path} {area} {kind}: no value, unit {unit}, moment, source or previous')
+            if kind == 'negative_zero_run_hours_max' and not str(record.get('end', '')) > str(record.get('at')):
+                broken.append(f'{path} {area} {kind}: a run without its end after its start')
     recent = doc.get('recent') or []
     moments = [r.get('at', '') if len(r.get('at', '')) > 7 else r.get('at', '') + '-99' for r in recent]
     if moments != sorted(moments, reverse=True):
