@@ -5,6 +5,13 @@ name: Price history (daily)
 # SMARD lacks, one request a zone, 31 seconds apart) and OMIE; and the PPA
 # index of OMIP (data/ppa-index.json), a new point each quarter. At 15:10 UTC tomorrow's prices are
 # out at both. The first fill is fill-price-history.yml, started by hand.
+#
+# The Pro files (each zone's years and the daily means) are kept in the private
+# R2 bucket eupowerdata-pro, not in this public repository (since 26 Nov 2026):
+# the run gets them from R2, brings them up to date, sends back the ones that
+# changed (a failure ends the run in error, before anything is committed) and
+# commits only the public ones, the index and the monthly means. See
+# r2_price_history.sh.
 on:
   schedule:
     - cron: '10 15 * * *'
@@ -32,10 +39,20 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6.3.0
         with:
           python-version: '3.12'
+      - name: Get the Pro files of the price history from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: ./r2_price_history.sh down
       - name: Bring the price history up to date
         env:
           PRICE_HISTORY_BUDGET_SECONDS: '600'
         run: python fetch_price_history.py
+      - name: Send the Pro files that changed to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: ./r2_price_history.sh up
       # The PPA index of the Insights (see fetch_ppa_index.py): a request to OMIP
       # only when the quarter has no point yet. Never fails the run.
       - name: PPA price index (OMIP)
@@ -46,7 +63,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/price-history/ data/ppa-index.json
+          # Only the public files: the Pro ones are in .gitignore and in R2.
+          git add data/price-history/index.json data/price-history/monthly.json data/ppa-index.json
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0

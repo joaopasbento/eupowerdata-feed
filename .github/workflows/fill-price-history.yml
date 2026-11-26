@@ -5,7 +5,10 @@ name: Fill the price history
 # committed and pushed before the next. About 10,000 requests to SMARD, 1,500
 # to OMIE and a few to Energy-Charts (2 a minute). Ends in error if it
 # published nothing or a push failed; a second start takes up where the first
-# left off.
+# left off. The Pro files (each zone's years and the daily means) are got from
+# the private R2 bucket first and sent back at the end, even after a failure,
+# so that what was done is kept; the zone's commits hold only the public index
+# and monthly means (see r2_price_history.sh).
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +36,11 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1   # v6.3.0
         with:
           python-version: '3.12'
+      - name: Get the Pro files of the price history from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: ./r2_price_history.sh down
       - name: Fill the price history
         env:
           ZONES: ${{ inputs.zones }}
@@ -40,3 +48,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           python fetch_price_history.py --fill $ZONES
+      - name: Send the Pro files that changed to R2
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: ./r2_price_history.sh up
