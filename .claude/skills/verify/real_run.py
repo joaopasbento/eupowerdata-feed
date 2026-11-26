@@ -440,13 +440,13 @@ HISTORY_SOURCES = {'smard': 'cc-by-4.0', 'energy-charts': 'cc-by-4.0', 'omie': '
 
 
 def check_price_history(doc, path, broken):
-    """data/price-history/: the index, each zone's last year (every day whole, with its source under the zone's
-    licence), the daily means of that year and the monthly means."""
+    """data/price-history/: the public index and monthly means, and no Pro file (each zone's years, the daily means:
+    in the private R2 bucket) in the repository."""
     zones = doc.get('zones') if isinstance(doc, dict) else None
     if not isinstance(zones, dict) or not zones or not set(zones) <= set(HISTORY_ZONES):
         broken.append(f'{path}: no zones, or a zone that is not one of the 17 of the history')
         return 'broken'
-    notes, last_years = [], set()
+    notes = []
     for zone, entry in zones.items():
         smard = HISTORY_ZONES[zone] == 'cc-by-4.0'
         if entry.get('license_url') != ('https://creativecommons.org/licenses/by/4.0/' if smard
@@ -456,30 +456,15 @@ def check_price_history(doc, path, broken):
                 or not str(entry.get('attribution', '')).startswith('Bundesnetzagentur | SMARD.de' if smard else 'OMIE'):
             broken.append(f'{path} {zone}: not its licence, attribution, first day or years')
             continue
+        # The Pro files (each zone's years, the daily means) are in the private R2 bucket since 26 Nov 2026, and
+        # never in this public repository: one found here is a leak (price-history.yml checks those in R2).
         year = entry['years'][-1]
-        last_years.add(year)
-        file_path = f'data/price-history/{zone}/{year}.json'
-        days = (published(file_path) or {}).get('days')
-        if not isinstance(days, dict) or not days:
-            broken.append(f'{file_path}: missing, or no days')
-            continue
-        for name, day in days.items():
-            start, end = carry_over.day_bounds(datetime.fromisoformat(name).date())
-            step, prices = day.get('step_minutes'), day.get('prices')
-            if step not in (15, 60) or day.get('start') != start.isoformat() or not isinstance(prices, list) \
-                    or len(prices) != int((end - start).total_seconds() // 60 // step) \
-                    or any(not number(v) for v in prices):
-                broken.append(f'{file_path} {name}: not one price for each interval of the day from its start')
-            if HISTORY_SOURCES.get(day.get('source')) != HISTORY_ZONES[zone] or (
-                    day.get('source') == 'energy-charts'
-                    and not str(day.get('license_info', '')).lstrip().startswith('CC BY 4.0')):
-                broken.append(f'{file_path} {name}: source {day.get("source")} not under the licence of the zone')
+        for leak in (f'data/price-history/{zone}/{year}.json', f'data/price-history/daily/{year}.json'):
+            if exists(leak):
+                broken.append(f'{leak}: a Pro file in the public repository (it belongs in R2 only)')
         spans = ', '.join(f"{s['source']}{' ' + s['series'] if s.get('series') else ''} {s['from']}..{s['to']}"
                           for s in entry.get('sources') or [])
         notes.append(f"{zone} {entry['first']}..{entry.get('last')} ({spans}; {entry.get('missing_days')} days missing)")
-    for year in sorted(last_years):
-        if not ((published(f'data/price-history/daily/{year}.json') or {}).get('zones')):
-            broken.append(f'data/price-history/daily/{year}.json: missing, or no zones')
     if not ((published('data/price-history/monthly.json') or {}).get('zones')):
         broken.append('data/price-history/monthly.json: missing, or no zones')
     return f"{len(zones)} zones: " + '; '.join(notes)

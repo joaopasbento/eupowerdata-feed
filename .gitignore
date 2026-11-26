@@ -12,3 +12,7 @@ node_modules/
 .dev.vars
 # Answers of ENTSO-E saved by fetch_records.py --sample when run locally
 samples/
+# The Pro files of the price history (each zone's years, the daily means): kept in
+# the private R2 bucket eupowerdata-pro, never in this public repository (see
+# r2_price_history.sh). index.json and monthly.json stay public.
+data/price-history/*/

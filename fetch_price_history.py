@@ -51,6 +51,14 @@ market's clock, so it has 23, 24 or 25 hours, or 92, 96 or 100 quarter-hours):
 
 A chart of a year is one file (daily/<YEAR>.json, or the zone's year for every
 interval); an export of a range of dates is the zone's files of those years.
+
+Where they are kept (since 26 Nov 2026): the files of each zone and year and the
+daily means are sold in the Pro plan, so they are kept in the private Cloudflare
+R2 bucket eupowerdata-pro, under the same keys from price-history/ on, and not in
+this public repository (.gitignore). The workflows get them from R2 before a run
+and send back those that changed (r2_price_history.sh); this script reads and
+writes them in data/price-history/ as before. index.json and monthly.json stay
+public, in the repository.
 In daily and monthly, `values` starts on `first` (a day, or a month YYYY-MM)
 and has one value for each day or month from there, null where there is no
 price; a mean is the mean of the day's (or month's) intervals, each weighted
