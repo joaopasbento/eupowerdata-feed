@@ -16,9 +16,14 @@ on:
         description: 'Datasets to backfill: all | prices | gen | flows.'
         required: false
         default: 'all'
+      retrigger_once:
+        description: 'Check the self-re-trigger: dispatch one more run (of 1 day) even with no work left'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # needed to commit the new archive files
+  actions: write    # needed to dispatch the next run of this workflow (self-re-trigger)
 
 jobs:
   backfill:
@@ -75,17 +80,28 @@ jobs:
       # with 'yes' if there is still work to do. If so, dispatch the same
       # workflow again so it continues from where we stopped (idempotent).
       #
-      # IMPORTANT: this step needs a PAT (not the default GITHUB_TOKEN),
-      # because dispatches made with GITHUB_TOKEN do NOT trigger new workflow
-      # runs - GitHub blocks that to prevent accidental infinite loops.
+      # It uses the workflow's own token (actions: write above), not a personal
+      # one: events made with GITHUB_TOKEN start no new runs, with one exception,
+      # workflow_dispatch and repository_dispatch, which do (since 26 Nov 2026;
+      # before, the secret BACKFILL_PAT).
       # See: https://docs.github.com/en/actions/security-guides/automatic-token-authentication
+      #
+      # With retrigger_once, one more run (of 1 day, without retrigger_once) is
+      # dispatched even with no work left: a check that the chain works.
       - name: Self-retrigger if work remains
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.BACKFILL_PAT }}
+          GH_TOKEN: ${{ github.token }}
           INPUT_DAYS: ${{ github.event.inputs.days }}
           INPUT_DATASETS: ${{ github.event.inputs.datasets }}
+          RETRIGGER_ONCE: ${{ github.event.inputs.retrigger_once }}
         run: |
+          if [ "$RETRIGGER_ONCE" = "true" ]; then
+            echo "Checking the self-re-trigger: dispatching one more run of 1 day..."
+            gh workflow run backfill.yml --ref "${GITHUB_REF_NAME:-main}" -f days=1 -f datasets="${INPUT_DATASETS:-all}"
+            echo "Next run dispatched."
+            exit 0
+          fi
           if [ ! -f data/.backfill-continue ]; then
             echo "No continuation signal file — stopping chain."
             exit 0
@@ -93,11 +109,6 @@ jobs:
           SIGNAL=$(cat data/.backfill-continue | tr -d '[:space:]')
           if [ "$SIGNAL" != "yes" ]; then
             echo "Backfill complete — nothing more to do. Chain ends here."
-            exit 0
-          fi
-          if [ -z "$GH_TOKEN" ]; then
-            echo "WARN: BACKFILL_PAT secret is not set. Cannot self-retrigger."
-            echo "      Re-run the workflow manually to continue the backfill."
             exit 0
           fi
           echo "Work remains — dispatching next run..."

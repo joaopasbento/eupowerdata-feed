@@ -6,7 +6,6 @@ no browser User-Agent and no Referer. A source that only answers to a
 disguised client is reported as failing, never worked around.
 """
 
-import gzip
 import http.client
 import io
 import json
@@ -54,6 +53,48 @@ class Response:
         return f'HTTP {self.status}, {len(self.body)} bytes' + (f' ({self.error})' if self.error else '')
 
 
+# The most an answer may hold once unpacked (gzip or deflate in transit, a zip of ENTSO-E or OMIE): an answer past it
+# is refused with a clear error rather than unpacked into memory (a year of quarter-hours of a zone's generation,
+# the largest answer the feed asks for, is about 35 MB).
+MAX_UNPACKED = 200 * 1024 * 1024
+
+
+class TooLarge(ValueError):
+    """An answer that would hold more than MAX_UNPACKED bytes once unpacked."""
+
+
+def too_large_message():
+    return f'more than {MAX_UNPACKED // (1024 * 1024)} MB once unpacked: refused'
+
+
+def unpack(body, wbits, limit=None):
+    """`body` decompressed with zlib's `wbits` (gzip members one after another, as gzip.decompress), never past
+    `limit` (MAX_UNPACKED) bytes: raises TooLarge then."""
+    limit = MAX_UNPACKED if limit is None else limit
+    out, total, data = [], 0, body
+    while data:
+        engine = zlib.decompressobj(wbits)
+        piece = engine.decompress(data, limit - total + 1)
+        total += len(piece)
+        if total > limit or engine.unconsumed_tail:
+            raise TooLarge(too_large_message())
+        piece += engine.flush()
+        total = sum(map(len, out)) + len(piece)
+        if total > limit:
+            raise TooLarge(too_large_message())
+        out.append(piece)
+        data = engine.unused_data if wbits > zlib.MAX_WBITS else b''   # the next gzip member, if any
+        if not engine.eof:
+            raise zlib.error('incomplete compressed data')
+    return b''.join(out)
+
+
+def unpacked_size_ok(archive):
+    """Whether the files of a zip hold no more than MAX_UNPACKED bytes in all (zipfile never reads past the size
+    each file says it has)."""
+    return sum(info.file_size for info in archive.infolist()) <= MAX_UNPACKED
+
+
 def http_get(url, timeout=30, headers=None, max_seconds=None):
     """GET `url`. `timeout` bounds connecting and each read; `max_seconds`
     (default: twice the timeout) bounds the whole request."""
@@ -83,6 +124,8 @@ def http_get(url, timeout=30, headers=None, max_seconds=None):
         return Response(e.code, headers, body, error=str(e.reason))
     except urllib.error.URLError as e:
         return Response(error=str(e.reason))
+    except TooLarge as e:
+        return Response(error=str(e))
     except (OSError, EOFError, zlib.error, http.client.HTTPException) as e:
         return Response(error=f'{type(e).__name__}: {e}')
 
@@ -93,12 +136,12 @@ def _decode(body, headers):
     if not body:
         return body
     if encoding == 'gzip':
-        return gzip.decompress(body)
+        return unpack(body, 16 + zlib.MAX_WBITS)
     if encoding == 'deflate':
         try:
-            return zlib.decompress(body)
+            return unpack(body, zlib.MAX_WBITS)
         except zlib.error:
-            return zlib.decompress(body, -zlib.MAX_WBITS)      # raw deflate, sent by some servers
+            return unpack(body, -zlib.MAX_WBITS)               # raw deflate, sent by some servers
     return body
 
 
@@ -320,6 +363,8 @@ def entsoe_answer(response):
     if body[:2] == b'PK':
         try:
             with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                if not unpacked_size_ok(archive):
+                    return Answer([], f'a zip of {too_large_message()}')
                 return Answer([archive.read(name) for name in archive.namelist()], None)
         except (zipfile.BadZipFile, OSError, zlib.error) as e:
             return Answer([], f'a zip that cannot be read ({type(e).__name__})')

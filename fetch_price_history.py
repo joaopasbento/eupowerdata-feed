@@ -79,7 +79,8 @@ from datetime import date, datetime, timedelta, timezone
 import carry_over
 import fetch_omie
 import fetch_open_prices as op
-from feed_common import CC_BY, OMIE_TERMS, Budget, http_get, iso, load_json, write_json_if_changed
+from feed_common import (CC_BY, OMIE_TERMS, Budget, http_get, iso, load_json, too_large_message, unpacked_size_ok,
+                         write_json_if_changed)
 
 OUT_DIR = 'data/price-history'
 FIRST_DAY = date(2015, 1, 1)
@@ -221,6 +222,8 @@ def omie_year_zip(year, get):
         archive = zipfile.ZipFile(io.BytesIO(response.body))
     except zipfile.BadZipFile:
         raise op.SourceDown(f'zip of {year}: not a zip')
+    if not unpacked_size_ok(archive):
+        raise op.SourceDown(f'zip of {year}: {too_large_message()}')
     latest = {}
     for name in archive.namelist():
         stem, _, version = name.rpartition('.')

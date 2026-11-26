@@ -21,19 +21,31 @@ Parsing notes (validated):
     other German labels could appear). Position is robust.
   - Trailing zero-months are "not yet reported" for the current year and are trimmed;
     interior zeros are kept (a genuine 0 in an early month for a small country is real).
+
+A country EAFO does not answer for in a run (some pages answer an HTTP error now and then:
+3 to 8 of the 26 in each run in Nov 2026) keeps the block of the published file, as the
+feed's rule for kept values does elsewhere: with the time it was obtained (`updated`) and
+the mark carried_over, for MAX_AGE (35 days: five weekly runs, at most one monthly figure
+behind) from that time; older, the country has no block until EAFO answers again. The
+published block is read from the last commit (git show HEAD:data/transition.json), since
+fetch_eurostat.py rewrites the file just before this step.
 """
 
 import json
 import re
+import subprocess
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from feed_common import CARRIED_OVER, parse_time
 
 OUT_FILE = "data/transition.json"
 BASE = "https://alternative-fuels-observatory.ec.europa.eu"
 GRAPH_M1 = "14"          # Passenger cars (M1) instance id in drupalSettings.drilldown
 REQUEST_PAUSE = 0.4      # polite delay between country requests (seconds)
 UA = "eupowerdata-feed (+https://eupowerdata.com)"
+MAX_AGE = timedelta(days=35)   # how long a country EAFO does not answer for keeps its published block
 
 # Site country code -> EAFO page slug (English name, lowercase, hyphenated).
 # 26 of the site's 32 are covered. RS/ME/MK/AL/BA/XK return 404 -> Eurostat-only.
@@ -137,7 +149,31 @@ def build_country_eafo(code, slug, drilldown):
     }
 
 
-def main():
+def published_blocks(path=OUT_FILE):
+    """{country: eafo block} of the file as last committed, or {} when it cannot be read."""
+    try:
+        text = subprocess.run(["git", "show", f"HEAD:{path}"], capture_output=True, text=True, timeout=60,
+                              check=True).stdout
+        countries = json.loads(text).get("countries") or {}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    return {code: (c.get("vehicles") or {}).get("eafo") for code, c in countries.items()
+            if isinstance(c, dict) and isinstance((c.get("vehicles") or {}).get("eafo"), dict)}
+
+
+def kept_block(previous, now):
+    """The published block of a country EAFO did not answer for, marked carried_over, while it is younger than
+    MAX_AGE; None otherwise."""
+    obtained = parse_time((previous or {}).get("updated"))
+    if obtained is None or now - obtained >= MAX_AGE:
+        return None
+    return {**previous, CARRIED_OVER: True}
+
+
+def main(previous=None, now=None, fetch=None):
+    now = now or datetime.now(timezone.utc)
+    fetch = fetch or fetch_drilldown
+    previous = published_blocks() if previous is None else previous
     # Read the Eurostat output. If it's not there, do nothing (don't create a bad file).
     try:
         with open(OUT_FILE, encoding="utf-8") as f:
@@ -147,7 +183,7 @@ def main():
         return
 
     countries = doc.get("countries") or {}
-    added, skipped = 0, []
+    added, skipped, kept = 0, [], []
 
     for code, slug in SLUGS.items():
         country = countries.get(code)
@@ -158,20 +194,24 @@ def main():
             skipped.append(f"{code}(no annual)")
             continue
         try:
-            drilldown = fetch_drilldown(slug)
+            drilldown = fetch(slug)
             block = build_country_eafo(code, slug, drilldown)
+            why = None if block else "no series"
         except Exception as e:  # noqa: BLE001 - one country must not break the rest
-            skipped.append(f"{code}({type(e).__name__})")
-            continue
+            block, why = None, type(e).__name__
         if block:
             veh["eafo"] = block
             added += 1
             print(f"  {code}: {len(block['bev_monthly'])} months, latest {block['latest_period']}")
         else:
-            skipped.append(f"{code}(no series)")
+            skipped.append(f"{code}({why})")
+            old = kept_block(previous.get(code), now)
+            if old:
+                veh["eafo"] = old
+                kept.append(f"{code} (from {old['updated'][:10]})")
         time.sleep(REQUEST_PAUSE)
 
-    if added == 0:
+    if added == 0 and not kept:
         print("EAFO: no countries augmented - leaving transition.json unchanged")
         return
 
@@ -181,6 +221,8 @@ def main():
         print(f"EAFO: augmented {added} countries in {OUT_FILE}")
         if skipped:
             print(f"EAFO: skipped {len(skipped)} -> {', '.join(skipped)}")
+        if kept:
+            print(f"EAFO: kept, not obtained in this run: {', '.join(kept)}")
     except OSError as e:
         print(f"ERROR writing {OUT_FILE}: {e} - exiting 0 (file untouched)")
 

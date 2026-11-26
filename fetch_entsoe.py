@@ -1724,43 +1724,14 @@ def fetch_omip(deadline=None):
             'desc': desc.strip(),
         })
 
-    # Always write debug file
-    import re as re2
-    euro_positions = [m.start() for m in re2.finditer('€', clean)]
-    settle_positions = [m.start() for m in re2.finditer('Settlement Price', clean)]
-    os.makedirs('data', exist_ok=True)
-    with open('data/omip-debug.txt', 'w', encoding='utf-8') as dbg:
-        dbg.write(f'=== OMIP Debug — {datetime.now(timezone.utc).isoformat()} ===\n\n')
-        dbg.write(f'Status: {"SUCCESS" if contracts else "FAILED — no contracts parsed"}\n')
-        dbg.write(f'Contracts found: {len(contracts)}\n\n')
-        dbg.write(f'HTML length: {len(html)}\n')
-        dbg.write(f'Clean length: {len(clean)}\n')
-        dbg.write(f'Contains "Settlement": {"Settlement" in clean}\n')
-        dbg.write(f'Contains "FTB": {"FTB" in clean}\n')
-        dbg.write(f'Contains "€": {"€" in clean}\n')
-        dbg.write(f'Contains "Eur/MWh": {"Eur/MWh" in clean}\n\n')
-        dbg.write(f'Euro sign positions: {len(euro_positions)}\n\n')
-        for i, pos in enumerate(euro_positions[:15]):
-            start = max(0, pos - 20)
-            end = min(len(clean), pos + 200)
-            snippet = clean[start:end].replace('\n', ' ')
-            dbg.write(f'--- Euro #{i+1} at pos {pos} ---\n{snippet}\n\n')
-        dbg.write(f'\nSettlement Price positions: {len(settle_positions)}\n\n')
-        for i, pos in enumerate(settle_positions[:10]):
-            start = max(0, pos - 100)
-            end = min(len(clean), pos + 100)
-            snippet = clean[start:end].replace('\n', ' ')
-            dbg.write(f'--- Settlement #{i+1} at pos {pos} ---\n{snippet}\n\n')
-        if contracts:
-            dbg.write('\n=== Contracts Parsed ===\n')
-            for c in contracts:
-                dbg.write(f'  {c["zone"]} | {c["profile"]} | {c["product"]} | {c["label"]} | €{c["price"]} | desc={c["desc"]}\n')
-
+    # No debug file any more: data/omip-debug.txt put excerpts of OMIP's page in the public repository (until
+    # 26 Nov 2026). What a run parsed is in its log.
     if not contracts:
-        print('  No contracts parsed — debug saved to data/omip-debug.txt')
+        print(f'  No contracts parsed (HTML of {len(html)} characters; "Settlement Price" in it: '
+              f'{"Settlement Price" in clean})')
         return None
 
-    print(f'  → {len(contracts)} contracts parsed — debug saved to data/omip-debug.txt')
+    print(f'  → {len(contracts)} contracts parsed')
 
     date_match = re.search(r'for date (\d{4}-\d{2}-\d{2})', html)
     data_date = date_match.group(1) if date_match else today
