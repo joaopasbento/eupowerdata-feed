@@ -1,15 +1,15 @@
 {
   "status": "ok",
   "endpoint": "https://web-api.tp.entsoe.eu/api",
-  "time": "2026-11-26T15:43:05.422262+00:00",
+  "time": "2026-11-26T15:58:05.118763+00:00",
   "prices_zones": 32,
   "generation_zones": 31,
   "flow_corridors": 92,
-  "run_started": "2026-11-26T15:38:05.034415+00:00",
-  "prices_zones_fetched": 28,
-  "prices_zones_carried_over": 4,
-  "generation_zones_fetched": 30,
-  "generation_zones_carried_over": 1,
-  "flow_corridors_fetched": 88,
-  "flow_corridors_carried_over": 4
+  "run_started": "2026-11-26T15:53:04.774497+00:00",
+  "prices_zones_fetched": 23,
+  "prices_zones_carried_over": 9,
+  "generation_zones_fetched": 26,
+  "generation_zones_carried_over": 5,
+  "flow_corridors_fetched": 74,
+  "flow_corridors_carried_over": 18
 }
