@@ -1,5 +1,5 @@
 {
-  "last_update": "2026-11-26T18:00:44+00:00",
+  "last_update": "2026-11-26T18:09:57+00:00",
   "trigger": "feed_workflow_dispatch",
   "datasets": {
     "spot-prices": {
@@ -32,12 +32,12 @@
     },
     "omie-prices": {
       "exists": true,
-      "updated": "2026-11-26T17:56:32+00:00",
+      "updated": "2026-11-26T18:09:04+00:00",
       "size": 20270
     },
     "forward-curves": {
       "exists": true,
-      "updated": "2026-11-26T17:53:04.969048+00:00",
+      "updated": "2026-11-26T18:08:07.210497+00:00",
       "size": 23254
     },
     "capacity-installed": {
@@ -78,11 +78,11 @@
     "weather": {
       "exists": true,
       "updated": "2026-11-26T17:56:32+00:00",
-      "size": 20226
+      "size": 20255
     },
     "open-prices": {
       "exists": true,
-      "updated": "2026-11-26T18:00:43+00:00",
+      "updated": "2026-11-26T18:09:49+00:00",
       "size": 31445,
       "zones": 18
     },
@@ -94,23 +94,23 @@
     },
     "forecast": {
       "exists": true,
-      "updated": "2026-11-26T18:00:01+00:00",
+      "updated": "2026-11-26T18:09:45+00:00",
       "zones": 30,
-      "size": 1195592
+      "size": 1195752
     }
   },
-  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/45871416123",
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/45873437957",
   "steps": {
-    "balancing": "success",
+    "balancing": "failure",
     "capacity": "success",
     "commit": "success",
-    "entsoe": "success",
-    "forecast": "success",
+    "entsoe": "failure",
+    "forecast": "failure",
     "gb": "success",
     "low_prices": "success",
     "omie": "success",
     "open_prices": "success",
-    "outages": "success",
+    "outages": "failure",
     "ree": "success",
     "ren": "success",
     "weather": "success"
