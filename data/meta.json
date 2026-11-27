@@ -1,11 +1,11 @@
 {
-  "last_update": "2026-11-27T22:44:27+00:00",
+  "last_update": "2026-11-27T22:54:36+00:00",
   "trigger": "feed_workflow_dispatch",
   "datasets": {
     "spot-prices": {
       "exists": true,
       "updated": "2026-11-27T22:38:09.255759+00:00",
-      "size": 38653,
+      "size": 38654,
       "zones": 32
     },
     "generation-mix": {
@@ -32,12 +32,12 @@
     },
     "omie-prices": {
       "exists": true,
-      "updated": "2026-11-27T22:41:18+00:00",
+      "updated": "2026-11-27T22:54:07+00:00",
       "size": 20310
     },
     "forward-curves": {
       "exists": true,
-      "updated": "2026-11-27T22:38:05.000173+00:00",
+      "updated": "2026-11-27T22:53:09.092248+00:00",
       "size": 23347
     },
     "capacity-installed": {
@@ -47,7 +47,7 @@
     },
     "renewablenodes-capacity": {
       "exists": true,
-      "updated": "2026-11-27T10:43:19+00:00",
+      "updated": "2026-11-27T22:54:07+00:00",
       "size": 17609
     },
     "transition": {
@@ -82,7 +82,7 @@
     },
     "open-prices": {
       "exists": true,
-      "updated": "2026-11-27T22:44:26+00:00",
+      "updated": "2026-11-27T22:54:36+00:00",
       "size": 31534,
       "zones": 18
     },
@@ -94,23 +94,23 @@
     },
     "forecast": {
       "exists": true,
-      "updated": "2026-11-27T22:44:08+00:00",
+      "updated": "2026-11-27T22:54:31+00:00",
       "zones": 30,
-      "size": 1193899
+      "size": 1194199
     }
   },
-  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/46077811739",
+  "run": "https://github.com/joaopasbento/eupowerdata-feed/actions/runs/46079264556",
   "steps": {
-    "balancing": "success",
+    "balancing": "failure",
     "capacity": "success",
     "commit": "success",
-    "entsoe": "success",
-    "forecast": "success",
+    "entsoe": "failure",
+    "forecast": "failure",
     "gb": "success",
     "low_prices": "success",
     "omie": "success",
     "open_prices": "success",
-    "outages": "success",
+    "outages": "failure",
     "ree": "success",
     "ren": "success",
     "weather": "success"
