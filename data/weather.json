@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-28T04:39:20+00:00",
+  "updated": "2026-11-28T07:39:22+00:00",
   "source": "MET Norway Locationforecast 2.0 (api.met.no)",
   "license": {
     "name": "CC BY 4.0",
@@ -20,8 +20,8 @@
       "latitude": 38.72,
       "longitude": -9.14,
       "timezone": "Europe/Lisbon",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:35Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -30,8 +30,8 @@
       },
       "current": {
         "time": "2026-11-28T07:00",
-        "temperature_2m": 11.8,
-        "wind_speed_10m": 7.2,
+        "temperature_2m": 12.0,
+        "wind_speed_10m": 6.8,
         "weather_code": 45,
         "symbol_code": "fog"
       },
@@ -44,7 +44,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          76.3
+          113.4
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -56,8 +56,8 @@
       "latitude": 40.42,
       "longitude": -3.7,
       "timezone": "Europe/Madrid",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:17Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -66,7 +66,7 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": 4.5,
+        "temperature_2m": 5.0,
         "wind_speed_10m": 4.3,
         "weather_code": 45,
         "symbol_code": "fog"
@@ -80,7 +80,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          76.7
+          0.0
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -92,8 +92,8 @@
       "latitude": 52.52,
       "longitude": 13.41,
       "timezone": "Europe/Berlin",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:35Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T05:20:01Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -128,8 +128,8 @@
       "latitude": 48.86,
       "longitude": 2.35,
       "timezone": "Europe/Paris",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -152,7 +152,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          11918.2
+          15154.6
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -164,8 +164,8 @@
       "latitude": 41.9,
       "longitude": 12.5,
       "timezone": "Europe/Rome",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -174,8 +174,8 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": 8.0,
-        "wind_speed_10m": 20.5,
+        "temperature_2m": 8.1,
+        "wind_speed_10m": 22.3,
         "weather_code": 1,
         "symbol_code": "fair_day"
       },
@@ -188,7 +188,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          29244.9
+          28592.1
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -200,8 +200,8 @@
       "latitude": 52.37,
       "longitude": 4.9,
       "timezone": "Europe/Amsterdam",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:17Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -210,8 +210,8 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": -2.8,
-        "wind_speed_10m": 18.7,
+        "temperature_2m": -2.7,
+        "wind_speed_10m": 19.4,
         "weather_code": 2,
         "symbol_code": "partlycloudy_day"
       },
@@ -224,7 +224,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          1096.9
+          518.1
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -236,8 +236,8 @@
       "latitude": 50.85,
       "longitude": 4.35,
       "timezone": "Europe/Brussels",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:35Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T05:20:06Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -272,8 +272,8 @@
       "latitude": 48.21,
       "longitude": 16.37,
       "timezone": "Europe/Vienna",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -282,8 +282,8 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": -1.1,
-        "wind_speed_10m": 16.2,
+        "temperature_2m": -0.9,
+        "wind_speed_10m": 16.6,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -296,7 +296,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          116.0
+          51.3
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -308,8 +308,8 @@
       "latitude": 46.95,
       "longitude": 7.45,
       "timezone": "Europe/Zurich",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:35Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T05:20:06Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -344,8 +344,8 @@
       "latitude": 52.23,
       "longitude": 21.01,
       "timezone": "Europe/Warsaw",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:22Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -368,7 +368,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          6582.6
+          7518.7
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -380,8 +380,8 @@
       "latitude": 59.91,
       "longitude": 10.75,
       "timezone": "Europe/Oslo",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T04:28:38Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:28:09Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -390,8 +390,8 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": 0.3,
-        "wind_speed_10m": 9.7,
+        "temperature_2m": 0.0,
+        "wind_speed_10m": 9.4,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -416,8 +416,8 @@
       "latitude": 59.33,
       "longitude": 18.07,
       "timezone": "Europe/Stockholm",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T04:28:43Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T06:28:03Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -426,7 +426,7 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": -0.2,
+        "temperature_2m": 0.4,
         "wind_speed_10m": 5.4,
         "weather_code": 3,
         "symbol_code": "cloudy"
@@ -440,7 +440,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          62.7
+          286.3
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -452,8 +452,8 @@
       "latitude": 55.68,
       "longitude": 12.57,
       "timezone": "Europe/Copenhagen",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T03:28:29Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:27:58Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -462,7 +462,7 @@
       },
       "current": {
         "time": "2026-11-28T08:00",
-        "temperature_2m": 3.8,
+        "temperature_2m": 4.1,
         "wind_speed_10m": 16.2,
         "weather_code": 2,
         "symbol_code": "partlycloudy_day"
@@ -476,7 +476,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          19400.9
+          13704.8
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -488,8 +488,8 @@
       "latitude": 60.17,
       "longitude": 24.94,
       "timezone": "Europe/Helsinki",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T04:28:43Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T06:28:03Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -498,8 +498,8 @@
       },
       "current": {
         "time": "2026-11-28T09:00",
-        "temperature_2m": -4.8,
-        "wind_speed_10m": 8.6,
+        "temperature_2m": -5.4,
+        "wind_speed_10m": 9.0,
         "weather_code": 2,
         "symbol_code": "partlycloudy_day"
       },
@@ -512,7 +512,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          3254.2
+          3013.6
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -524,8 +524,8 @@
       "latitude": 37.98,
       "longitude": 23.73,
       "timezone": "Europe/Athens",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:22Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -534,10 +534,10 @@
       },
       "current": {
         "time": "2026-11-28T09:00",
-        "temperature_2m": 14.9,
-        "wind_speed_10m": 9.0,
-        "weather_code": 3,
-        "symbol_code": "cloudy"
+        "temperature_2m": 15.1,
+        "wind_speed_10m": 8.6,
+        "weather_code": 63,
+        "symbol_code": "rain"
       },
       "daily_units": {
         "time": "iso8601",
@@ -548,7 +548,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          10267.3
+          6734.7
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -560,8 +560,8 @@
       "latitude": 53.35,
       "longitude": -6.26,
       "timezone": "Europe/Dublin",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:36Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:27Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -571,7 +571,7 @@
       "current": {
         "time": "2026-11-28T07:00",
         "temperature_2m": 8.0,
-        "wind_speed_10m": 19.1,
+        "wind_speed_10m": 23.4,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -584,7 +584,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          2284.8
+          2198.5
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -596,8 +596,8 @@
       "latitude": 51.51,
       "longitude": -0.13,
       "timezone": "Europe/London",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:22Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:27Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -607,7 +607,7 @@
       "current": {
         "time": "2026-11-28T07:00",
         "temperature_2m": 4.9,
-        "wind_speed_10m": 20.2,
+        "wind_speed_10m": 20.9,
         "weather_code": 3,
         "symbol_code": "cloudy"
       },
@@ -620,7 +620,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          4.7
+          111.2
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
@@ -632,8 +632,8 @@
       "latitude": 44.43,
       "longitude": 26.1,
       "timezone": "Europe/Bucharest",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:36Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -642,10 +642,10 @@
       },
       "current": {
         "time": "2026-11-28T09:00",
-        "temperature_2m": 1.7,
-        "wind_speed_10m": 27.7,
-        "weather_code": 68,
-        "symbol_code": "lightsleet"
+        "temperature_2m": 1.3,
+        "wind_speed_10m": 29.5,
+        "weather_code": 69,
+        "symbol_code": "sleet"
       },
       "daily_units": {
         "time": "iso8601",
@@ -668,8 +668,8 @@
       "latitude": 42.7,
       "longitude": 23.32,
       "timezone": "Europe/Sofia",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T05:20:06Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -704,8 +704,8 @@
       "latitude": 47.5,
       "longitude": 19.04,
       "timezone": "Europe/Budapest",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:17:36Z",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:27Z",
       "current_units": {
         "time": "iso8601",
         "temperature_2m": "°C",
@@ -715,6 +715,42 @@
       "current": {
         "time": "2026-11-28T08:00",
         "temperature_2m": 0.8,
+        "wind_speed_10m": 10.1,
+        "weather_code": 2,
+        "symbol_code": "partlycloudy_day"
+      },
+      "daily_units": {
+        "time": "iso8601",
+        "sunshine_duration": "s"
+      },
+      "daily": {
+        "time": [
+          "2026-11-28"
+        ],
+        "sunshine_duration": [
+          1534.4
+        ],
+        "sunshine_duration_estimated": true,
+        "sunshine_duration_coverage": 1.0
+      }
+    },
+    {
+      "code": "CZ",
+      "name": "Prague",
+      "latitude": 50.08,
+      "longitude": 14.44,
+      "timezone": "Europe/Prague",
+      "fetched": "2026-11-28T07:39:22+00:00",
+      "forecast_updated_at": "2026-11-28T07:16:31Z",
+      "current_units": {
+        "time": "iso8601",
+        "temperature_2m": "°C",
+        "wind_speed_10m": "km/h",
+        "weather_code": "wmo code"
+      },
+      "current": {
+        "time": "2026-11-28T08:00",
+        "temperature_2m": -1.5,
         "wind_speed_10m": 9.4,
         "weather_code": 3,
         "symbol_code": "cloudy"
@@ -728,43 +764,7 @@
           "2026-11-28"
         ],
         "sunshine_duration": [
-          183.3
-        ],
-        "sunshine_duration_estimated": true,
-        "sunshine_duration_coverage": 1.0
-      }
-    },
-    {
-      "code": "CZ",
-      "name": "Prague",
-      "latitude": 50.08,
-      "longitude": 14.44,
-      "timezone": "Europe/Prague",
-      "fetched": "2026-11-28T04:39:20+00:00",
-      "forecast_updated_at": "2026-11-28T01:18:14Z",
-      "current_units": {
-        "time": "iso8601",
-        "temperature_2m": "°C",
-        "wind_speed_10m": "km/h",
-        "weather_code": "wmo code"
-      },
-      "current": {
-        "time": "2026-11-28T08:00",
-        "temperature_2m": -1.6,
-        "wind_speed_10m": 9.7,
-        "weather_code": 3,
-        "symbol_code": "cloudy"
-      },
-      "daily_units": {
-        "time": "iso8601",
-        "sunshine_duration": "s"
-      },
-      "daily": {
-        "time": [
-          "2026-11-28"
-        ],
-        "sunshine_duration": [
-          5751.9
+          6732.2
         ],
         "sunshine_duration_estimated": true,
         "sunshine_duration_coverage": 1.0
